@@ -210,10 +210,10 @@
             <input type="text" name="title" required class="form-input" placeholder="e.g. Practice at Twin Lakes">
           </div>
         </div>
-        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr;">
+        <div id="single-date-row" class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr;">
           <div class="form-group">
             <label>Start Date *</label>
-            <input type="date" name="start_date" required class="form-input">
+            <input type="date" name="start_date" id="add-start-date" class="form-input">
           </div>
           <div class="form-group">
             <label>Start Time</label>
@@ -227,6 +227,40 @@
             <label>End Time</label>
             <input type="time" name="end_time" class="form-input">
           </div>
+        </div>
+
+        <div id="multi-day-toggle" class="form-group" style="margin-bottom:0;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; font-weight:600; color:var(--navy);">
+            <input type="checkbox" id="multi-day-check" onchange="toggleMultiDay()">
+            Repeat on multiple days
+            <span style="font-weight:400; color:var(--gray-500); font-size:12px;">(same time &amp; location for each)</span>
+          </label>
+        </div>
+
+        <div id="multi-day-picker" style="display:none; margin:12px 0 16px;">
+          <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+            <div class="form-group" style="margin:0;">
+              <label>Start Time</label>
+              <input type="time" id="multi-start-time" class="form-input">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label>End Time</label>
+              <input type="time" id="multi-end-time" class="form-input">
+            </div>
+          </div>
+          <div class="multi-cal-wrap">
+            <div class="calendar-header" style="margin-bottom:0;">
+              <button type="button" class="cal-nav" id="mp-prev">&larr;</button>
+              <h3 class="cal-month-title" id="mp-title" style="font-size:15px;"></h3>
+              <button type="button" class="cal-nav" id="mp-next">&rarr;</button>
+            </div>
+            <div class="cal-grid" id="mp-grid">
+              <div class="cal-day-header">S</div><div class="cal-day-header">M</div><div class="cal-day-header">T</div><div class="cal-day-header">W</div><div class="cal-day-header">T</div><div class="cal-day-header">F</div><div class="cal-day-header">S</div>
+              <% for (let i = 0; i < 42; i++) { %><div class="cal-cell mp-cell" data-index="<%= i %>"></div><% } %>
+            </div>
+          </div>
+          <div id="mp-selected-info" style="margin-top:10px; font-size:13px; color:var(--gray-500);">No dates selected</div>
+          <div id="mp-hidden-dates"></div>
         </div>
         <div class="form-group">
           <label>Search Location</label>
@@ -504,7 +538,87 @@
       function toggleTournamentFields(type, mode) {
         const id = mode === 'edit' ? 'edit-tournament-fields' : 'add-tournament-fields';
         document.getElementById(id).style.display = type === 'tournament' ? 'block' : 'none';
+        if (mode === 'add') {
+          const show = type !== 'tournament';
+          document.getElementById('multi-day-toggle').style.display = show ? '' : 'none';
+          if (!show) { document.getElementById('multi-day-check').checked = false; toggleMultiDay(); }
+        }
       }
+
+      // --- Multi-Day Picker ---
+      var mpSelectedDates = new Set();
+      var mpMonth, mpYear;
+      (function() {
+        var t = new Date(); mpMonth = t.getMonth(); mpYear = t.getFullYear();
+      })();
+
+      function toggleMultiDay() {
+        var on = document.getElementById('multi-day-check').checked;
+        document.getElementById('multi-day-picker').style.display = on ? '' : 'none';
+        document.getElementById('single-date-row').style.display = on ? 'none' : '';
+        if (on) {
+          document.getElementById('add-start-date').removeAttribute('required');
+          document.getElementById('add-start-date').value = '';
+          renderMpCal();
+        } else {
+          document.getElementById('add-start-date').setAttribute('required', '');
+        }
+      }
+
+      function renderMpCal() {
+        var firstDay = new Date(mpYear, mpMonth, 1).getDay();
+        var daysInMonth = new Date(mpYear, mpMonth + 1, 0).getDate();
+        document.getElementById('mp-title').textContent = new Date(mpYear, mpMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        var cells = document.querySelectorAll('.mp-cell');
+        cells.forEach(function(cell, i) {
+          cell.innerHTML = ''; cell.className = 'cal-cell mp-cell'; cell.onclick = null; cell.style.cursor = '';
+          var day = i - firstDay + 1;
+          if (day >= 1 && day <= daysInMonth) {
+            var ds = mpYear + '-' + String(mpMonth+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+            cell.innerHTML = '<span class="cal-day-num">' + day + '</span>';
+            cell.dataset.date = ds;
+            cell.style.cursor = 'pointer';
+            if (mpSelectedDates.has(ds)) cell.classList.add('mp-selected');
+            var today = new Date().toISOString().slice(0,10);
+            if (ds === today) cell.classList.add('cal-today');
+            cell.onclick = function() { toggleMpDate(ds, this); };
+          } else {
+            cell.classList.add('cal-empty');
+            cell.dataset.date = '';
+          }
+        });
+      }
+
+      function toggleMpDate(ds, cell) {
+        if (mpSelectedDates.has(ds)) { mpSelectedDates.delete(ds); cell.classList.remove('mp-selected'); }
+        else { mpSelectedDates.add(ds); cell.classList.add('mp-selected'); }
+        updateMpInfo();
+      }
+
+      function updateMpInfo() {
+        var sorted = Array.from(mpSelectedDates).sort();
+        var info = document.getElementById('mp-selected-info');
+        var hidden = document.getElementById('mp-hidden-dates');
+        if (sorted.length === 0) {
+          info.textContent = 'No dates selected';
+          hidden.innerHTML = '';
+          return;
+        }
+        var labels = sorted.map(function(d) {
+          return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        });
+        info.innerHTML = '<strong>' + sorted.length + ' date' + (sorted.length > 1 ? 's' : '') + ' selected:</strong> ' + labels.join(', ');
+        hidden.innerHTML = sorted.map(function(d) { return '<input type="hidden" name="dates" value="' + d + '">'; }).join('');
+        var st = document.getElementById('multi-start-time').value;
+        var et = document.getElementById('multi-end-time').value;
+        if (st) hidden.innerHTML += '<input type="hidden" name="start_time" value="' + st + '">';
+        if (et) hidden.innerHTML += '<input type="hidden" name="end_time" value="' + et + '">';
+      }
+
+      document.getElementById('multi-start-time').addEventListener('change', updateMpInfo);
+      document.getElementById('multi-end-time').addEventListener('change', updateMpInfo);
+      document.getElementById('mp-prev').onclick = function() { mpMonth--; if (mpMonth<0){mpMonth=11;mpYear--;} renderMpCal(); };
+      document.getElementById('mp-next').onclick = function() { mpMonth++; if (mpMonth>11){mpMonth=0;mpYear++;} renderMpCal(); };
 
       function editTeamEvent(ev) {
         document.getElementById('edit-te-id').value = ev.id;

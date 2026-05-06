@@ -680,25 +680,37 @@ function requireAdminOrStaff(req, res, next) {
 
 app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
   const { event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info } = req.body;
-  if (!title || !title.trim() || !start_date) {
+  const dates = req.body.dates;
+  const multiDates = dates ? (Array.isArray(dates) ? dates : [dates]).filter(Boolean).sort() : [];
+
+  if (!title || !title.trim() || (!start_date && multiDates.length === 0)) {
     const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
-    return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and start date are required.'));
+    return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and at least one date are required.'));
   }
-  await db.addTeamEvent({
+
+  const eventData = {
     event_type: event_type || 'practice',
     title: title.trim(),
-    start_date,
     start_time: start_time || null,
-    end_date: end_date || null,
     end_time: end_time || null,
     location_name: (location_name || '').trim() || null,
     address: (address || '').trim() || null,
     notes: (notes || '').trim() || null,
     hotel_info: (hotel_info || '').trim() || null,
     carpool_info: (carpool_info || '').trim() || null,
-  });
-  const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
-  res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" added to calendar`));
+  };
+
+  if (multiDates.length > 0) {
+    for (const d of multiDates) {
+      await db.addTeamEvent({ ...eventData, start_date: d, end_date: null });
+    }
+    const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
+    res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" added for ${multiDates.length} dates`));
+  } else {
+    await db.addTeamEvent({ ...eventData, start_date, end_date: end_date || null });
+    const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
+    res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" added to calendar`));
+  }
 });
 
 app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
