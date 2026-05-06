@@ -172,13 +172,29 @@
           const timeStr = ev.start_time ? formatTime(ev.start_time) + (ev.end_time ? ' &ndash; ' + formatTime(ev.end_time) : '') : '';
           const color = TYPE_COLORS[ev.type] || TYPE_COLORS.other;
 
-          let html = '<a href="/event/' + ev.id + '" class="te-card" id="event-' + ev.id + '" style="border-left:4px solid ' + color + ';">';
+          let html = '<div class="te-card" id="event-' + ev.id + '" style="border-left:4px solid ' + color + ';">';
+          html += '<div class="te-card-body">';
+          html += '<a href="/event/' + ev.id + '" class="te-card-link">';
           html += '<div class="te-header">';
           html += '<span class="te-type-badge" style="background:' + color + ';">' + (TYPE_LABELS[ev.type] || 'Event') + '</span>';
           html += '<span class="te-date">' + dateStr + endStr + '</span>';
           html += '</div>';
           html += '<h4 class="te-title">' + ev.title + '</h4>';
           if (timeStr) html += '<div class="te-time">' + timeStr + '</div>';
+          html += '</a>';
+          html += '<div class="te-rsvp-area">';
+          html += '<button class="te-rsvp-btn" onclick="toggleRsvp(event,' + ev.id + ')">RSVP</button>';
+          html += '<div class="te-rsvp-form" id="rsvp-form-' + ev.id + '">';
+          html += '<input type="tel" class="te-rsvp-phone" id="rsvp-phone-' + ev.id + '" placeholder="Your phone #" maxlength="14">';
+          html += '<div class="te-rsvp-choices">';
+          html += '<button class="te-rsvp-choice te-rsvp-yes" onclick="submitRsvp(' + ev.id + ',\'yes\')">Yes</button>';
+          html += '<button class="te-rsvp-choice te-rsvp-maybe" onclick="submitRsvp(' + ev.id + ',\'maybe\')">Maybe</button>';
+          html += '<button class="te-rsvp-choice te-rsvp-no" onclick="submitRsvp(' + ev.id + ',\'no\')">No</button>';
+          html += '</div>';
+          html += '<div class="te-rsvp-msg" id="rsvp-msg-' + ev.id + '"></div>';
+          html += '</div>';
+          html += '</div>';
+          html += '</div>';
           if (ev.location_name || ev.address) {
             html += '<div class="te-location">';
             if (ev.location_name) html += '<strong>' + ev.location_name + '</strong>';
@@ -196,13 +212,59 @@
           if (ev.address) {
             html += '<div class="te-map-embed"><iframe src="https://www.google.com/maps?q=' + encodeURIComponent(ev.address) + '&output=embed" width="100%" height="200" style="border:0;border-radius:8px;" allowfullscreen loading="lazy"></iframe></div>';
           }
-          html += '</a>';
+          html += '</div>';
           return html;
         }).join('');
       }
 
       document.getElementById('cal-prev').onclick = () => { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); };
       document.getElementById('cal-next').onclick = () => { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } renderCalendar(); };
+
+      function toggleRsvp(e, eventId) {
+        e.preventDefault();
+        e.stopPropagation();
+        const form = document.getElementById('rsvp-form-' + eventId);
+        const isOpen = form.classList.contains('open');
+        document.querySelectorAll('.te-rsvp-form.open').forEach(f => f.classList.remove('open'));
+        if (!isOpen) {
+          form.classList.add('open');
+          document.getElementById('rsvp-phone-' + eventId).focus();
+        }
+      }
+
+      function submitRsvp(eventId, status) {
+        const phoneInput = document.getElementById('rsvp-phone-' + eventId);
+        const phone = phoneInput.value.replace(/\D/g, '');
+        const msgEl = document.getElementById('rsvp-msg-' + eventId);
+        if (phone.length < 10) {
+          msgEl.textContent = 'Enter your 10-digit phone number';
+          msgEl.className = 'te-rsvp-msg te-rsvp-msg-err';
+          phoneInput.focus();
+          return;
+        }
+        const body = new URLSearchParams({ phone: phone, status: status });
+        fetch('/event/' + eventId + '/rsvp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body,
+          redirect: 'follow'
+        }).then(r => {
+          if (r.redirected && r.url.includes('rsvp=success')) {
+            const label = status === 'yes' ? 'Attending' : status === 'no' ? 'Not attending' : 'Maybe';
+            msgEl.textContent = label + ' — RSVP saved!';
+            msgEl.className = 'te-rsvp-msg te-rsvp-msg-ok';
+            const btn = document.querySelector('#event-' + eventId + ' .te-rsvp-btn');
+            btn.textContent = label;
+            btn.classList.add('te-rsvp-done');
+          } else {
+            msgEl.textContent = 'Phone not found. Use number on file.';
+            msgEl.className = 'te-rsvp-msg te-rsvp-msg-err';
+          }
+        }).catch(() => {
+          msgEl.textContent = 'Error — please try again.';
+          msgEl.className = 'te-rsvp-msg te-rsvp-msg-err';
+        });
+      }
 
       renderCalendar();
       renderEvents('upcoming');
