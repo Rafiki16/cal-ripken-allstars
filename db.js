@@ -89,6 +89,13 @@ async function init() {
            data.baseball_iq, id]
         );
       },
+      addPlayer: async (p) => {
+        await pool.query(
+          'INSERT INTO players (player_name, division, team, age, parent_name, parent_phone) VALUES ($1,$2,$3,$4,$5,$6)',
+          [p.player_name, p.division, p.team, p.age, p.parent_name, p.parent_phone]
+        );
+      },
+      removePlayer: async (id) => pool.query('DELETE FROM players WHERE id = $1', [id]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -141,6 +148,11 @@ async function init() {
           data.baseball_iq, new Date().toISOString(), id
         );
       },
+      addPlayer: async (p) => {
+        sqliteDb.prepare('INSERT INTO players (player_name, division, team, age, parent_name, parent_phone) VALUES (?,?,?,?,?,?)')
+          .run(p.player_name, p.division, p.team, p.age, p.parent_name, p.parent_phone);
+      },
+      removePlayer: async (id) => sqliteDb.prepare('DELETE FROM players WHERE id = ?').run(id),
     };
   }
 }
@@ -152,4 +164,6 @@ module.exports = {
   getPlayer: (...args) => impl.getPlayer(...args),
   updateStatus: (...args) => impl.updateStatus(...args),
   updateProfile: (...args) => impl.updateProfile(...args),
+  addPlayer: (...args) => impl.addPlayer(...args),
+  removePlayer: (...args) => impl.removePlayer(...args),
 };

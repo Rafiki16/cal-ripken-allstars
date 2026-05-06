@@ -141,6 +141,69 @@ app.post('/profile/:id', async (req, res) => {
   });
 });
 
+// --- Admin ---
+const ADMIN_PASS = process.env.ADMIN_PASS || 'allstars2026';
+
+function requireAdmin(req, res, next) {
+  if (req.query.key === ADMIN_PASS || req.body.key === ADMIN_PASS) return next();
+  res.render('admin-login', { error: req.query.failed ? 'Incorrect password.' : null });
+}
+
+app.get('/admin', requireAdmin, async (req, res) => {
+  const players = await db.getAllPlayers();
+  const confirmed = players.filter(p => p.status === 'confirmed').length;
+  const declined = players.filter(p => p.status === 'declined').length;
+  const pending = players.filter(p => p.status === 'pending').length;
+  res.render('admin', { players, confirmed, declined, pending, total: players.length, key: ADMIN_PASS, success: req.query.success || null, error: req.query.error || null });
+});
+
+app.post('/admin/login', (req, res) => {
+  if (req.body.password === ADMIN_PASS) {
+    return res.redirect('/admin?key=' + ADMIN_PASS);
+  }
+  res.render('admin-login', { error: 'Incorrect password.' });
+});
+
+app.post('/admin/status', requireAdmin, async (req, res) => {
+  const { player_id, status } = req.body;
+  if (!['confirmed', 'declined', 'pending'].includes(status)) {
+    return res.redirect('/admin?key=' + ADMIN_PASS + '&error=Invalid+status');
+  }
+  await db.updateStatus(Number(player_id), status);
+  const player = await db.getPlayer(Number(player_id));
+  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${player.player_name} set to ${status}`));
+});
+
+app.post('/admin/add-player', requireAdmin, async (req, res) => {
+  const { player_name, division, team, age, parent_name, parent_phone } = req.body;
+  const phone = normalizePhone(parent_phone || '');
+
+  if (!player_name || !player_name.trim() || !parent_name || !parent_name.trim() || phone.length !== 10) {
+    return res.redirect('/admin?key=' + ADMIN_PASS + '&error=' + encodeURIComponent('Player name, parent name, and valid 10-digit phone are required.'));
+  }
+
+  await db.addPlayer({
+    player_name: player_name.trim(),
+    division: (division || 'Major').trim(),
+    team: (team || '').trim(),
+    age: parseInt(age) || 11,
+    parent_name: parent_name.trim(),
+    parent_phone: phone,
+  });
+
+  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${player_name.trim()} added to roster`));
+});
+
+app.post('/admin/remove-player', requireAdmin, async (req, res) => {
+  const player = await db.getPlayer(Number(req.body.player_id));
+  if (player) {
+    await db.removePlayer(Number(req.body.player_id));
+    res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${player.player_name} removed from roster`));
+  } else {
+    res.redirect('/admin?key=' + ADMIN_PASS + '&error=Player+not+found');
+  }
+});
+
 app.get('/api/stats', async (req, res) => {
   const players = await db.getAllPlayers();
   const confirmed = players.filter(p => p.status === 'confirmed').length;
