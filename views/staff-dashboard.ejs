@@ -109,6 +109,24 @@
               </div>
               <% } %>
 
+              <% const playerEvents = allEvents.filter(e => e.player_id === player.id); %>
+              <% if (playerEvents.length > 0) { %>
+              <div class="staff-events">
+                <span class="detail-label">Upcoming Absences:</span>
+                <% playerEvents.forEach(ev => { %>
+                  <div class="staff-event-row">
+                    <span class="event-type-badge event-type-<%= ev.event_type %>">
+                      <%= ev.event_type === 'vacation' ? 'Vacation' : ev.event_type === 'practice_conflict' ? 'Practice Conflict' : ev.event_type === 'game_conflict' ? 'Game Conflict' : 'Other' %>
+                    </span>
+                    <span class="event-dates">
+                      <%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %> &ndash; <%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %>
+                    </span>
+                    <% if (ev.notes) { %><span class="event-notes"><%= ev.notes %></span><% } %>
+                  </div>
+                <% }); %>
+              </div>
+              <% } %>
+
               <% const contacts = player.contacts ? JSON.parse(player.contacts) : []; %>
               <% if (contacts.length > 0 && contacts[0].name) { %>
               <div class="staff-contacts">

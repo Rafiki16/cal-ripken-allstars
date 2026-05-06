@@ -108,6 +108,7 @@
                 <th>Phone</th>
                 <th>Status</th>
                 <th>Profile</th>
+                <th>Absences</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -124,6 +125,16 @@
                     </span>
                   </td>
                   <td><%= player.profile_updated_at ? 'Done' : '-' %></td>
+                  <td>
+                    <% const pEvents = allEvents.filter(e => e.player_id === player.id); %>
+                    <% if (pEvents.length > 0) { %>
+                      <% pEvents.forEach(ev => { %>
+                        <div class="admin-event-pill event-type-<%= ev.event_type %>">
+                          <%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %>&ndash;<%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %>
+                        </div>
+                      <% }); %>
+                    <% } else { %>-<% } %>
+                  </td>
                   <td class="td-actions">
                     <div class="admin-action-row">
                       <% if (player.status !== 'confirmed') { %>

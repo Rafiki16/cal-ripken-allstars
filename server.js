@@ -101,7 +101,8 @@ app.get('/profile/:id', async (req, res) => {
     });
   }
 
-  res.render('profile', { player, phone, POSITIONS, RATING_FIELDS, error: null, success: null });
+  const events = await db.getPlayerEvents(player.id);
+  res.render('profile', { player, phone, POSITIONS, RATING_FIELDS, events, error: null, success: null });
 });
 
 app.post('/profile/:id', async (req, res) => {
@@ -151,10 +152,68 @@ app.post('/profile/:id', async (req, res) => {
   });
 
   const updated = await db.getPlayer(Number(req.params.id));
+  const events = await db.getPlayerEvents(updated.id);
   res.render('profile', {
-    player: updated, phone, POSITIONS, RATING_FIELDS,
+    player: updated, phone, POSITIONS, RATING_FIELDS, events,
     error: null,
     success: `${player.player_name}'s profile has been saved.`
+  });
+});
+
+app.post('/profile/:id/event', async (req, res) => {
+  const phone = normalizePhone(req.body.phone || '');
+  const player = await db.getPlayer(Number(req.params.id));
+  if (!player || player.parent_phone !== phone) {
+    return res.render('verify', {
+      players: null, phone: '',
+      error: 'Unauthorized.',
+      success: null
+    });
+  }
+
+  const { event_type, start_date, end_date, notes } = req.body;
+  if (!start_date) {
+    const events = await db.getPlayerEvents(player.id);
+    return res.render('profile', {
+      player, phone, POSITIONS, RATING_FIELDS, events,
+      error: 'Start date is required.',
+      success: null
+    });
+  }
+
+  await db.addEvent({
+    player_id: player.id,
+    event_type: event_type || 'unavailable',
+    start_date,
+    end_date: end_date || null,
+    notes: (notes || '').trim() || null,
+  });
+
+  const events = await db.getPlayerEvents(player.id);
+  res.render('profile', {
+    player, phone, POSITIONS, RATING_FIELDS, events,
+    error: null,
+    success: 'Availability event added.'
+  });
+});
+
+app.post('/profile/:id/event/delete', async (req, res) => {
+  const phone = normalizePhone(req.body.phone || '');
+  const player = await db.getPlayer(Number(req.params.id));
+  if (!player || player.parent_phone !== phone) {
+    return res.render('verify', {
+      players: null, phone: '',
+      error: 'Unauthorized.',
+      success: null
+    });
+  }
+
+  await db.removeEvent(Number(req.body.event_id));
+  const events = await db.getPlayerEvents(player.id);
+  res.render('profile', {
+    player, phone, POSITIONS, RATING_FIELDS, events,
+    error: null,
+    success: 'Event removed.'
   });
 });
 
@@ -172,7 +231,8 @@ app.get('/admin', requireAdmin, async (req, res) => {
   const confirmed = players.filter(p => p.status === 'confirmed').length;
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
-  res.render('admin', { players, staff, confirmed, declined, pending, total: players.length, key: ADMIN_PASS, success: req.query.success || null, error: req.query.error || null });
+  const allEvents = await db.getAllEvents();
+  res.render('admin', { players, staff, confirmed, declined, pending, total: players.length, key: ADMIN_PASS, allEvents, success: req.query.success || null, error: req.query.error || null });
 });
 
 app.post('/admin/login', (req, res) => {
@@ -260,7 +320,8 @@ app.get('/staff/dashboard', async (req, res) => {
   const confirmed = players.filter(p => p.status === 'confirmed').length;
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
-  res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS });
+  const allEvents = await db.getAllEvents();
+  res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS, allEvents });
 });
 
 app.get('/api/stats', async (req, res) => {

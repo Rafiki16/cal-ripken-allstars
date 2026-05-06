@@ -72,6 +72,18 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS events (
+        id SERIAL PRIMARY KEY,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL DEFAULT 'unavailable',
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -111,6 +123,10 @@ async function init() {
       getStaffByPhone: async (phone) => (await pool.query('SELECT * FROM staff WHERE phone = $1', [phone])).rows[0] || null,
       addStaff: async (s) => pool.query('INSERT INTO staff (name, role, phone) VALUES ($1,$2,$3)', [s.name, s.role, s.phone]),
       removeStaff: async (id) => pool.query('DELETE FROM staff WHERE id = $1', [id]),
+      getPlayerEvents: async (playerId) => (await pool.query('SELECT * FROM events WHERE player_id = $1 ORDER BY start_date', [playerId])).rows,
+      getAllEvents: async () => (await pool.query('SELECT * FROM events ORDER BY start_date')).rows,
+      addEvent: async (e) => pool.query('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES ($1,$2,$3,$4,$5)', [e.player_id, e.event_type, e.start_date, e.end_date, e.notes]),
+      removeEvent: async (id) => pool.query('DELETE FROM events WHERE id = $1', [id]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -143,6 +159,18 @@ async function init() {
         name TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'Coach',
         phone TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL DEFAULT 'unavailable',
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        notes TEXT,
         created_at TEXT DEFAULT (datetime('now'))
       )
     `);
@@ -182,6 +210,10 @@ async function init() {
       getStaffByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM staff WHERE phone = ?').get(phone) || null,
       addStaff: async (s) => sqliteDb.prepare('INSERT INTO staff (name, role, phone) VALUES (?,?,?)').run(s.name, s.role, s.phone),
       removeStaff: async (id) => sqliteDb.prepare('DELETE FROM staff WHERE id = ?').run(id),
+      getPlayerEvents: async (playerId) => sqliteDb.prepare('SELECT * FROM events WHERE player_id = ? ORDER BY start_date').all(playerId),
+      getAllEvents: async () => sqliteDb.prepare('SELECT * FROM events ORDER BY start_date').all(),
+      addEvent: async (e) => sqliteDb.prepare('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES (?,?,?,?,?)').run(e.player_id, e.event_type, e.start_date, e.end_date, e.notes),
+      removeEvent: async (id) => sqliteDb.prepare('DELETE FROM events WHERE id = ?').run(id),
     };
   }
 }
@@ -199,4 +231,8 @@ module.exports = {
   getStaffByPhone: (...args) => impl.getStaffByPhone(...args),
   addStaff: (...args) => impl.addStaff(...args),
   removeStaff: (...args) => impl.removeStaff(...args),
+  getPlayerEvents: (...args) => impl.getPlayerEvents(...args),
+  getAllEvents: (...args) => impl.getAllEvents(...args),
+  addEvent: (...args) => impl.addEvent(...args),
+  removeEvent: (...args) => impl.removeEvent(...args),
 };

@@ -133,6 +133,66 @@
       <div class="profile-actions">
         <button type="submit" class="btn btn-confirm btn-large">Save Profile</button>
       </div>
+    </form>
+
+    <!-- Availability / Events -->
+    <div class="profile-section">
+      <h2 class="profile-section-title">Availability / Absences</h2>
+      <p class="section-hint">Add dates when the player will be unavailable (vacations, conflicts, etc.)</p>
+
+      <form method="POST" action="/profile/<%= player.id %>/event" class="event-form">
+        <input type="hidden" name="phone" value="<%= phone %>">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Type</label>
+            <select name="event_type" class="form-input">
+              <option value="vacation">Vacation</option>
+              <option value="practice_conflict">Practice Conflict</option>
+              <option value="game_conflict">Game Conflict</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Start Date *</label>
+            <input type="date" name="start_date" required class="form-input">
+          </div>
+          <div class="form-group">
+            <label>End Date</label>
+            <input type="date" name="end_date" class="form-input">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <input type="text" name="notes" class="form-input" placeholder="Optional details">
+        </div>
+        <button type="submit" class="btn btn-secondary" style="margin-top:8px;">Add Absence</button>
+      </form>
+
+      <% if (events.length > 0) { %>
+        <div class="events-list">
+          <% events.forEach(ev => { %>
+            <div class="event-item">
+              <div class="event-info">
+                <span class="event-type-badge event-type-<%= ev.event_type %>">
+                  <%= ev.event_type === 'vacation' ? 'Vacation' : ev.event_type === 'practice_conflict' ? 'Practice Conflict' : ev.event_type === 'game_conflict' ? 'Game Conflict' : 'Other' %>
+                </span>
+                <span class="event-dates">
+                  <%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %> &ndash; <%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %>
+                </span>
+                <% if (ev.notes) { %><span class="event-notes"><%= ev.notes %></span><% } %>
+              </div>
+              <form method="POST" action="/profile/<%= player.id %>/event/delete" style="margin:0;">
+                <input type="hidden" name="phone" value="<%= phone %>">
+                <input type="hidden" name="event_id" value="<%= ev.id %>">
+                <button type="submit" class="btn-sm btn-sm-remove" title="Remove">&times;</button>
+              </form>
+            </div>
+          <% }); %>
+        </div>
+      <% } else { %>
+        <p style="color:#6b7280; margin-top:16px; font-size:14px;">No absences reported yet.</p>
+      <% } %>
+    </div>
 
       <script>
       function addContact() {
@@ -166,7 +226,6 @@
         list.appendChild(div);
       }
       </script>
-    </form>
   </main>
 
   <footer>
