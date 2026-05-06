@@ -891,6 +891,10 @@ main { flex: 1; padding-bottom: 40px; }
 .staff-events { margin-top: 10px; }
 .staff-event-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 
+/* Admin player links */
+.admin-player-link { color: var(--navy); text-decoration: none; border-bottom: 1px dashed var(--gray-300); }
+.admin-player-link:hover { color: var(--red); border-bottom-color: var(--red); }
+
 /* Admin event pills */
 .admin-event-pill {
   display: inline-block;

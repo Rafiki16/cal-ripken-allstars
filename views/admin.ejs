@@ -115,7 +115,7 @@
             <tbody>
               <% players.filter(p => p.age == ageGroup).forEach(player => { %>
                 <tr>
-                  <td class="td-bold"><%= player.player_name %></td>
+                  <td class="td-bold"><a href="/profile/<%= player.id %>?key=<%= key %>" class="admin-player-link"><%= player.player_name %></a></td>
                   <td><%= player.team %></td>
                   <td><%= player.parent_name %></td>
                   <td class="td-mono"><%= player.parent_phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></td>

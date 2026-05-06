@@ -90,10 +90,13 @@ const RATING_FIELDS = [
 
 app.get('/profile/:id', async (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
-  if (phone.length !== 10) return res.redirect('/verify');
+  const adminKey = req.query.key || '';
+  const isAdmin = adminKey === ADMIN_PASS;
+
+  if (!isAdmin && phone.length !== 10) return res.redirect('/verify');
 
   const player = await db.getPlayer(Number(req.params.id));
-  if (!player || player.parent_phone !== phone) {
+  if (!player || (!isAdmin && player.parent_phone !== phone)) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized. You can only edit your own child\'s profile.',
@@ -102,13 +105,16 @@ app.get('/profile/:id', async (req, res) => {
   }
 
   const events = await db.getPlayerEvents(player.id);
-  res.render('profile', { player, phone, POSITIONS, RATING_FIELDS, events, error: null, success: null });
+  res.render('profile', { player, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events, error: null, success: null });
 });
 
 app.post('/profile/:id', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
+  const adminKey = req.body.adminKey || '';
+  const isAdmin = adminKey === ADMIN_PASS;
+
   const player = await db.getPlayer(Number(req.params.id));
-  if (!player || player.parent_phone !== phone) {
+  if (!player || (!isAdmin && player.parent_phone !== phone)) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized. You can only edit your own child\'s profile.',
@@ -154,7 +160,7 @@ app.post('/profile/:id', async (req, res) => {
   const updated = await db.getPlayer(Number(req.params.id));
   const events = await db.getPlayerEvents(updated.id);
   res.render('profile', {
-    player: updated, phone, POSITIONS, RATING_FIELDS, events,
+    player: updated, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events,
     error: null,
     success: `${player.player_name}'s profile has been saved.`
   });
@@ -162,8 +168,11 @@ app.post('/profile/:id', async (req, res) => {
 
 app.post('/profile/:id/event', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
+  const adminKey = req.body.adminKey || '';
+  const isAdmin = adminKey === ADMIN_PASS;
+
   const player = await db.getPlayer(Number(req.params.id));
-  if (!player || player.parent_phone !== phone) {
+  if (!player || (!isAdmin && player.parent_phone !== phone)) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized.',
@@ -175,7 +184,7 @@ app.post('/profile/:id/event', async (req, res) => {
   if (!start_date) {
     const events = await db.getPlayerEvents(player.id);
     return res.render('profile', {
-      player, phone, POSITIONS, RATING_FIELDS, events,
+      player, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events,
       error: 'Start date is required.',
       success: null
     });
@@ -191,7 +200,7 @@ app.post('/profile/:id/event', async (req, res) => {
 
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
-    player, phone, POSITIONS, RATING_FIELDS, events,
+    player, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events,
     error: null,
     success: 'Availability event added.'
   });
@@ -199,8 +208,11 @@ app.post('/profile/:id/event', async (req, res) => {
 
 app.post('/profile/:id/event/delete', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
+  const adminKey = req.body.adminKey || '';
+  const isAdmin = adminKey === ADMIN_PASS;
+
   const player = await db.getPlayer(Number(req.params.id));
-  if (!player || player.parent_phone !== phone) {
+  if (!player || (!isAdmin && player.parent_phone !== phone)) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized.',
@@ -211,7 +223,7 @@ app.post('/profile/:id/event/delete', async (req, res) => {
   await db.removeEvent(Number(req.body.event_id));
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
-    player, phone, POSITIONS, RATING_FIELDS, events,
+    player, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events,
     error: null,
     success: 'Event removed.'
   });
