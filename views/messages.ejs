@@ -35,8 +35,10 @@
         <form method="POST" action="/messages">
           <textarea name="message" placeholder="Write a message to the team..." required></textarea>
           <div class="msg-compose-row">
-            <% if (!isAdmin) { %>
+            <% if (!isAdmin && !parentUser) { %>
               <input type="tel" name="phone" class="form-input" placeholder="Your phone #" value="<%= phone %>" style="max-width:200px;" required>
+            <% } else if (parentUser && !isAdmin) { %>
+              <span style="font-size:13px;color:#6b7280;">Posting as <strong><%= parentUser.display_name %></strong></span>
             <% } %>
             <button type="submit" class="btn btn-confirm">Post Message</button>
           </div>

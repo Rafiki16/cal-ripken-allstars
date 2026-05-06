@@ -21,9 +21,17 @@
 
   <main class="container">
     <div class="cta-section">
-      <a href="/verify" class="btn btn-primary btn-large">Confirm Your Player</a>
-      <a href="/messages" class="btn btn-secondary btn-large" style="margin-left:12px;">Team Board</a>
-      <p class="cta-hint">Parents: verify your child's participation using your registered phone number</p>
+      <% if (parentUser) { %>
+        <p class="cta-greeting">Hi, <strong><%= parentUser.display_name %></strong>!</p>
+        <a href="/verify" class="btn btn-primary btn-large">My Players</a>
+        <a href="/messages" class="btn btn-secondary btn-large" style="margin-left:12px;">Team Board</a>
+        <a href="/parent/logout" class="btn btn-secondary btn-large" style="margin-left:12px;">Log Out</a>
+      <% } else { %>
+        <a href="/verify" class="btn btn-primary btn-large">Confirm Your Player</a>
+        <a href="/messages" class="btn btn-secondary btn-large" style="margin-left:12px;">Team Board</a>
+        <a href="/parent/login" class="btn btn-secondary btn-large" style="margin-left:12px;">Parent Login</a>
+        <p class="cta-hint">Parents: verify your child's participation using your registered phone number</p>
+      <% } %>
     </div>
 
     <h2 class="section-title">Roster</h2>
@@ -96,6 +104,7 @@
         carpool_info: e.carpool_info,
       }))) %>;
 
+      const PARENT_PHONE = '<%= parentUser ? parentUser.phone : '' %>';
       const TYPE_LABELS = { practice: 'Practice', game: 'Game', tournament: 'Tournament', other: 'Event' };
       const TYPE_COLORS = { practice: '#16a34a', game: '#111827', tournament: '#2563eb', other: '#6b7280' };
 
@@ -185,7 +194,7 @@
           html += '</a>';
           html += '<div class="te-rsvp-area">';
           html += '<div class="te-rsvp-label">RSVP</div>';
-          html += '<input type="tel" class="te-rsvp-phone" id="rsvp-phone-' + ev.id + '" placeholder="Your phone #" maxlength="14">';
+          if (!PARENT_PHONE) html += '<input type="tel" class="te-rsvp-phone" id="rsvp-phone-' + ev.id + '" placeholder="Your phone #" maxlength="14">';
           html += '<div class="te-rsvp-choices">';
           html += '<button class="te-rsvp-choice te-rsvp-yes" onclick="submitRsvp(' + ev.id + ',\'yes\')">Yes</button>';
           html += '<button class="te-rsvp-choice te-rsvp-maybe" onclick="submitRsvp(' + ev.id + ',\'maybe\')">Maybe</button>';
@@ -221,12 +230,12 @@
 
       function submitRsvp(eventId, status) {
         const phoneInput = document.getElementById('rsvp-phone-' + eventId);
-        const phone = phoneInput.value.replace(/\D/g, '');
+        const phone = PARENT_PHONE || (phoneInput ? phoneInput.value.replace(/\D/g, '') : '');
         const msgEl = document.getElementById('rsvp-msg-' + eventId);
         if (phone.length < 10) {
           msgEl.textContent = 'Enter your 10-digit phone number';
           msgEl.className = 'te-rsvp-msg te-rsvp-msg-err';
-          phoneInput.focus();
+          if (phoneInput) phoneInput.focus();
           return;
         }
         const body = new URLSearchParams({ phone: phone, status: status });

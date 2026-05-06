@@ -194,6 +194,16 @@ async function init() {
     `);
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS parent_accounts (
+        id SERIAL PRIMARY KEY,
+        phone TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS team_messages (
         id SERIAL PRIMARY KEY,
         author_name TEXT NOT NULL,
@@ -319,6 +329,8 @@ async function init() {
         [eventId, playerId, type, channel, value]
       ),
       updateJerseyNumber: async (id, number) => pool.query('UPDATE players SET jersey_number = $1 WHERE id = $2', [number, id]),
+      getParentAccountByPhone: async (phone) => (await pool.query('SELECT * FROM parent_accounts WHERE phone = $1', [phone])).rows[0] || null,
+      createParentAccount: async (phone, displayName, passwordHash) => pool.query('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES ($1, $2, $3)', [phone, displayName, passwordHash]),
       getAllMessages: async () => (await pool.query('SELECT * FROM team_messages ORDER BY pinned DESC, created_at DESC')).rows,
       addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message) VALUES ($1,$2,$3)', [m.author_name, m.author_type, m.message]),
       removeMessage: async (id) => pool.query('DELETE FROM team_messages WHERE id = $1', [id]),
@@ -479,6 +491,16 @@ async function init() {
     `);
 
     sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS parent_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS team_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         author_name TEXT NOT NULL,
@@ -606,6 +628,8 @@ async function init() {
         sqliteDb.prepare('INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES (?,?,?,?,?)').run(eventId, playerId, type, channel, value);
       },
       updateJerseyNumber: async (id, number) => sqliteDb.prepare('UPDATE players SET jersey_number = ? WHERE id = ?').run(number, id),
+      getParentAccountByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE phone = ?').get(phone) || null,
+      createParentAccount: async (phone, displayName, passwordHash) => sqliteDb.prepare('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES (?, ?, ?)').run(phone, displayName, passwordHash),
       getAllMessages: async () => sqliteDb.prepare('SELECT * FROM team_messages ORDER BY pinned DESC, created_at DESC').all(),
       addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message) VALUES (?,?,?)').run(m.author_name, m.author_type, m.message),
       removeMessage: async (id) => sqliteDb.prepare('DELETE FROM team_messages WHERE id = ?').run(id),
@@ -666,6 +690,8 @@ module.exports = {
   hasReminderBeenSent: (...args) => impl.hasReminderBeenSent(...args),
   logReminder: (...args) => impl.logReminder(...args),
   updateJerseyNumber: (...args) => impl.updateJerseyNumber(...args),
+  getParentAccountByPhone: (...args) => impl.getParentAccountByPhone(...args),
+  createParentAccount: (...args) => impl.createParentAccount(...args),
   getAllMessages: (...args) => impl.getAllMessages(...args),
   addMessage: (...args) => impl.addMessage(...args),
   removeMessage: (...args) => impl.removeMessage(...args),

@@ -50,6 +50,54 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
   } catch (e) { console.log('Twilio not available:', e.message); }
 }
 
+const PARENT_AUTH_SECRET = process.env.SESSION_SECRET || 'allstars-parent-2026';
+
+function createParentToken(phone) {
+  const sig = crypto.createHmac('sha256', PARENT_AUTH_SECRET).update(phone).digest('hex').slice(0, 16);
+  return phone + '.' + sig;
+}
+
+function verifyParentToken(token) {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [phone, sig] = parts;
+  const expected = crypto.createHmac('sha256', PARENT_AUTH_SECRET).update(phone).digest('hex').slice(0, 16);
+  if (sig !== expected) return null;
+  return phone;
+}
+
+function getParentTokenFromReq(req) {
+  const header = req.headers.cookie || '';
+  const match = header.match(/parent_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function setParentCookie(res, phone) {
+  res.cookie('parent_token', createParentToken(phone), {
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production' && process.env.BASE_URL?.startsWith('https'),
+    sameSite: 'lax',
+  });
+}
+
+function clearParentCookie(res) {
+  res.clearCookie('parent_token');
+}
+
+app.use(async (req, res, next) => {
+  const token = getParentTokenFromReq(req);
+  const phone = verifyParentToken(token);
+  if (phone) {
+    const account = await db.getParentAccountByPhone(phone);
+    if (account) {
+      req.parentUser = account;
+    }
+  }
+  next();
+});
+
 const RSVP_SECRET = process.env.RSVP_SECRET || process.env.SESSION_SECRET || 'allstars-rsvp-2026';
 
 function generateRsvpToken(eventId, playerId) {
@@ -203,7 +251,7 @@ async function sendConfirmationEmail(player, email) {
 app.get('/', async (req, res) => {
   const players = await db.getAllPlayers();
   const teamEvents = await db.getAllTeamEvents();
-  res.render('index', { players, teamEvents });
+  res.render('index', { players, teamEvents, parentUser: req.parentUser || null });
 });
 
 app.get('/event/:id', async (req, res) => {
@@ -228,7 +276,7 @@ app.get('/event/:id', async (req, res) => {
     lineup = await db.getLineupForEvent(event.id);
     lineupGrid = await db.getLineupGrid(event.id, null);
   }
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'] });
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -261,7 +309,7 @@ app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
 app.post('/event/:id/rsvp', async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
-  const phone = normalizePhone(req.body.phone || '');
+  const phone = req.parentUser ? req.parentUser.phone : normalizePhone(req.body.phone || '');
   if (phone.length !== 10) return res.redirect('/event/' + event.id);
   const players = await db.getPlayersByPhone(phone);
   const confirmed = players.filter(p => p.status === 'confirmed');
@@ -303,15 +351,19 @@ app.get('/api/location-search', async (req, res) => {
   }
 });
 
-app.get('/verify', (req, res) => {
-  res.render('verify', { players: null, phone: '', error: null, success: null });
+app.get('/verify', async (req, res) => {
+  if (req.parentUser) {
+    const players = await db.getPlayersByPhone(req.parentUser.phone);
+    return res.render('verify', { players: players.length > 0 ? players : null, phone: req.parentUser.phone, error: null, success: null, parentUser: req.parentUser, hasAccount: true });
+  }
+  res.render('verify', { players: null, phone: '', error: null, success: null, parentUser: null, hasAccount: false });
 });
 
 app.post('/verify', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
   if (phone.length !== 10) {
     return res.render('verify', {
-      players: null, phone: req.body.phone || '', error: 'Please enter a valid 10-digit phone number.', success: null
+      players: null, phone: req.body.phone || '', error: 'Please enter a valid 10-digit phone number.', success: null, parentUser: req.parentUser || null, hasAccount: false
     });
   }
 
@@ -320,11 +372,12 @@ app.post('/verify', async (req, res) => {
     return res.render('verify', {
       players: null, phone: req.body.phone || '',
       error: 'No players found for that phone number. Please use the number your league has on file.',
-      success: null
+      success: null, parentUser: req.parentUser || null, hasAccount: false
     });
   }
 
-  res.render('verify', { players, phone, error: null, success: null });
+  const hasAccount = !!(await db.getParentAccountByPhone(phone));
+  res.render('verify', { players, phone, error: null, success: null, parentUser: req.parentUser || null, hasAccount });
 });
 
 app.post('/respond', async (req, res) => {
@@ -340,7 +393,7 @@ app.post('/respond', async (req, res) => {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized. You can only update your own child\'s status.',
-      success: null
+      success: null, parentUser: req.parentUser || null, hasAccount: false
     });
   }
 
@@ -348,11 +401,65 @@ app.post('/respond', async (req, res) => {
 
   const players = await db.getPlayersByPhone(normalized);
   const action = status === 'confirmed' ? 'confirmed' : 'declined';
+  const hasAccount = !!(await db.getParentAccountByPhone(normalized));
   res.render('verify', {
     players, phone: normalized,
     error: null,
-    success: `${player.player_name} has been ${action} for the All-Star team. You can change this anytime.`
+    success: `${player.player_name} has been ${action} for the All-Star team. You can change this anytime.`,
+    parentUser: req.parentUser || null, hasAccount
   });
+});
+
+// --- Parent Account Routes ---
+
+app.post('/parent/register', async (req, res) => {
+  const phone = normalizePhone(req.body.phone || '');
+  const { password, confirm_password } = req.body;
+  const players = await db.getPlayersByPhone(phone);
+  if (players.length === 0) return res.redirect('/verify');
+
+  const existing = await db.getParentAccountByPhone(phone);
+  if (existing) {
+    const hasAccount = true;
+    return res.render('verify', { players, phone, error: 'An account already exists for this phone number. Use the login page.', success: null, parentUser: req.parentUser || null, hasAccount });
+  }
+
+  if (!password || password.length < 6) {
+    return res.render('verify', { players, phone, error: 'Password must be at least 6 characters.', success: null, parentUser: req.parentUser || null, hasAccount: false });
+  }
+  if (password !== confirm_password) {
+    return res.render('verify', { players, phone, error: 'Passwords do not match.', success: null, parentUser: req.parentUser || null, hasAccount: false });
+  }
+
+  const displayName = players[0].parent_name;
+  const hash = bcrypt.hashSync(password, 10);
+  await db.createParentAccount(phone, displayName, hash);
+  setParentCookie(res, phone);
+  res.redirect('/?welcome=1');
+});
+
+app.get('/parent/login', (req, res) => {
+  if (req.parentUser) return res.redirect('/verify');
+  res.render('parent-login', { error: null });
+});
+
+app.post('/parent/login', async (req, res) => {
+  const phone = normalizePhone(req.body.phone || '');
+  const { password } = req.body;
+  if (phone.length !== 10) {
+    return res.render('parent-login', { error: 'Please enter a valid 10-digit phone number.' });
+  }
+  const account = await db.getParentAccountByPhone(phone);
+  if (!account || !bcrypt.compareSync(password || '', account.password_hash)) {
+    return res.render('parent-login', { error: 'Invalid phone number or password.' });
+  }
+  setParentCookie(res, phone);
+  res.redirect('/');
+});
+
+app.get('/parent/logout', (req, res) => {
+  clearParentCookie(res);
+  res.redirect('/');
 });
 
 // --- Profile Routes ---
@@ -972,33 +1079,36 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
 app.get('/messages', async (req, res) => {
   const messages = await db.getAllMessages();
   const isAdmin = !!req.session.admin;
-  res.render('messages', { messages, isAdmin, error: null, success: null, phone: '' });
+  res.render('messages', { messages, isAdmin, error: null, success: null, phone: '', parentUser: req.parentUser || null });
 });
 
 app.post('/messages', async (req, res) => {
   const isAdmin = !!req.session.admin;
-  const phone = normalizePhone(req.body.phone || '');
   const message = (req.body.message || '').trim();
 
   if (!message) {
     const messages = await db.getAllMessages();
-    return res.render('messages', { messages, isAdmin, error: 'Message cannot be empty.', success: null, phone: req.body.phone || '' });
+    return res.render('messages', { messages, isAdmin, error: 'Message cannot be empty.', success: null, phone: req.body.phone || '', parentUser: req.parentUser || null });
   }
 
   let authorName, authorType;
   if (isAdmin) {
     authorName = req.session.admin.username;
     authorType = 'admin';
+  } else if (req.parentUser) {
+    authorName = req.parentUser.display_name;
+    authorType = 'parent';
   } else {
+    const phone = normalizePhone(req.body.phone || '');
     if (phone.length !== 10) {
       const messages = await db.getAllMessages();
-      return res.render('messages', { messages, isAdmin, error: 'Enter your 10-digit phone number to post.', success: null, phone: req.body.phone || '' });
+      return res.render('messages', { messages, isAdmin, error: 'Enter your 10-digit phone number to post.', success: null, phone: req.body.phone || '', parentUser: null });
     }
     const players = await db.getPlayersByPhone(phone);
     const staff = await db.getStaffByPhone(phone);
     if (players.length === 0 && !staff) {
       const messages = await db.getAllMessages();
-      return res.render('messages', { messages, isAdmin, error: 'Phone number not recognized. Use the number on file.', success: null, phone: req.body.phone || '' });
+      return res.render('messages', { messages, isAdmin, error: 'Phone number not recognized. Use the number on file.', success: null, phone: req.body.phone || '', parentUser: null });
     }
     if (staff) {
       authorName = staff.name;

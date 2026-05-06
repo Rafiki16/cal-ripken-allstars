@@ -118,8 +118,35 @@
         </div>
       <% }); %>
 
+      <% if (!hasAccount) { %>
+      <div class="verify-box" style="margin-top:24px;">
+        <h2>Create an Account</h2>
+        <p>Save your login so you don't have to enter your phone number every time. Your device will remember you for 30 days.</p>
+        <form method="POST" action="/parent/register">
+          <input type="hidden" name="phone" value="<%= phone %>">
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" name="password" required class="form-input" placeholder="At least 6 characters" minlength="6">
+          </div>
+          <div class="form-group">
+            <label>Confirm Password</label>
+            <input type="password" name="confirm_password" required class="form-input" placeholder="Re-enter password">
+          </div>
+          <button type="submit" class="btn btn-primary">Create Account</button>
+        </form>
+      </div>
+      <% } else if (!parentUser) { %>
+      <div class="verify-box" style="margin-top:24px;">
+        <p style="text-align:center;color:#6b7280;">You have an account. <a href="/parent/login" style="color:var(--navy);font-weight:600;">Log in</a> to stay signed in on this device.</p>
+      </div>
+      <% } %>
+
       <div class="verify-again">
-        <a href="/verify" class="btn btn-secondary">Look Up Another Number</a>
+        <% if (parentUser) { %>
+          <a href="/parent/logout" class="btn btn-secondary">Log Out</a>
+        <% } else { %>
+          <a href="/verify" class="btn btn-secondary">Look Up Another Number</a>
+        <% } %>
       </div>
     <% } %>
   </main>
