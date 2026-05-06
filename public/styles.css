@@ -495,6 +495,75 @@ header h1 {
   margin-top: 6px;
 }
 
+/* Staff Dashboard */
+.staff-player-card {
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.staff-player-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.staff-player-header h3 {
+  font-size: 17px;
+  color: var(--navy);
+}
+
+.staff-player-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.staff-info-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.staff-info-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.staff-positions { line-height: 1.6; }
+
+.staff-ratings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 16px;
+  margin-top: 4px;
+}
+
+.staff-rating-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+
+.staff-rating-name { color: var(--gray-500); }
+.staff-rating-value { font-weight: 700; color: var(--navy); }
+
+.staff-contacts { line-height: 1.6; }
+
+.staff-contact-row {
+  font-size: 13px;
+  padding: 2px 0;
+}
+
+/* Contact form rows */
+.contact-row {
+  margin-bottom: 8px;
+}
+
 /* Profile Form */
 .profile-form {
   max-width: 640px;

@@ -164,6 +164,61 @@
         </div>
       <% }); %>
     </div>
+    <!-- Staff Management -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Staff Members</h2>
+      <p class="section-hint">Staff can view the full roster, profiles, ratings, and contacts at <strong>/staff</strong> using their phone number. They cannot edit anything.</p>
+
+      <form method="POST" action="/admin/add-staff" class="add-player-form">
+        <input type="hidden" name="key" value="<%= key %>">
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+          <div class="form-group">
+            <label>Name *</label>
+            <input type="text" name="name" required class="form-input" placeholder="Coach name">
+          </div>
+          <div class="form-group">
+            <label>Role</label>
+            <input type="text" name="role" value="Coach" class="form-input" placeholder="Coach, Manager...">
+          </div>
+          <div class="form-group">
+            <label>Phone *</label>
+            <input type="tel" name="phone" required class="form-input" placeholder="(941) 555-1234">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-confirm">Add Staff Member</button>
+      </form>
+
+      <% if (staff.length > 0) { %>
+        <table class="admin-table" style="margin-top:20px; min-width:auto;">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Role</th>
+              <th>Phone</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% staff.forEach(s => { %>
+              <tr>
+                <td class="td-bold"><%= s.name %></td>
+                <td><%= s.role %></td>
+                <td class="td-mono"><%= s.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></td>
+                <td>
+                  <form method="POST" action="/admin/remove-staff" onsubmit="return confirm('Remove <%= s.name %>?')">
+                    <input type="hidden" name="key" value="<%= key %>">
+                    <input type="hidden" name="staff_id" value="<%= s.id %>">
+                    <button type="submit" class="btn-sm btn-sm-remove">&times;</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <p style="color:#6b7280; margin-top:16px; font-size:14px;">No staff members added yet.</p>
+      <% } %>
+    </div>
   </main>
 
   <footer>

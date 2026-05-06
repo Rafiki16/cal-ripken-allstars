@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Login &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="back-link">&larr; Back to Roster</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Staff Access</h1>
+            <p class="subtitle">Cal Ripken All-Stars</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <div class="verify-box">
+      <h2>Enter Your Phone Number</h2>
+      <p>Staff members can view the full roster details, profiles, and contact info.</p>
+      <form method="POST" action="/staff" class="phone-form">
+        <input type="tel" name="phone" placeholder="(941) 555-1234" required autofocus class="phone-input" autocomplete="tel">
+        <button type="submit" class="btn btn-primary">Log In</button>
+      </form>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

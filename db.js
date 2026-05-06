@@ -30,6 +30,7 @@ const PROFILE_COLS = [
   'catcher_skill INTEGER',
   'baseball_iq INTEGER',
   'profile_updated_at TEXT',
+  'contacts TEXT',
 ];
 
 let impl;
@@ -61,6 +62,16 @@ async function init() {
       try { await pool.query(`ALTER TABLE players ADD COLUMN ${col}`); } catch (e) { /* exists */ }
     }
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS staff (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'Coach',
+        phone TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -81,12 +92,12 @@ async function init() {
           UPDATE players SET birthdate=$1, best_positions=$2, favorite_positions=$3,
             arm_strength=$4, throwing_accuracy=$5, contact_hitting=$6, power_hitting=$7,
             pitching=$8, infield_defense=$9, outfield_defense=$10, catcher_skill=$11,
-            baseball_iq=$12, profile_updated_at=NOW()
-          WHERE id=$13`,
+            baseball_iq=$12, contacts=$13, profile_updated_at=NOW()
+          WHERE id=$14`,
           [data.birthdate, data.best_positions, data.favorite_positions,
            data.arm_strength, data.throwing_accuracy, data.contact_hitting, data.power_hitting,
            data.pitching, data.infield_defense, data.outfield_defense, data.catcher_skill,
-           data.baseball_iq, id]
+           data.baseball_iq, data.contacts, id]
         );
       },
       addPlayer: async (p) => {
@@ -96,6 +107,10 @@ async function init() {
         );
       },
       removePlayer: async (id) => pool.query('DELETE FROM players WHERE id = $1', [id]),
+      getAllStaff: async () => (await pool.query('SELECT * FROM staff ORDER BY name')).rows,
+      getStaffByPhone: async (phone) => (await pool.query('SELECT * FROM staff WHERE phone = $1', [phone])).rows[0] || null,
+      addStaff: async (s) => pool.query('INSERT INTO staff (name, role, phone) VALUES ($1,$2,$3)', [s.name, s.role, s.phone]),
+      removeStaff: async (id) => pool.query('DELETE FROM staff WHERE id = $1', [id]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -122,6 +137,16 @@ async function init() {
       try { sqliteDb.exec(`ALTER TABLE players ADD COLUMN ${col}`); } catch (e) { /* exists */ }
     }
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS staff (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'Coach',
+        phone TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -139,13 +164,13 @@ async function init() {
           UPDATE players SET birthdate=?, best_positions=?, favorite_positions=?,
             arm_strength=?, throwing_accuracy=?, contact_hitting=?, power_hitting=?,
             pitching=?, infield_defense=?, outfield_defense=?, catcher_skill=?,
-            baseball_iq=?, profile_updated_at=?
+            baseball_iq=?, contacts=?, profile_updated_at=?
           WHERE id=?`
         ).run(
           data.birthdate, data.best_positions, data.favorite_positions,
           data.arm_strength, data.throwing_accuracy, data.contact_hitting, data.power_hitting,
           data.pitching, data.infield_defense, data.outfield_defense, data.catcher_skill,
-          data.baseball_iq, new Date().toISOString(), id
+          data.baseball_iq, data.contacts, new Date().toISOString(), id
         );
       },
       addPlayer: async (p) => {
@@ -153,6 +178,10 @@ async function init() {
           .run(p.player_name, p.division, p.team, p.age, p.parent_name, p.parent_phone);
       },
       removePlayer: async (id) => sqliteDb.prepare('DELETE FROM players WHERE id = ?').run(id),
+      getAllStaff: async () => sqliteDb.prepare('SELECT * FROM staff ORDER BY name').all(),
+      getStaffByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM staff WHERE phone = ?').get(phone) || null,
+      addStaff: async (s) => sqliteDb.prepare('INSERT INTO staff (name, role, phone) VALUES (?,?,?)').run(s.name, s.role, s.phone),
+      removeStaff: async (id) => sqliteDb.prepare('DELETE FROM staff WHERE id = ?').run(id),
     };
   }
 }
@@ -166,4 +195,8 @@ module.exports = {
   updateProfile: (...args) => impl.updateProfile(...args),
   addPlayer: (...args) => impl.addPlayer(...args),
   removePlayer: (...args) => impl.removePlayer(...args),
+  getAllStaff: (...args) => impl.getAllStaff(...args),
+  getStaffByPhone: (...args) => impl.getStaffByPhone(...args),
+  addStaff: (...args) => impl.addStaff(...args),
+  removeStaff: (...args) => impl.removeStaff(...args),
 };

@@ -118,6 +118,22 @@ app.post('/profile/:id', async (req, res) => {
   const toInt = (v) => { const n = parseInt(v); return (n >= 1 && n <= 5) ? n : null; };
   const toList = (v) => Array.isArray(v) ? v.filter(p => POSITIONS.includes(p)).join(',') : '';
 
+  const contacts = [];
+  const cNames = Array.isArray(req.body.contact_name) ? req.body.contact_name : [req.body.contact_name].filter(Boolean);
+  const cEmails = Array.isArray(req.body.contact_email) ? req.body.contact_email : [req.body.contact_email].filter(Boolean);
+  const cPhones = Array.isArray(req.body.contact_phone) ? req.body.contact_phone : [req.body.contact_phone].filter(Boolean);
+  const cRelations = Array.isArray(req.body.contact_relation) ? req.body.contact_relation : [req.body.contact_relation].filter(Boolean);
+  for (let i = 0; i < cNames.length; i++) {
+    if (cNames[i] && cNames[i].trim()) {
+      contacts.push({
+        name: cNames[i].trim(),
+        email: (cEmails[i] || '').trim(),
+        phone: normalizePhone(cPhones[i] || ''),
+        relation: (cRelations[i] || '').trim(),
+      });
+    }
+  }
+
   await db.updateProfile(Number(req.params.id), {
     birthdate: req.body.birthdate || null,
     best_positions: toList(req.body.best_positions),
@@ -131,6 +147,7 @@ app.post('/profile/:id', async (req, res) => {
     outfield_defense: toInt(req.body.outfield_defense),
     catcher_skill: toInt(req.body.catcher_skill),
     baseball_iq: toInt(req.body.baseball_iq),
+    contacts: JSON.stringify(contacts),
   });
 
   const updated = await db.getPlayer(Number(req.params.id));
@@ -151,10 +168,11 @@ function requireAdmin(req, res, next) {
 
 app.get('/admin', requireAdmin, async (req, res) => {
   const players = await db.getAllPlayers();
+  const staff = await db.getAllStaff();
   const confirmed = players.filter(p => p.status === 'confirmed').length;
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
-  res.render('admin', { players, confirmed, declined, pending, total: players.length, key: ADMIN_PASS, success: req.query.success || null, error: req.query.error || null });
+  res.render('admin', { players, staff, confirmed, declined, pending, total: players.length, key: ADMIN_PASS, success: req.query.success || null, error: req.query.error || null });
 });
 
 app.post('/admin/login', (req, res) => {
@@ -202,6 +220,47 @@ app.post('/admin/remove-player', requireAdmin, async (req, res) => {
   } else {
     res.redirect('/admin?key=' + ADMIN_PASS + '&error=Player+not+found');
   }
+});
+
+app.post('/admin/add-staff', requireAdmin, async (req, res) => {
+  const { name, role, phone } = req.body;
+  const normalized = normalizePhone(phone || '');
+  if (!name || !name.trim() || normalized.length !== 10) {
+    return res.redirect('/admin?key=' + ADMIN_PASS + '&error=' + encodeURIComponent('Staff name and valid phone required.'));
+  }
+  await db.addStaff({ name: name.trim(), role: (role || 'Coach').trim(), phone: normalized });
+  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${name.trim()} added as staff`));
+});
+
+app.post('/admin/remove-staff', requireAdmin, async (req, res) => {
+  await db.removeStaff(Number(req.body.staff_id));
+  res.redirect('/admin?key=' + ADMIN_PASS + '&success=Staff+member+removed');
+});
+
+// --- Staff View (read-only) ---
+app.get('/staff', (req, res) => {
+  res.render('staff-login', { error: null });
+});
+
+app.post('/staff', async (req, res) => {
+  const phone = normalizePhone(req.body.phone || '');
+  const staff = await db.getStaffByPhone(phone);
+  if (!staff) {
+    return res.render('staff-login', { error: 'Phone number not recognized as staff.' });
+  }
+  res.redirect('/staff/dashboard?phone=' + phone);
+});
+
+app.get('/staff/dashboard', async (req, res) => {
+  const phone = normalizePhone(req.query.phone || '');
+  const staff = await db.getStaffByPhone(phone);
+  if (!staff) return res.redirect('/staff');
+
+  const players = await db.getAllPlayers();
+  const confirmed = players.filter(p => p.status === 'confirmed').length;
+  const declined = players.filter(p => p.status === 'declined').length;
+  const pending = players.filter(p => p.status === 'pending').length;
+  res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS });
 });
 
 app.get('/api/stats', async (req, res) => {

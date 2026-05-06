@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff View &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="back-link">&larr; Back to Roster</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Staff Dashboard</h1>
+            <p class="subtitle"><%= staff.name %> &middot; <%= staff.role %></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="stats-bar">
+      <div class="stat">
+        <span class="stat-number"><%= total %></span>
+        <span class="stat-label">Players</span>
+      </div>
+      <div class="stat stat-confirmed">
+        <span class="stat-number"><%= confirmed %></span>
+        <span class="stat-label">Confirmed</span>
+      </div>
+      <div class="stat stat-declined">
+        <span class="stat-number"><%= declined %></span>
+        <span class="stat-label">Declined</span>
+      </div>
+      <div class="stat stat-pending">
+        <span class="stat-number"><%= pending %></span>
+        <span class="stat-label">Pending</span>
+      </div>
+    </div>
+
+    <% ['11', '12'].forEach(ageGroup => { %>
+      <div class="admin-section">
+        <h2 class="profile-section-title"><%= ageGroup %>U Players</h2>
+
+        <% players.filter(p => p.age == ageGroup).forEach(player => { %>
+          <div class="staff-player-card">
+            <div class="staff-player-header">
+              <h3><%= player.player_name %></h3>
+              <span class="player-status-badge badge-<%= player.status %>" style="position:static;">
+                <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
+              </span>
+            </div>
+
+            <div class="staff-player-info">
+              <div class="staff-info-grid">
+                <div>
+                  <span class="detail-label">Team</span>
+                  <span class="detail-value"><%= player.team %></span>
+                </div>
+                <div>
+                  <span class="detail-label">Age</span>
+                  <span class="detail-value"><%= player.age %></span>
+                </div>
+                <% if (player.birthdate) { %>
+                <div>
+                  <span class="detail-label">DOB</span>
+                  <span class="detail-value"><%= new Date(player.birthdate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %></span>
+                </div>
+                <% } %>
+                <div>
+                  <span class="detail-label">Parent</span>
+                  <span class="detail-value"><%= player.parent_name %></span>
+                </div>
+                <div>
+                  <span class="detail-label">Phone</span>
+                  <span class="detail-value td-mono"><%= player.parent_phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></span>
+                </div>
+              </div>
+
+              <% if (player.best_positions || player.favorite_positions) { %>
+              <div class="staff-positions">
+                <% if (player.best_positions) { %>
+                  <div><span class="detail-label">Best Positions:</span> <strong><%- player.best_positions.split(',').join(', ') %></strong></div>
+                <% } %>
+                <% if (player.favorite_positions) { %>
+                  <div><span class="detail-label">Favorite Positions:</span> <strong><%- player.favorite_positions.split(',').join(', ') %></strong></div>
+                <% } %>
+              </div>
+              <% } %>
+
+              <% const hasRatings = RATING_FIELDS.some(f => player[f.key]); %>
+              <% if (hasRatings) { %>
+              <div class="staff-ratings">
+                <span class="detail-label">Skills:</span>
+                <div class="staff-ratings-grid">
+                  <% RATING_FIELDS.forEach(field => { %>
+                    <% if (player[field.key]) { %>
+                      <div class="staff-rating-item">
+                        <span class="staff-rating-name"><%= field.label %></span>
+                        <span class="staff-rating-value"><%= player[field.key] %>/5</span>
+                      </div>
+                    <% } %>
+                  <% }); %>
+                </div>
+              </div>
+              <% } %>
+
+              <% const contacts = player.contacts ? JSON.parse(player.contacts) : []; %>
+              <% if (contacts.length > 0 && contacts[0].name) { %>
+              <div class="staff-contacts">
+                <span class="detail-label">Contacts / GameChanger:</span>
+                <% contacts.forEach(c => { %>
+                  <% if (c.name) { %>
+                  <div class="staff-contact-row">
+                    <strong><%= c.name %></strong><% if (c.relation) { %> (<%= c.relation %>)<% } %>
+                    <% if (c.email) { %> &middot; <%= c.email %><% } %>
+                    <% if (c.phone && c.phone.length === 10) { %> &middot; <%= c.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %><% } %>
+                  </div>
+                  <% } %>
+                <% }); %>
+              </div>
+              <% } %>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    <% }); %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division &middot; Staff View (Read Only)</p>
+    </div>
+  </footer>
+</body>
+</html>
