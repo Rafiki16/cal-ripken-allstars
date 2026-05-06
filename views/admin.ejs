@@ -228,14 +228,22 @@
             <input type="time" name="end_time" class="form-input">
           </div>
         </div>
+        <div class="form-group">
+          <label>Search Location</label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="add-loc-search" class="form-input" placeholder="Type a place name, e.g. Twin Lakes Park Sarasota" style="flex:1;">
+            <button type="button" class="btn btn-secondary" onclick="searchLocation('add')" style="white-space:nowrap;">Search</button>
+          </div>
+          <div id="add-loc-results" class="loc-results"></div>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label>Location Name</label>
-            <input type="text" name="location_name" class="form-input" placeholder="e.g. Twin Lakes Park">
+            <input type="text" name="location_name" id="add-loc-name" class="form-input" placeholder="Filled by search or type manually">
           </div>
           <div class="form-group">
             <label>Address</label>
-            <input type="text" name="address" class="form-input" placeholder="Full address for map">
+            <input type="text" name="address" id="add-loc-address" class="form-input" placeholder="Filled by search or type manually">
           </div>
         </div>
         <div class="form-group">
@@ -336,6 +344,14 @@
               <input type="time" name="end_time" id="edit-te-end-time" class="form-input">
             </div>
           </div>
+          <div class="form-group">
+            <label>Search Location</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="edit-loc-search" class="form-input" placeholder="Type a place name to search" style="flex:1;">
+              <button type="button" class="btn btn-secondary" onclick="searchLocation('edit')" style="white-space:nowrap;">Search</button>
+            </div>
+            <div id="edit-loc-results" class="loc-results"></div>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label>Location Name</label>
@@ -369,6 +385,64 @@
     </div>
 
     <script>
+      function searchLocation(mode) {
+        var inputId = mode === 'edit' ? 'edit-loc-search' : 'add-loc-search';
+        var resultsId = mode === 'edit' ? 'edit-loc-results' : 'add-loc-results';
+        var q = document.getElementById(inputId).value.trim();
+        if (!q) return;
+        var resultsEl = document.getElementById(resultsId);
+        resultsEl.innerHTML = '<div class="loc-loading">Searching...</div>';
+        resultsEl.style.display = 'block';
+        fetch('/api/location-search?q=' + encodeURIComponent(q))
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (!data.length) {
+              resultsEl.innerHTML = '<div class="loc-loading">No results found. Try adding a city or state.</div>';
+              return;
+            }
+            var html = '';
+            data.forEach(function(r, i) {
+              html += '<div class="loc-result-item" data-idx="' + i + '" data-mode="' + mode + '">';
+              html += '<div class="loc-result-name">' + r.name + '</div>';
+              html += '<div class="loc-result-addr">' + r.address + '</div>';
+              html += '</div>';
+            });
+            resultsEl._data = data;
+            resultsEl.innerHTML = html;
+          })
+          .catch(function() {
+            resultsEl.innerHTML = '<div class="loc-loading">Search failed. Try again.</div>';
+          });
+      }
+
+      document.addEventListener('click', function(e) {
+        var item = e.target.closest('.loc-result-item');
+        if (!item) return;
+        var mode = item.dataset.mode;
+        var idx = parseInt(item.dataset.idx);
+        var resultsEl = document.getElementById(mode + '-loc-results');
+        var r = resultsEl._data[idx];
+        if (mode === 'edit') {
+          document.getElementById('edit-te-location').value = r.name;
+          document.getElementById('edit-te-address').value = r.address;
+          document.getElementById('edit-loc-search').value = '';
+        } else {
+          document.getElementById('add-loc-name').value = r.name;
+          document.getElementById('add-loc-address').value = r.address;
+          document.getElementById('add-loc-search').value = '';
+        }
+        resultsEl.style.display = 'none';
+      });
+
+      document.querySelectorAll('[id$="-loc-search"]').forEach(function(el) {
+        el.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            searchLocation(el.id.startsWith('edit') ? 'edit' : 'add');
+          }
+        });
+      });
+
       function toggleTournamentFields(type, mode) {
         const id = mode === 'edit' ? 'edit-tournament-fields' : 'add-tournament-fields';
         document.getElementById(id).style.display = type === 'tournament' ? 'block' : 'none';

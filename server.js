@@ -86,6 +86,35 @@ app.get('/event/:id', async (req, res) => {
   res.render('event-detail', { event });
 });
 
+app.get('/api/location-search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json([]);
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1&countrycodes=us`;
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'CalRipkenAllStars/1.0 (matt@mt26.com)' }
+    });
+    const data = await resp.json();
+    res.json(data.map(r => {
+      const a = r.address || {};
+      const name = a.leisure || a.amenity || a.building || a.tourism || r.name || r.display_name.split(',')[0];
+      const parts = [];
+      if (a.house_number && a.road) parts.push(a.house_number + ' ' + a.road);
+      else if (a.road) parts.push(a.road);
+      else if (a.house_number) parts.push(a.house_number);
+      const city = a.city || a.town || a.village || a.hamlet || '';
+      if (city) parts.push(city);
+      if (a.state) parts.push(a.state);
+      if (a.postcode) parts.push(a.postcode);
+      const address = parts.length >= 2 ? parts.join(', ') : r.display_name;
+      return { name, address, lat: r.lat, lon: r.lon };
+    }));
+  } catch (err) {
+    console.error('Location search error:', err.message);
+    res.json([]);
+  }
+});
+
 app.get('/verify', (req, res) => {
   res.render('verify', { players: null, phone: '', error: null, success: null });
 });
