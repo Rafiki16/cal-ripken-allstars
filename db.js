@@ -73,6 +73,8 @@ async function init() {
       )
     `);
 
+    try { await pool.query('ALTER TABLE staff ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS events (
         id SERIAL PRIMARY KEY,
@@ -130,8 +132,10 @@ async function init() {
       },
       removePlayer: async (id) => pool.query('DELETE FROM players WHERE id = $1', [id]),
       getAllStaff: async () => (await pool.query('SELECT * FROM staff ORDER BY name')).rows,
+      getStaff: async (id) => (await pool.query('SELECT * FROM staff WHERE id = $1', [id])).rows[0] || null,
       getStaffByPhone: async (phone) => (await pool.query('SELECT * FROM staff WHERE phone = $1', [phone])).rows[0] || null,
-      addStaff: async (s) => pool.query('INSERT INTO staff (name, role, phone) VALUES ($1,$2,$3)', [s.name, s.role, s.phone]),
+      addStaff: async (s) => pool.query('INSERT INTO staff (name, role, phone, email) VALUES ($1,$2,$3,$4)', [s.name, s.role, s.phone, s.email || null]),
+      updateStaff: async (id, s) => pool.query('UPDATE staff SET name=$1, role=$2, phone=$3, email=$4 WHERE id=$5', [s.name, s.role, s.phone, s.email || null, id]),
       removeStaff: async (id) => pool.query('DELETE FROM staff WHERE id = $1', [id]),
       getPlayerEvents: async (playerId) => (await pool.query('SELECT * FROM events WHERE player_id = $1 ORDER BY start_date', [playerId])).rows,
       getAllEvents: async () => (await pool.query('SELECT * FROM events ORDER BY start_date')).rows,
@@ -179,6 +183,8 @@ async function init() {
         created_at TEXT DEFAULT (datetime('now'))
       )
     `);
+
+    try { sqliteDb.exec('ALTER TABLE staff ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS events (
@@ -233,8 +239,10 @@ async function init() {
       },
       removePlayer: async (id) => sqliteDb.prepare('DELETE FROM players WHERE id = ?').run(id),
       getAllStaff: async () => sqliteDb.prepare('SELECT * FROM staff ORDER BY name').all(),
+      getStaff: async (id) => sqliteDb.prepare('SELECT * FROM staff WHERE id = ?').get(id) || null,
       getStaffByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM staff WHERE phone = ?').get(phone) || null,
-      addStaff: async (s) => sqliteDb.prepare('INSERT INTO staff (name, role, phone) VALUES (?,?,?)').run(s.name, s.role, s.phone),
+      addStaff: async (s) => sqliteDb.prepare('INSERT INTO staff (name, role, phone, email) VALUES (?,?,?,?)').run(s.name, s.role, s.phone, s.email || null),
+      updateStaff: async (id, s) => sqliteDb.prepare('UPDATE staff SET name=?, role=?, phone=?, email=? WHERE id=?').run(s.name, s.role, s.phone, s.email || null, id),
       removeStaff: async (id) => sqliteDb.prepare('DELETE FROM staff WHERE id = ?').run(id),
       getPlayerEvents: async (playerId) => sqliteDb.prepare('SELECT * FROM events WHERE player_id = ? ORDER BY start_date').all(playerId),
       getAllEvents: async () => sqliteDb.prepare('SELECT * FROM events ORDER BY start_date').all(),
@@ -261,8 +269,10 @@ module.exports = {
   addPlayer: (...args) => impl.addPlayer(...args),
   removePlayer: (...args) => impl.removePlayer(...args),
   getAllStaff: (...args) => impl.getAllStaff(...args),
+  getStaff: (...args) => impl.getStaff(...args),
   getStaffByPhone: (...args) => impl.getStaffByPhone(...args),
   addStaff: (...args) => impl.addStaff(...args),
+  updateStaff: (...args) => impl.updateStaff(...args),
   removeStaff: (...args) => impl.removeStaff(...args),
   getPlayerEvents: (...args) => impl.getPlayerEvents(...args),
   getAllEvents: (...args) => impl.getAllEvents(...args),

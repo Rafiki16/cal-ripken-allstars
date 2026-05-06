@@ -111,84 +111,83 @@
     <div class="admin-section">
       <h2 class="profile-section-title">Manage Roster</h2>
 
-      <% ['11', '12'].forEach(ageGroup => { %>
-        <h3 class="age-group-title" style="margin-top:20px;"><%= ageGroup %>U</h3>
-        <div class="admin-table-wrap">
-          <table class="admin-table">
-            <thead>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Age</th>
+              <th>Team</th>
+              <th>Parent</th>
+              <th>Phone</th>
+              <th>Status</th>
+              <th>Profile</th>
+              <th>Absences</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% players.forEach(player => { %>
               <tr>
-                <th>Player</th>
-                <th>Team</th>
-                <th>Parent</th>
-                <th>Phone</th>
-                <th>Status</th>
-                <th>Profile</th>
-                <th>Absences</th>
-                <th>Actions</th>
+                <td class="td-bold"><a href="/profile/<%= player.id %>" class="admin-player-link"><%= player.player_name %></a></td>
+                <td><%= player.age %></td>
+                <td><%= player.team %></td>
+                <td><%= player.parent_name %></td>
+                <td class="td-mono"><%= player.parent_phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></td>
+                <td>
+                  <span class="player-status-badge badge-<%= player.status %>" style="position:static;">
+                    <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
+                  </span>
+                </td>
+                <td><%= player.profile_updated_at ? 'Done' : '-' %></td>
+                <td>
+                  <% const pEvents = allEvents.filter(e => e.player_id === player.id); %>
+                  <% if (pEvents.length > 0) { %>
+                    <% pEvents.forEach(ev => { %>
+                      <div class="admin-event-pill event-type-<%= ev.event_type %>">
+                        <%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %>&ndash;<%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %>
+                      </div>
+                    <% }); %>
+                  <% } else { %>-<% } %>
+                </td>
+                <td class="td-actions">
+                  <div class="admin-action-row">
+                    <% if (player.status !== 'confirmed') { %>
+                      <form method="POST" action="/admin/status">
+                        <input type="hidden" name="player_id" value="<%= player.id %>">
+                        <input type="hidden" name="status" value="confirmed">
+                        <button type="submit" class="btn-sm btn-sm-confirm" title="Mark In">IN</button>
+                      </form>
+                    <% } %>
+                    <% if (player.status !== 'declined') { %>
+                      <form method="POST" action="/admin/status">
+                        <input type="hidden" name="player_id" value="<%= player.id %>">
+                        <input type="hidden" name="status" value="declined">
+                        <button type="submit" class="btn-sm btn-sm-decline" title="Mark Out">OUT</button>
+                      </form>
+                    <% } %>
+                    <% if (player.status !== 'pending') { %>
+                      <form method="POST" action="/admin/status">
+                        <input type="hidden" name="player_id" value="<%= player.id %>">
+                        <input type="hidden" name="status" value="pending">
+                        <button type="submit" class="btn-sm btn-sm-reset" title="Reset to Pending">RESET</button>
+                      </form>
+                    <% } %>
+                    <form method="POST" action="/admin/send-email">
+                      <input type="hidden" name="player_id" value="<%= player.id %>">
+                      <button type="submit" class="btn-sm btn-sm-email" title="Send Confirmation Email">&#9993;</button>
+                    </form>
+                    <form method="POST" action="/admin/remove-player" onsubmit="return confirm('Remove <%= player.player_name %> from the roster?')">
+                      <input type="hidden" name="player_id" value="<%= player.id %>">
+                      <button type="submit" class="btn-sm btn-sm-remove" title="Remove Player">&times;</button>
+                    </form>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              <% players.filter(p => p.age == ageGroup).forEach(player => { %>
-                <tr>
-                  <td class="td-bold"><a href="/profile/<%= player.id %>" class="admin-player-link"><%= player.player_name %></a></td>
-                  <td><%= player.team %></td>
-                  <td><%= player.parent_name %></td>
-                  <td class="td-mono"><%= player.parent_phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></td>
-                  <td>
-                    <span class="player-status-badge badge-<%= player.status %>" style="position:static;">
-                      <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
-                    </span>
-                  </td>
-                  <td><%= player.profile_updated_at ? 'Done' : '-' %></td>
-                  <td>
-                    <% const pEvents = allEvents.filter(e => e.player_id === player.id); %>
-                    <% if (pEvents.length > 0) { %>
-                      <% pEvents.forEach(ev => { %>
-                        <div class="admin-event-pill event-type-<%= ev.event_type %>">
-                          <%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %>&ndash;<%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %>
-                        </div>
-                      <% }); %>
-                    <% } else { %>-<% } %>
-                  </td>
-                  <td class="td-actions">
-                    <div class="admin-action-row">
-                      <% if (player.status !== 'confirmed') { %>
-                        <form method="POST" action="/admin/status">
-                          <input type="hidden" name="player_id" value="<%= player.id %>">
-                          <input type="hidden" name="status" value="confirmed">
-                          <button type="submit" class="btn-sm btn-sm-confirm" title="Mark In">IN</button>
-                        </form>
-                      <% } %>
-                      <% if (player.status !== 'declined') { %>
-                        <form method="POST" action="/admin/status">
-                          <input type="hidden" name="player_id" value="<%= player.id %>">
-                          <input type="hidden" name="status" value="declined">
-                          <button type="submit" class="btn-sm btn-sm-decline" title="Mark Out">OUT</button>
-                        </form>
-                      <% } %>
-                      <% if (player.status !== 'pending') { %>
-                        <form method="POST" action="/admin/status">
-                          <input type="hidden" name="player_id" value="<%= player.id %>">
-                          <input type="hidden" name="status" value="pending">
-                          <button type="submit" class="btn-sm btn-sm-reset" title="Reset to Pending">RESET</button>
-                        </form>
-                      <% } %>
-                      <form method="POST" action="/admin/send-email">
-                        <input type="hidden" name="player_id" value="<%= player.id %>">
-                        <button type="submit" class="btn-sm btn-sm-email" title="Send Confirmation Email">&#9993;</button>
-                      </form>
-                      <form method="POST" action="/admin/remove-player" onsubmit="return confirm('Remove <%= player.player_name %> from the roster?')">
-                        <input type="hidden" name="player_id" value="<%= player.id %>">
-                        <button type="submit" class="btn-sm btn-sm-remove" title="Remove Player">&times;</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              <% }); %>
-            </tbody>
-          </table>
-        </div>
-      <% }); %>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
     </div>
     <!-- Staff Management -->
     <div class="admin-section">
@@ -196,7 +195,7 @@
       <p class="section-hint">Staff can view the full roster, profiles, ratings, and contacts at <strong>/staff</strong> using their phone number. They cannot edit anything.</p>
 
       <form method="POST" action="/admin/add-staff" class="add-player-form">
-        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+        <div class="form-row" style="grid-template-columns:1fr 1fr;">
           <div class="form-group">
             <label>Name *</label>
             <input type="text" name="name" required class="form-input" placeholder="Coach name">
@@ -205,9 +204,15 @@
             <label>Role</label>
             <input type="text" name="role" value="Coach" class="form-input" placeholder="Coach, Manager...">
           </div>
+        </div>
+        <div class="form-row" style="grid-template-columns:1fr 1fr;">
           <div class="form-group">
             <label>Phone *</label>
             <input type="tel" name="phone" required class="form-input" placeholder="(941) 555-1234">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" name="email" class="form-input" placeholder="coach@email.com">
           </div>
         </div>
         <button type="submit" class="btn btn-confirm">Add Staff Member</button>
@@ -220,20 +225,25 @@
               <th>Name</th>
               <th>Role</th>
               <th>Phone</th>
+              <th>Email</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <% staff.forEach(s => { %>
-              <tr>
+              <tr id="staff-row-<%= s.id %>">
                 <td class="td-bold"><%= s.name %></td>
                 <td><%= s.role %></td>
                 <td class="td-mono"><%= s.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></td>
+                <td style="font-size:13px;"><%= s.email || '-' %></td>
                 <td>
-                  <form method="POST" action="/admin/remove-staff" onsubmit="return confirm('Remove <%= s.name %>?')">
-                    <input type="hidden" name="staff_id" value="<%= s.id %>">
-                    <button type="submit" class="btn-sm btn-sm-remove">&times;</button>
-                  </form>
+                  <div class="admin-action-row">
+                    <button type="button" class="btn-sm btn-sm-email" title="Edit" onclick="editStaff(<%= s.id %>, '<%= s.name.replace(/'/g, "\\'") %>', '<%= s.role.replace(/'/g, "\\'") %>', '<%= s.phone %>', '<%= (s.email || '').replace(/'/g, "\\'") %>')">&#9998;</button>
+                    <form method="POST" action="/admin/remove-staff" onsubmit="return confirm('Remove <%= s.name %>?')" style="margin:0;">
+                      <input type="hidden" name="staff_id" value="<%= s.id %>">
+                      <button type="submit" class="btn-sm btn-sm-remove">&times;</button>
+                    </form>
+                  </div>
                 </td>
               </tr>
             <% }); %>
@@ -242,6 +252,55 @@
       <% } else { %>
         <p style="color:#6b7280; margin-top:16px; font-size:14px;">No staff members added yet.</p>
       <% } %>
+
+      <!-- Edit Staff Modal -->
+      <div id="edit-staff-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:100; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; padding:28px; max-width:500px; width:90%; margin:auto; position:relative; top:50%; transform:translateY(-50%);">
+          <h3 style="font-size:18px; font-weight:800; color:var(--navy); margin-bottom:16px;">Edit Staff Member</h3>
+          <form method="POST" action="/admin/edit-staff">
+            <input type="hidden" name="staff_id" id="edit-staff-id">
+            <div class="form-group">
+              <label>Name *</label>
+              <input type="text" name="name" id="edit-staff-name" required class="form-input">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Role</label>
+                <input type="text" name="role" id="edit-staff-role" class="form-input">
+              </div>
+              <div class="form-group">
+                <label>Phone *</label>
+                <input type="tel" name="phone" id="edit-staff-phone" required class="form-input">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" name="email" id="edit-staff-email" class="form-input">
+            </div>
+            <div style="display:flex; gap:12px; margin-top:16px;">
+              <button type="submit" class="btn btn-confirm" style="flex:1;">Save Changes</button>
+              <button type="button" class="btn btn-secondary" style="flex:1;" onclick="closeEditStaff()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <script>
+        function editStaff(id, name, role, phone, email) {
+          document.getElementById('edit-staff-id').value = id;
+          document.getElementById('edit-staff-name').value = name;
+          document.getElementById('edit-staff-role').value = role;
+          document.getElementById('edit-staff-phone').value = phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+          document.getElementById('edit-staff-email').value = email;
+          document.getElementById('edit-staff-modal').style.display = 'flex';
+        }
+        function closeEditStaff() {
+          document.getElementById('edit-staff-modal').style.display = 'none';
+        }
+        document.getElementById('edit-staff-modal').addEventListener('click', function(e) {
+          if (e.target === this) closeEditStaff();
+        });
+      </script>
     </div>
   </main>
 

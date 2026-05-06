@@ -28,33 +28,8 @@
     <h2 class="section-title">Roster</h2>
 
     <div class="roster-section">
-      <h3 class="age-group-title">11U</h3>
       <div class="roster-grid">
-        <% players.filter(p => p.age === 11).forEach(player => { %>
-          <div class="player-card">
-            <% if (player.status === 'pending') { %>
-              <div class="player-status-badge badge-pending">Pending</div>
-            <% } %>
-            <h3 class="player-name"><%= player.player_name %></h3>
-            <div class="player-details">
-              <span class="player-team"><%= player.team %></span>
-              <span class="player-age">Age <%= player.age %></span>
-            </div>
-            <% if (player.best_positions) { %>
-              <div class="player-positions-mini"><%- player.best_positions.split(',').join(' &middot; ') %></div>
-            <% } %>
-            <% if (player.profile_updated_at) { %>
-              <div class="profile-badge-mini">Profile Complete</div>
-            <% } %>
-          </div>
-        <% }); %>
-      </div>
-    </div>
-
-    <div class="roster-section">
-      <h3 class="age-group-title">12U</h3>
-      <div class="roster-grid">
-        <% players.filter(p => p.age === 12).forEach(player => { %>
+        <% players.forEach(player => { %>
           <div class="player-card">
             <% if (player.status === 'pending') { %>
               <div class="player-status-badge badge-pending">Pending</div>

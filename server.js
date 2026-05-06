@@ -421,13 +421,23 @@ app.post('/admin/send-email', requireAdmin, async (req, res) => {
 });
 
 app.post('/admin/add-staff', requireAdmin, async (req, res) => {
-  const { name, role, phone } = req.body;
+  const { name, role, phone, email } = req.body;
   const normalized = normalizePhone(phone || '');
   if (!name || !name.trim() || normalized.length !== 10) {
     return res.redirect('/admin?error=' + encodeURIComponent('Staff name and valid phone required.'));
   }
-  await db.addStaff({ name: name.trim(), role: (role || 'Coach').trim(), phone: normalized });
+  await db.addStaff({ name: name.trim(), role: (role || 'Coach').trim(), phone: normalized, email: (email || '').trim() || null });
   res.redirect('/admin?success=' + encodeURIComponent(`${name.trim()} added as staff`));
+});
+
+app.post('/admin/edit-staff', requireAdmin, async (req, res) => {
+  const { staff_id, name, role, phone, email } = req.body;
+  const normalized = normalizePhone(phone || '');
+  if (!name || !name.trim() || normalized.length !== 10) {
+    return res.redirect('/admin?error=' + encodeURIComponent('Staff name and valid phone required.'));
+  }
+  await db.updateStaff(Number(staff_id), { name: name.trim(), role: (role || 'Coach').trim(), phone: normalized, email: (email || '').trim() || null });
+  res.redirect('/admin?success=' + encodeURIComponent(`${name.trim()} updated`));
 });
 
 app.post('/admin/remove-staff', requireAdmin, async (req, res) => {
