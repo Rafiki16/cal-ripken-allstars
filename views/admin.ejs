@@ -88,6 +88,15 @@
             <input type="tel" name="parent_phone" required class="form-input" placeholder="(941) 555-1234">
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Parent Email</label>
+            <input type="email" name="parent_email" class="form-input" placeholder="parent@email.com">
+          </div>
+          <div class="form-group" style="display:flex;align-items:end;">
+            <p class="section-hint" style="margin:0;font-size:13px;">A confirmation email will be sent if provided</p>
+          </div>
+        </div>
         <button type="submit" class="btn btn-confirm">Add Player to Roster</button>
       </form>
     </div>
@@ -161,6 +170,11 @@
                           <button type="submit" class="btn-sm btn-sm-reset" title="Reset to Pending">RESET</button>
                         </form>
                       <% } %>
+                      <form method="POST" action="/admin/send-email">
+                        <input type="hidden" name="key" value="<%= key %>">
+                        <input type="hidden" name="player_id" value="<%= player.id %>">
+                        <button type="submit" class="btn-sm btn-sm-email" title="Send Confirmation Email">&#9993;</button>
+                      </form>
                       <form method="POST" action="/admin/remove-player" onsubmit="return confirm('Remove <%= player.player_name %> from the roster?')">
                         <input type="hidden" name="key" value="<%= key %>">
                         <input type="hidden" name="player_id" value="<%= player.id %>">

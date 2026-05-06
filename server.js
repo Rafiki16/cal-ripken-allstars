@@ -1,5 +1,7 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const nodemailer = require('nodemailer');
 const db = require('./db');
 
 const app = express();
@@ -13,6 +15,46 @@ app.use(express.json());
 
 function normalizePhone(phone) {
   return phone.replace(/\D/g, '').slice(-10);
+}
+
+const smtpTransport = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT) || 465,
+  secure: (parseInt(process.env.SMTP_PORT) || 465) === 465,
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+}) : null;
+
+async function sendConfirmationEmail(player, email) {
+  if (!smtpTransport || !email) return;
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  try {
+    await smtpTransport.sendMail({
+      from: `"Cal Ripken All-Stars" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: `${player.player_name} — All-Star Team Selection`,
+      html: `
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+          <div style="background:#1a2744;color:#fff;padding:24px;text-align:center;">
+            <h1 style="margin:0;font-size:22px;">⚾ Cal Ripken All-Stars</h1>
+            <p style="margin:4px 0 0;color:#d4a843;">Summer 2026 &middot; Major Division</p>
+          </div>
+          <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;">
+            <p>Hi ${player.parent_name},</p>
+            <p><strong>${player.player_name}</strong> has been selected for the <strong>Summer 2026 Cal Ripken All-Star</strong> team!</p>
+            <p>Please confirm or decline participation using the link below:</p>
+            <p style="text-align:center;margin:24px 0;">
+              <a href="${baseUrl}/verify" style="background:#1a2744;color:#fff;padding:12px 32px;border-radius:6px;text-decoration:none;font-weight:bold;">Confirm Your Player</a>
+            </p>
+            <p style="font-size:14px;color:#6b7280;">Use your registered phone number <strong>${player.parent_phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3')}</strong> to look up your player and respond.</p>
+            <p style="font-size:14px;color:#6b7280;">You can also fill out a player profile with positions, skills, and contact info for GameChanger.</p>
+            <p>Thank you!<br>Cal Ripken All-Stars Coaching Staff</p>
+          </div>
+        </div>`,
+    });
+    console.log(`Confirmation email sent to ${email} for ${player.player_name}`);
+  } catch (err) {
+    console.error(`Failed to send email to ${email}:`, err.message);
+  }
 }
 
 app.get('/', async (req, res) => {
@@ -247,6 +289,10 @@ app.get('/admin', requireAdmin, async (req, res) => {
   res.render('admin', { players, staff, confirmed, declined, pending, total: players.length, key: ADMIN_PASS, allEvents, success: req.query.success || null, error: req.query.error || null });
 });
 
+app.get('/admin/login', (req, res) => {
+  res.render('admin-login', { error: null });
+});
+
 app.post('/admin/login', (req, res) => {
   if (req.body.password === ADMIN_PASS) {
     return res.redirect('/admin?key=' + ADMIN_PASS);
@@ -265,7 +311,7 @@ app.post('/admin/status', requireAdmin, async (req, res) => {
 });
 
 app.post('/admin/add-player', requireAdmin, async (req, res) => {
-  const { player_name, division, team, age, parent_name, parent_phone } = req.body;
+  const { player_name, division, team, age, parent_name, parent_phone, parent_email } = req.body;
   const phone = normalizePhone(parent_phone || '');
 
   if (!player_name || !player_name.trim() || !parent_name || !parent_name.trim() || phone.length !== 10) {
@@ -279,9 +325,16 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
     age: parseInt(age) || 11,
     parent_name: parent_name.trim(),
     parent_phone: phone,
+    parent_email: (parent_email || '').trim() || null,
   });
 
-  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${player_name.trim()} added to roster`));
+  const players = await db.getAllPlayers();
+  const newPlayer = players.find(p => p.parent_phone === phone && p.player_name === player_name.trim());
+  if (newPlayer && newPlayer.parent_email) {
+    sendConfirmationEmail(newPlayer, newPlayer.parent_email);
+  }
+
+  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${player_name.trim()} added to roster` + (parent_email ? ' — confirmation email sent' : '')));
 });
 
 app.post('/admin/remove-player', requireAdmin, async (req, res) => {
@@ -292,6 +345,22 @@ app.post('/admin/remove-player', requireAdmin, async (req, res) => {
   } else {
     res.redirect('/admin?key=' + ADMIN_PASS + '&error=Player+not+found');
   }
+});
+
+app.post('/admin/send-email', requireAdmin, async (req, res) => {
+  const player = await db.getPlayer(Number(req.body.player_id));
+  if (!player) return res.redirect('/admin?key=' + ADMIN_PASS + '&error=Player+not+found');
+
+  const email = player.parent_email || (() => {
+    try { const c = JSON.parse(player.contacts || '[]'); return c.find(x => x.email)?.email; } catch { return null; }
+  })();
+
+  if (!email) {
+    return res.redirect('/admin?key=' + ADMIN_PASS + '&error=' + encodeURIComponent(`No email on file for ${player.player_name}`));
+  }
+
+  await sendConfirmationEmail(player, email);
+  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`Confirmation email sent to ${email} for ${player.player_name}`));
 });
 
 app.post('/admin/add-staff', requireAdmin, async (req, res) => {

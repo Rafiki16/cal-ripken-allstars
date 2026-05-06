@@ -51,9 +51,9 @@
       <div class="roster-grid">
         <% players.filter(p => p.age === 11).forEach(player => { %>
           <div class="player-card">
-            <div class="player-status-badge badge-<%= player.status %>">
-              <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
-            </div>
+            <% if (player.status === 'pending') { %>
+              <div class="player-status-badge badge-pending">Pending</div>
+            <% } %>
             <h3 class="player-name"><%= player.player_name %></h3>
             <div class="player-details">
               <span class="player-team"><%= player.team %></span>
@@ -75,9 +75,9 @@
       <div class="roster-grid">
         <% players.filter(p => p.age === 12).forEach(player => { %>
           <div class="player-card">
-            <div class="player-status-badge badge-<%= player.status %>">
-              <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
-            </div>
+            <% if (player.status === 'pending') { %>
+              <div class="player-status-badge badge-pending">Pending</div>
+            <% } %>
             <h3 class="player-name"><%= player.player_name %></h3>
             <div class="player-details">
               <span class="player-team"><%= player.team %></span>
@@ -98,6 +98,7 @@
   <footer>
     <div class="container">
       <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+      <p style="margin-top:8px;"><a href="/admin/login" style="color:#9ca3af;font-size:13px;">Admin</a></p>
     </div>
   </footer>
 </body>
