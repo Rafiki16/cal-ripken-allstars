@@ -272,6 +272,7 @@
               <th>Date</th>
               <th>Time</th>
               <th>Location</th>
+              <th>RSVPs</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -287,6 +288,9 @@
                 <td style="white-space:nowrap; font-size:13px;"><%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %>&ndash;<%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %></td>
                 <td style="font-size:13px;"><%= ev.start_time || '-' %></td>
                 <td style="font-size:13px;"><%= ev.location_name || ev.address || '-' %></td>
+                <td style="text-align:center;">
+                  <button type="button" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 8px;" onclick="viewRsvps(<%= ev.id %>, '<%= ev.title.replace(/'/g, "\\'") %>')">View</button>
+                </td>
                 <td>
                   <div class="admin-action-row">
                     <button type="button" class="btn-sm btn-sm-email" title="Edit" onclick='editTeamEvent(<%- JSON.stringify({id:ev.id,event_type:ev.event_type,title:ev.title,start_date:ev.start_date,start_time:ev.start_time||"",end_date:ev.end_date||"",end_time:ev.end_time||"",location_name:ev.location_name||"",address:ev.address||"",notes:ev.notes||"",hotel_info:ev.hotel_info||"",carpool_info:ev.carpool_info||""}) %>)'>&#9998;</button>
@@ -588,6 +592,53 @@
       </script>
     </div>
   </main>
+
+  <!-- RSVP Modal -->
+  <div id="rsvp-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:100; overflow-y:auto; align-items:flex-start; justify-content:center;">
+    <div style="background:white; border-radius:16px; padding:28px; max-width:500px; width:90%; margin:60px auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 id="rsvp-modal-title" style="font-size:18px; font-weight:800; color:var(--navy); margin:0;"></h3>
+        <button type="button" onclick="closeRsvpModal()" style="background:none; border:none; font-size:22px; cursor:pointer; color:var(--gray-500);">&times;</button>
+      </div>
+      <div id="rsvp-modal-body" style="font-size:14px;"></div>
+    </div>
+  </div>
+
+  <script>
+    function viewRsvps(eventId, title) {
+      document.getElementById('rsvp-modal-title').textContent = 'RSVPs — ' + title;
+      document.getElementById('rsvp-modal-body').innerHTML = '<p style="color:var(--gray-500);">Loading...</p>';
+      document.getElementById('rsvp-modal').style.display = 'flex';
+      fetch('/admin/event/' + eventId + '/rsvps')
+        .then(r => r.json())
+        .then(data => {
+          let html = '<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">';
+          const yes = data.confirmed.filter(p => p.rsvp && p.rsvp.status === 'yes').length;
+          const no = data.confirmed.filter(p => p.rsvp && p.rsvp.status === 'no').length;
+          const maybe = data.confirmed.filter(p => p.rsvp && p.rsvp.status === 'maybe').length;
+          const none = data.confirmed.length - yes - no - maybe;
+          html += '<span style="background:#dcfce7;color:#16a34a;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px;">' + yes + ' Yes</span>';
+          html += '<span style="background:#fef3c7;color:#d97706;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px;">' + maybe + ' Maybe</span>';
+          html += '<span style="background:#fee2e2;color:#dc2626;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px;">' + no + ' No</span>';
+          html += '<span style="background:#f3f4f6;color:#6b7280;padding:4px 10px;border-radius:6px;font-weight:700;font-size:13px;">' + none + ' Pending</span>';
+          html += '</div>';
+          html += '<table style="width:100%;border-collapse:collapse;">';
+          data.confirmed.forEach(p => {
+            const status = p.rsvp ? p.rsvp.status : 'pending';
+            const colors = { yes: '#16a34a', no: '#dc2626', maybe: '#d97706', pending: '#9ca3af' };
+            const labels = { yes: 'Yes', no: 'No', maybe: 'Maybe', pending: '—' };
+            html += '<tr style="border-bottom:1px solid #f3f4f6;">';
+            html += '<td style="padding:8px 4px;font-weight:600;">' + p.player_name + '</td>';
+            html += '<td style="padding:8px 4px;text-align:right;"><span style="color:' + colors[status] + ';font-weight:700;">' + labels[status] + '</span></td>';
+            html += '</tr>';
+          });
+          html += '</table>';
+          document.getElementById('rsvp-modal-body').innerHTML = html;
+        });
+    }
+    function closeRsvpModal() { document.getElementById('rsvp-modal').style.display = 'none'; }
+    document.getElementById('rsvp-modal').addEventListener('click', function(e) { if (e.target === this) closeRsvpModal(); });
+  </script>
 
   <footer>
     <div class="container">

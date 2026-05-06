@@ -80,6 +80,44 @@
       </div>
       <% } %>
     </div>
+
+    <!-- RSVP Section -->
+    <div class="rsvp-widget" style="max-width:640px; margin:24px auto;">
+      <%
+        const yesCount = rsvps.filter(r => r.status === 'yes').length;
+        const noCount = rsvps.filter(r => r.status === 'no').length;
+        const maybeCount = rsvps.filter(r => r.status === 'maybe').length;
+        const notResponded = confirmedPlayers.length - rsvps.filter(r => r.status !== 'pending').length;
+      %>
+      <h3 class="rsvp-widget-title">RSVP Status</h3>
+      <div class="rsvp-counts">
+        <div class="rsvp-count rsvp-count-yes"><span class="rsvp-count-num"><%= yesCount %></span> Attending</div>
+        <div class="rsvp-count rsvp-count-maybe"><span class="rsvp-count-num"><%= maybeCount %></span> Maybe</div>
+        <div class="rsvp-count rsvp-count-no"><span class="rsvp-count-num"><%= noCount %></span> Can't Make It</div>
+        <div class="rsvp-count rsvp-count-pending"><span class="rsvp-count-num"><%= notResponded %></span> No Response</div>
+      </div>
+
+      <% if (typeof rsvpSuccess !== 'undefined' || (typeof require !== 'undefined')) { %>
+      <% const qs = typeof require !== 'undefined' ? '' : ''; %>
+      <% } %>
+
+      <div class="rsvp-form-section">
+        <h4 style="margin:0 0 8px; color:var(--navy); font-size:15px;">RSVP for Your Player</h4>
+        <form method="POST" action="/event/<%= event.id %>/rsvp" class="rsvp-phone-form">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+            <div style="flex:1; min-width:180px;">
+              <label style="font-size:12px; color:var(--gray-500); font-weight:600; display:block; margin-bottom:4px;">Your Phone Number</label>
+              <input type="tel" name="phone" placeholder="(941) 555-1234" class="form-input" required style="margin:0;">
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button type="submit" name="status" value="yes" class="btn rsvp-btn-sm rsvp-yes">Yes</button>
+              <button type="submit" name="status" value="maybe" class="btn rsvp-btn-sm rsvp-maybe">Maybe</button>
+              <button type="submit" name="status" value="no" class="btn rsvp-btn-sm rsvp-no">No</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
   </main>
 
   <footer>

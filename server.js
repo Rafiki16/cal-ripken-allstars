@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -38,6 +39,131 @@ const smtpTransport = process.env.SMTP_HOST ? nodemailer.createTransport({
   secure: (parseInt(process.env.SMTP_PORT) || 465) === 465,
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 }) : null;
+
+let twilioClient = null;
+const twilioFrom = process.env.TWILIO_FROM_NUMBER || null;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  try {
+    const twilio = require('twilio');
+    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    console.log('Twilio SMS enabled');
+  } catch (e) { console.log('Twilio not available:', e.message); }
+}
+
+const RSVP_SECRET = process.env.RSVP_SECRET || process.env.SESSION_SECRET || 'allstars-rsvp-2026';
+
+function generateRsvpToken(eventId, playerId) {
+  return crypto.createHmac('sha256', RSVP_SECRET).update(`${eventId}:${playerId}`).digest('hex').slice(0, 16);
+}
+
+function rsvpUrl(eventId, playerId) {
+  const base = process.env.BASE_URL || 'http://localhost:3000';
+  return `${base}/rsvp/${eventId}/${playerId}/${generateRsvpToken(eventId, playerId)}`;
+}
+
+async function sendSMS(to, body) {
+  if (!twilioClient || !twilioFrom) return;
+  const phone = '+1' + normalizePhone(to);
+  try {
+    await twilioClient.messages.create({ body, from: twilioFrom, to: phone });
+    console.log(`SMS sent to ${phone}`);
+  } catch (err) {
+    console.error(`SMS failed to ${phone}:`, err.message);
+  }
+}
+
+async function sendReminderEmail(to, player, event, link, reminderType) {
+  if (!smtpTransport || !to) return;
+  const when = reminderType === '48h' ? 'in 2 days' : 'tomorrow';
+  const startDate = new Date(event.start_date + 'T12:00:00');
+  const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const timeStr = event.start_time ? (() => { const [h,m] = event.start_time.split(':'); const hr = parseInt(h); return (hr % 12 || 12) + ':' + m + ' ' + (hr >= 12 ? 'PM' : 'AM'); })() : '';
+  try {
+    await smtpTransport.sendMail({
+      from: `"Cal Ripken All-Stars" <${process.env.SMTP_USER}>`,
+      to,
+      subject: `RSVP Needed: ${event.title} — ${dateStr}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+          <div style="background:#1a2744;color:#fff;padding:24px;text-align:center;">
+            <h1 style="margin:0;font-size:22px;">⚾ Cal Ripken All-Stars</h1>
+            <p style="margin:4px 0 0;color:#d4a843;">Summer 2026 &middot; Major Division</p>
+          </div>
+          <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;">
+            <p>Hi — <strong>${player.player_name}</strong> hasn't RSVP'd for an upcoming event ${when}:</p>
+            <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0;">
+              <h2 style="margin:0 0 8px;color:#1a2744;font-size:18px;">${event.title}</h2>
+              <p style="margin:4px 0;color:#374151;">${dateStr}${timeStr ? ' at ' + timeStr : ''}</p>
+              ${event.location_name ? '<p style="margin:4px 0;color:#6b7280;">' + event.location_name + '</p>' : ''}
+            </div>
+            <p style="text-align:center;margin:24px 0;">
+              <a href="${link}" style="background:#1a2744;color:#fff;padding:14px 36px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px;">RSVP Now</a>
+            </p>
+            <p style="font-size:13px;color:#6b7280;text-align:center;">Click the button or paste this link: ${link}</p>
+          </div>
+        </div>`,
+    });
+    console.log(`Reminder email sent to ${to} for ${player.player_name} / ${event.title}`);
+  } catch (err) {
+    console.error(`Reminder email failed to ${to}:`, err.message);
+  }
+}
+
+function getPlayerContacts(player) {
+  const contacts = [];
+  if (player.parent_email) contacts.push({ type: 'email', value: player.parent_email });
+  if (player.parent_phone) contacts.push({ type: 'sms', value: player.parent_phone });
+  try {
+    const parsed = player.contacts ? JSON.parse(player.contacts) : [];
+    for (const c of parsed) {
+      if (c.email && !contacts.some(x => x.value === c.email)) contacts.push({ type: 'email', value: c.email });
+      if (c.phone && !contacts.some(x => x.value === normalizePhone(c.phone))) contacts.push({ type: 'sms', value: normalizePhone(c.phone) });
+    }
+  } catch (e) {}
+  return contacts;
+}
+
+async function checkAndSendReminders() {
+  try {
+    const now = new Date();
+    const events = await db.getAllTeamEvents();
+    const players = await db.getAllPlayers();
+    const confirmed = players.filter(p => p.status === 'confirmed');
+
+    for (const event of events) {
+      const eventStart = new Date(event.start_date + 'T' + (event.start_time || '08:00') + ':00');
+      const hoursUntil = (eventStart - now) / (1000 * 60 * 60);
+
+      let reminderType = null;
+      if (hoursUntil > 24 && hoursUntil <= 48) reminderType = '48h';
+      else if (hoursUntil > 0 && hoursUntil <= 24) reminderType = '24h';
+      if (!reminderType) continue;
+
+      for (const player of confirmed) {
+        const rsvp = await db.getRsvp(event.id, player.id);
+        if (rsvp && rsvp.status !== 'pending') continue;
+
+        const alreadySent = await db.hasReminderBeenSent(event.id, player.id, reminderType);
+        if (alreadySent) continue;
+
+        const link = rsvpUrl(event.id, player.id);
+        const contacts = getPlayerContacts(player);
+
+        for (const contact of contacts) {
+          if (contact.type === 'email') {
+            await sendReminderEmail(contact.value, player, event, link, reminderType);
+          } else {
+            const dateStr = new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            await sendSMS(contact.value, `Cal Ripken All-Stars: ${player.player_name} hasn't RSVP'd for ${event.title} on ${dateStr}. Tap to respond: ${link}`);
+          }
+          await db.logReminder(event.id, player.id, reminderType, contact.type, contact.value);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Reminder check error:', err.message);
+  }
+}
 
 async function sendConfirmationEmail(player, email) {
   if (!smtpTransport || !email) return;
@@ -83,7 +209,53 @@ app.get('/', async (req, res) => {
 app.get('/event/:id', async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
-  res.render('event-detail', { event });
+  const rsvps = await db.getRsvpsForEvent(event.id);
+  const players = await db.getAllPlayers();
+  const confirmed = players.filter(p => p.status === 'confirmed');
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed });
+});
+
+app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
+  const { eventId, playerId, token } = req.params;
+  if (generateRsvpToken(Number(eventId), Number(playerId)) !== token) {
+    return res.status(403).send('Invalid or expired RSVP link.');
+  }
+  const event = await db.getTeamEvent(Number(eventId));
+  const player = await db.getPlayer(Number(playerId));
+  if (!event || !player) return res.redirect('/');
+  const rsvp = await db.getRsvp(event.id, player.id);
+  res.render('rsvp', { event, player, rsvp, token, success: null });
+});
+
+app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
+  const { eventId, playerId, token } = req.params;
+  if (generateRsvpToken(Number(eventId), Number(playerId)) !== token) {
+    return res.status(403).send('Invalid or expired RSVP link.');
+  }
+  const event = await db.getTeamEvent(Number(eventId));
+  const player = await db.getPlayer(Number(playerId));
+  if (!event || !player) return res.redirect('/');
+  const status = req.body.status;
+  if (!['yes', 'no', 'maybe'].includes(status)) return res.redirect('/');
+  await db.upsertRsvp(event.id, player.id, status);
+  const rsvp = await db.getRsvp(event.id, player.id);
+  res.render('rsvp', { event, player, rsvp, token, success: `${player.player_name} is marked as ${status === 'yes' ? 'attending' : status === 'no' ? 'not attending' : 'maybe'}.` });
+});
+
+app.post('/event/:id/rsvp', async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/');
+  const phone = normalizePhone(req.body.phone || '');
+  if (phone.length !== 10) return res.redirect('/event/' + event.id);
+  const players = await db.getPlayersByPhone(phone);
+  const confirmed = players.filter(p => p.status === 'confirmed');
+  if (confirmed.length === 0) return res.redirect('/event/' + event.id);
+  const status = req.body.status;
+  if (!['yes', 'no', 'maybe'].includes(status)) return res.redirect('/event/' + event.id);
+  for (const p of confirmed) {
+    await db.upsertRsvp(event.id, p.id, status);
+  }
+  res.redirect('/event/' + event.id + '?rsvp=success');
 });
 
 app.get('/api/location-search', async (req, res) => {
@@ -546,6 +718,22 @@ app.post('/admin/remove-team-event', requireAdmin, async (req, res) => {
   res.redirect('/admin?success=Event+removed');
 });
 
+app.get('/admin/event/:id/rsvps', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/admin');
+  const rsvps = await db.getRsvpsForEvent(event.id);
+  const players = await db.getAllPlayers();
+  const confirmed = players.filter(p => p.status === 'confirmed');
+  res.json({
+    event: { id: event.id, title: event.title, start_date: event.start_date },
+    rsvps,
+    confirmed: confirmed.map(p => ({
+      id: p.id, player_name: p.player_name,
+      rsvp: rsvps.find(r => r.player_id === p.id) || null,
+    })),
+  });
+});
+
 // --- Admin Settings ---
 
 app.get('/admin/settings', requireAdmin, async (req, res) => {
@@ -650,6 +838,8 @@ db.init().then(() => {
   app.listen(PORT, () => {
     console.log(`All-Stars portal running at http://localhost:${PORT}`);
   });
+  setInterval(checkAndSendReminders, 15 * 60 * 1000);
+  setTimeout(checkAndSendReminders, 15000);
 }).catch(err => {
   console.error('Failed to initialize database:', err);
   process.exit(1);

@@ -99,7 +99,7 @@
         <h2 class="profile-section-title">Parent / Guardian Contacts</h2>
         <p class="section-hint">Add emails for GameChanger invites and phone numbers for team contacts</p>
 
-        <% const contacts = player.contacts ? JSON.parse(player.contacts) : []; %>
+        <% let contacts = []; try { if (player.contacts) contacts = JSON.parse(player.contacts); } catch(e) {} %>
         <div id="contacts-list">
           <% if (contacts.length === 0) { contacts.push({ name: '', email: '', phone: '', relation: '' }); } %>
           <% contacts.forEach((c, i) => { %>
@@ -121,7 +121,7 @@
                 </div>
                 <div class="form-group">
                   <label>Phone</label>
-                  <input type="tel" name="contact_phone" value="<%= c.phone ? c.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') : '' %>" class="form-input" placeholder="(941) 555-1234">
+                  <input type="tel" name="contact_phone" value="<%= c.phone ? String(c.phone).replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') : '' %>" class="form-input" placeholder="(941) 555-1234">
                 </div>
               </div>
             </div>

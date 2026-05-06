@@ -114,6 +114,29 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rsvps (
+        id SERIAL PRIMARY KEY,
+        team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        responded_at TIMESTAMPTZ,
+        UNIQUE(team_event_id, player_id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS reminder_log (
+        id SERIAL PRIMARY KEY,
+        team_event_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        reminder_type TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        contact_value TEXT NOT NULL,
+        sent_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -177,6 +200,20 @@ async function init() {
       createAdmin: async (username, passwordHash) => pool.query('INSERT INTO admins (username, password_hash) VALUES ($1, $2)', [username, passwordHash]),
       updateAdminPassword: async (id, passwordHash) => pool.query('UPDATE admins SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
       removeAdmin: async (id) => pool.query('DELETE FROM admins WHERE id = $1', [id]),
+      getRsvp: async (eventId, playerId) => (await pool.query('SELECT * FROM rsvps WHERE team_event_id = $1 AND player_id = $2', [eventId, playerId])).rows[0] || null,
+      getRsvpsForEvent: async (eventId) => (await pool.query('SELECT r.*, p.player_name, p.parent_name FROM rsvps r JOIN players p ON r.player_id = p.id WHERE r.team_event_id = $1 ORDER BY p.player_name', [eventId])).rows,
+      upsertRsvp: async (eventId, playerId, status) => pool.query(
+        'INSERT INTO rsvps (team_event_id, player_id, status, responded_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (team_event_id, player_id) DO UPDATE SET status = $3, responded_at = NOW()',
+        [eventId, playerId, status]
+      ),
+      hasReminderBeenSent: async (eventId, playerId, type) => {
+        const { rows } = await pool.query('SELECT COUNT(*) as c FROM reminder_log WHERE team_event_id = $1 AND player_id = $2 AND reminder_type = $3', [eventId, playerId, type]);
+        return parseInt(rows[0].c) > 0;
+      },
+      logReminder: async (eventId, playerId, type, channel, value) => pool.query(
+        'INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES ($1,$2,$3,$4,$5)',
+        [eventId, playerId, type, channel, value]
+      ),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -254,6 +291,29 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS rsvps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        responded_at TEXT,
+        UNIQUE(team_event_id, player_id)
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS reminder_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_event_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        reminder_type TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        contact_value TEXT NOT NULL,
+        sent_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -311,6 +371,23 @@ async function init() {
       createAdmin: async (username, passwordHash) => sqliteDb.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(username, passwordHash),
       updateAdminPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(passwordHash, id),
       removeAdmin: async (id) => sqliteDb.prepare('DELETE FROM admins WHERE id = ?').run(id),
+      getRsvp: async (eventId, playerId) => sqliteDb.prepare('SELECT * FROM rsvps WHERE team_event_id = ? AND player_id = ?').get(eventId, playerId) || null,
+      getRsvpsForEvent: async (eventId) => sqliteDb.prepare('SELECT r.*, p.player_name, p.parent_name FROM rsvps r JOIN players p ON r.player_id = p.id WHERE r.team_event_id = ? ORDER BY p.player_name').all(eventId),
+      upsertRsvp: async (eventId, playerId, status) => {
+        const existing = sqliteDb.prepare('SELECT id FROM rsvps WHERE team_event_id = ? AND player_id = ?').get(eventId, playerId);
+        if (existing) {
+          sqliteDb.prepare('UPDATE rsvps SET status = ?, responded_at = ? WHERE id = ?').run(status, new Date().toISOString(), existing.id);
+        } else {
+          sqliteDb.prepare('INSERT INTO rsvps (team_event_id, player_id, status, responded_at) VALUES (?, ?, ?, ?)').run(eventId, playerId, status, new Date().toISOString());
+        }
+      },
+      hasReminderBeenSent: async (eventId, playerId, type) => {
+        const row = sqliteDb.prepare('SELECT COUNT(*) as c FROM reminder_log WHERE team_event_id = ? AND player_id = ? AND reminder_type = ?').get(eventId, playerId, type);
+        return row.c > 0;
+      },
+      logReminder: async (eventId, playerId, type, channel, value) => {
+        sqliteDb.prepare('INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES (?,?,?,?,?)').run(eventId, playerId, type, channel, value);
+      },
     };
   }
 }
@@ -346,4 +423,9 @@ module.exports = {
   createAdmin: (...args) => impl.createAdmin(...args),
   updateAdminPassword: (...args) => impl.updateAdminPassword(...args),
   removeAdmin: (...args) => impl.removeAdmin(...args),
+  getRsvp: (...args) => impl.getRsvp(...args),
+  getRsvpsForEvent: (...args) => impl.getRsvpsForEvent(...args),
+  upsertRsvp: (...args) => impl.upsertRsvp(...args),
+  hasReminderBeenSent: (...args) => impl.hasReminderBeenSent(...args),
+  logReminder: (...args) => impl.logReminder(...args),
 };

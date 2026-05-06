@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSVP &middot; <%= event.title %></title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="back-link">&larr; Back</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>RSVP</h1>
+            <p class="subtitle"><%= player.player_name %></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="rsvp-page" style="max-width:540px; margin:24px auto;">
+      <% if (success) { %>
+        <div class="alert alert-success"><%= success %></div>
+      <% } %>
+
+      <div class="rsvp-event-card">
+        <div class="rsvp-event-type"><%= event.event_type === 'practice' ? 'Practice' : event.event_type === 'game' ? 'Game' : event.event_type === 'tournament' ? 'Tournament' : 'Event' %></div>
+        <h2 class="rsvp-event-title"><%= event.title %></h2>
+        <div class="rsvp-event-meta">
+          <% const startDate = new Date(event.start_date + 'T12:00:00'); %>
+          <div><strong><%= startDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) %></strong></div>
+          <% if (event.end_date && event.end_date !== event.start_date) { %>
+            <div>through <%= new Date(event.end_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) %></div>
+          <% } %>
+          <% if (event.start_time) { const [h,m] = event.start_time.split(':'); const hr = parseInt(h); %>
+            <div><%= (hr % 12 || 12) + ':' + m + ' ' + (hr >= 12 ? 'PM' : 'AM') %><% if (event.end_time) { const [h2,m2] = event.end_time.split(':'); const hr2 = parseInt(h2); %> &ndash; <%= (hr2 % 12 || 12) + ':' + m2 + ' ' + (hr2 >= 12 ? 'PM' : 'AM') %><% } %></div>
+          <% } %>
+          <% if (event.location_name) { %><div style="margin-top:6px;"><%= event.location_name %></div><% } %>
+          <% if (event.address) { %><div style="color:var(--gray-500);font-size:13px;"><%= event.address %></div><% } %>
+        </div>
+      </div>
+
+      <div class="rsvp-section">
+        <h3 class="rsvp-prompt">Will <strong><%= player.player_name %></strong> attend?</h3>
+        <% if (rsvp && rsvp.status !== 'pending') { %>
+          <p class="rsvp-current">Current response: <strong class="rsvp-status-<%= rsvp.status %>"><%= rsvp.status === 'yes' ? 'Attending' : rsvp.status === 'no' ? 'Not Attending' : 'Maybe' %></strong></p>
+        <% } %>
+        <form method="POST" action="/rsvp/<%= event.id %>/<%= player.id %>/<%= token %>" class="rsvp-buttons">
+          <button type="submit" name="status" value="yes" class="btn rsvp-btn rsvp-yes <%= rsvp && rsvp.status === 'yes' ? 'rsvp-active' : '' %>">Yes, Attending</button>
+          <button type="submit" name="status" value="maybe" class="btn rsvp-btn rsvp-maybe <%= rsvp && rsvp.status === 'maybe' ? 'rsvp-active' : '' %>">Maybe</button>
+          <button type="submit" name="status" value="no" class="btn rsvp-btn rsvp-no <%= rsvp && rsvp.status === 'no' ? 'rsvp-active' : '' %>">Can't Make It</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>
