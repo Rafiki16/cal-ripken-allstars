@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Board &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="back-link">&larr; Back to Schedule</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Team Board</h1>
+            <p class="subtitle">Announcements &amp; Discussion</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <div class="msg-board">
+      <div class="msg-compose">
+        <form method="POST" action="/messages">
+          <textarea name="message" placeholder="Write a message to the team..." required></textarea>
+          <div class="msg-compose-row">
+            <% if (!isAdmin) { %>
+              <input type="tel" name="phone" class="form-input" placeholder="Your phone #" value="<%= phone %>" style="max-width:200px;" required>
+            <% } %>
+            <button type="submit" class="btn btn-confirm">Post Message</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="msg-list">
+        <% if (messages.length === 0) { %>
+          <p style="color:#6b7280;font-size:14px;text-align:center;padding:24px;">No messages yet. Be the first to post!</p>
+        <% } %>
+        <% messages.forEach(msg => { %>
+          <div class="msg-card<%= msg.pinned ? ' msg-pinned' : '' %>">
+            <% if (msg.pinned) { %>
+              <div class="msg-pin-badge">Pinned</div>
+            <% } %>
+            <div class="msg-header">
+              <div>
+                <span class="msg-author"><%= msg.author_name %></span>
+                <span class="msg-author-badge msg-badge-<%= msg.author_type %>">
+                  <%= msg.author_type === 'admin' ? 'Coach' : msg.author_type === 'staff' ? 'Staff' : 'Parent' %>
+                </span>
+              </div>
+              <span class="msg-time"><%= new Date(msg.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %></span>
+            </div>
+            <div class="msg-body"><%= msg.message %></div>
+            <% if (isAdmin) { %>
+              <div class="msg-actions">
+                <form method="POST" action="/messages/pin" style="margin:0;">
+                  <input type="hidden" name="message_id" value="<%= msg.id %>">
+                  <button type="submit" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 10px;"><%= msg.pinned ? 'Unpin' : 'Pin' %></button>
+                </form>
+                <form method="POST" action="/messages/delete" style="margin:0;" onsubmit="return confirm('Delete this message?')">
+                  <input type="hidden" name="message_id" value="<%= msg.id %>">
+                  <button type="submit" class="btn-sm btn-sm-remove" style="font-size:11px;padding:3px 10px;">Delete</button>
+                </form>
+              </div>
+            <% } %>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+      <p style="margin-top:8px;"><a href="/admin" style="color:#9ca3af;font-size:13px;">Admin</a></p>
+    </div>
+  </footer>
+</body>
+</html>

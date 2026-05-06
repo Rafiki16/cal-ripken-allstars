@@ -13,9 +13,9 @@
         <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
           <a href="/" class="back-link">&larr; Back to Roster</a>
           <div style="display:flex;gap:16px;align-items:center;">
-            <span style="color:#9ca3af;font-size:13px;">Signed in as <strong style="color:#d4a843;"><%= adminUser.username %></strong></span>
-            <a href="/admin/settings" style="color:#d4a843;font-size:13px;text-decoration:none;">Settings</a>
-            <a href="/admin/logout" style="color:#9ca3af;font-size:13px;text-decoration:none;">Log Out</a>
+            <span style="color:rgba(255,255,255,0.85);font-size:13px;">Signed in as <strong style="color:#fff;"><%= adminUser.username %></strong></span>
+            <a href="/admin/settings" style="color:#fff;font-size:13px;text-decoration:none;">Settings</a>
+            <a href="/admin/logout" style="color:rgba(255,255,255,0.85);font-size:13px;text-decoration:none;">Log Out</a>
           </div>
         </div>
         <div class="header-text">
@@ -115,6 +115,7 @@
         <table class="admin-table">
           <thead>
             <tr>
+              <th>#</th>
               <th>Player</th>
               <th>Age</th>
               <th>Team</th>
@@ -129,6 +130,7 @@
           <tbody>
             <% players.forEach(player => { %>
               <tr>
+                <td><input type="text" class="jersey-inp" value="<%= player.jersey_number || '' %>" data-pid="<%= player.id %>" maxlength="3"></td>
                 <td class="td-bold"><a href="/profile/<%= player.id %>" class="admin-player-link"><%= player.player_name %></a></td>
                 <td><%= player.age %></td>
                 <td><%= player.team %></td>
@@ -806,6 +808,25 @@
     }
     function closeRsvpModal() { document.getElementById('rsvp-modal').style.display = 'none'; }
     document.getElementById('rsvp-modal').addEventListener('click', function(e) { if (e.target === this) closeRsvpModal(); });
+  </script>
+
+  <script>
+    document.querySelectorAll('.jersey-inp').forEach(function(inp) {
+      var orig = inp.value;
+      inp.addEventListener('blur', function() {
+        if (inp.value !== orig) {
+          orig = inp.value;
+          fetch('/admin/jersey-number', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_id: inp.dataset.pid, jersey_number: inp.value.trim() })
+          });
+        }
+      });
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      });
+    });
   </script>
 
   <footer>

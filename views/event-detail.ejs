@@ -416,6 +416,7 @@
         const isAdmin = <%= isAdmin ? 'true' : 'false' %>;
         const allPlayers = <%- JSON.stringify(confirmedPlayers.map(p => ({
           id: p.id, name: p.player_name,
+          jersey: p.jersey_number || '',
           positions: (p.best_positions || '').split(',').filter(Boolean)
         }))) %>;
         const savedGrid = <%- JSON.stringify(lineupGrid) %>;
@@ -439,11 +440,11 @@
               const c = data.cells[i];
               cells.push(c ? { pos: c.pos, status: c.status } : null);
             }
-            grid.push({ playerId: p.id, name: p.name, positions: p.positions, cells });
+            grid.push({ playerId: p.id, name: p.name, jersey: p.jersey || '', positions: p.positions, cells });
           });
           if (grid.length === 0) {
             allPlayers.forEach(p => {
-              grid.push({ playerId: p.id, name: p.name, positions: p.positions, cells: Array(INNINGS).fill(null) });
+              grid.push({ playerId: p.id, name: p.name, jersey: p.jersey || '', positions: p.positions, cells: Array(INNINGS).fill(null) });
             });
           }
           renderGrid();
@@ -469,7 +470,7 @@
 
             const nameTd = document.createElement('td');
             nameTd.className = 'lg-cell-name';
-            nameTd.innerHTML = '<span class="lg-name-text">' + row.name + '</span>';
+            nameTd.innerHTML = (row.jersey ? '<span class="lg-jersey">' + row.jersey + '</span>' : '') + '<span class="lg-name-text">' + row.name + '</span>';
             if (isAdmin) {
               const rmBtn = document.createElement('button');
               rmBtn.className = 'lg-rm-btn';
@@ -608,7 +609,7 @@
             if (!pid) return;
             const p = allPlayers.find(x => x.id === pid);
             if (p) {
-              grid.push({ playerId: p.id, name: p.name, positions: p.positions, cells: Array(INNINGS).fill(null) });
+              grid.push({ playerId: p.id, name: p.name, jersey: p.jersey || '', positions: p.positions, cells: Array(INNINGS).fill(null) });
               renderGrid();
               updateAddSelect();
             }

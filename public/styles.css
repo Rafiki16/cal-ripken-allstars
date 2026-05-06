@@ -83,7 +83,7 @@ header h1 {
 }
 
 .back-link {
-  color: var(--gold);
+  color: #fff;
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
@@ -1310,6 +1310,126 @@ main { flex: 1; padding-bottom: 40px; }
 .mp-selected { background:var(--navy) !important; }
 .mp-selected .cal-day-num { color:white !important; font-weight:800; }
 
+/* Jersey number input in admin roster */
+.jersey-inp {
+  width: 42px;
+  text-align: center;
+  padding: 4px 2px;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  background: #f9fafb;
+}
+.jersey-inp:focus { border-color: var(--navy); outline: none; background: #fff; }
+
+/* Jersey badge in lineup grid */
+.lg-jersey {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--navy);
+  background: #e0e7ff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 4px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Team Messages Board */
+.msg-board { margin: 24px 0; }
+.msg-compose {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid var(--gray-200);
+  margin-bottom: 24px;
+}
+.msg-compose textarea {
+  width: 100%;
+  min-height: 80px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.msg-compose textarea:focus { border-color: var(--navy); outline: none; }
+.msg-compose-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+.msg-list { display: flex; flex-direction: column; gap: 12px; }
+.msg-card {
+  background: white;
+  border-radius: 12px;
+  padding: 16px 20px;
+  border: 1px solid var(--gray-200);
+  position: relative;
+}
+.msg-card.msg-pinned {
+  border-color: var(--navy);
+  background: #f0f4ff;
+}
+.msg-pin-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--navy);
+  background: #dbeafe;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.msg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.msg-author {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--navy);
+}
+.msg-author-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+.msg-badge-admin { background: #fef3c7; color: #92400e; }
+.msg-badge-staff { background: #d1fae5; color: #065f46; }
+.msg-badge-parent { background: #e0e7ff; color: #3730a3; }
+.msg-time {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+.msg-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 @media (max-width: 600px) {
   .calendar-section { padding: 16px; }
   .cal-cell { min-height: 36px; }
@@ -1319,4 +1439,5 @@ main { flex: 1; padding-bottom: 40px; }
   .te-card-body { flex-direction: column; }
   .te-rsvp-area { align-items: stretch; width: 100%; margin-top: 8px; min-width: auto; }
   .te-title { font-size: 16px; }
+  .msg-compose-row { flex-direction: column; align-items: stretch; }
 }

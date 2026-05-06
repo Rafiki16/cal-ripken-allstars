@@ -32,6 +32,7 @@ const PROFILE_COLS = [
   'baseball_iq INTEGER',
   'profile_updated_at TEXT',
   'contacts TEXT',
+  'jersey_number TEXT',
 ];
 
 let impl;
@@ -192,6 +193,17 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS team_messages (
+        id SERIAL PRIMARY KEY,
+        author_name TEXT NOT NULL,
+        author_type TEXT NOT NULL DEFAULT 'parent',
+        message TEXT NOT NULL,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -212,12 +224,12 @@ async function init() {
           UPDATE players SET birthdate=$1, best_positions=$2, favorite_positions=$3,
             arm_strength=$4, throwing_accuracy=$5, contact_hitting=$6, power_hitting=$7,
             pitching=$8, infield_defense=$9, outfield_defense=$10, catcher_skill=$11,
-            baseball_iq=$12, contacts=$13, profile_updated_at=NOW()
-          WHERE id=$14`,
+            baseball_iq=$12, contacts=$13, jersey_number=$14, profile_updated_at=NOW()
+          WHERE id=$15`,
           [data.birthdate, data.best_positions, data.favorite_positions,
            data.arm_strength, data.throwing_accuracy, data.contact_hitting, data.power_hitting,
            data.pitching, data.infield_defense, data.outfield_defense, data.catcher_skill,
-           data.baseball_iq, data.contacts, id]
+           data.baseball_iq, data.contacts, data.jersey_number, id]
         );
       },
       addPlayer: async (p) => {
@@ -274,8 +286,8 @@ async function init() {
         }
       },
       getLineupGrid: async (eventId, subEventId) => {
-        if (eventId) return (await pool.query('SELECT g.*, p.player_name, p.best_positions FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.team_event_id = $1 ORDER BY g.batting_order, g.inning', [eventId])).rows;
-        return (await pool.query('SELECT g.*, p.player_name, p.best_positions FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.sub_event_id = $1 ORDER BY g.batting_order, g.inning', [subEventId])).rows;
+        if (eventId) return (await pool.query('SELECT g.*, p.player_name, p.best_positions, p.jersey_number FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.team_event_id = $1 ORDER BY g.batting_order, g.inning', [eventId])).rows;
+        return (await pool.query('SELECT g.*, p.player_name, p.best_positions, p.jersey_number FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.sub_event_id = $1 ORDER BY g.batting_order, g.inning', [subEventId])).rows;
       },
       saveLineupGrid: async (eventId, subEventId, entries) => {
         if (eventId) await pool.query('DELETE FROM lineup_grid WHERE team_event_id = $1', [eventId]);
@@ -306,6 +318,11 @@ async function init() {
         'INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES ($1,$2,$3,$4,$5)',
         [eventId, playerId, type, channel, value]
       ),
+      updateJerseyNumber: async (id, number) => pool.query('UPDATE players SET jersey_number = $1 WHERE id = $2', [number, id]),
+      getAllMessages: async () => (await pool.query('SELECT * FROM team_messages ORDER BY pinned DESC, created_at DESC')).rows,
+      addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message) VALUES ($1,$2,$3)', [m.author_name, m.author_type, m.message]),
+      removeMessage: async (id) => pool.query('DELETE FROM team_messages WHERE id = $1', [id]),
+      togglePinMessage: async (id) => pool.query('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = $1', [id]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -461,6 +478,17 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS team_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_name TEXT NOT NULL,
+        author_type TEXT NOT NULL DEFAULT 'parent',
+        message TEXT NOT NULL,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -478,13 +506,13 @@ async function init() {
           UPDATE players SET birthdate=?, best_positions=?, favorite_positions=?,
             arm_strength=?, throwing_accuracy=?, contact_hitting=?, power_hitting=?,
             pitching=?, infield_defense=?, outfield_defense=?, catcher_skill=?,
-            baseball_iq=?, contacts=?, profile_updated_at=?
+            baseball_iq=?, contacts=?, jersey_number=?, profile_updated_at=?
           WHERE id=?`
         ).run(
           data.birthdate, data.best_positions, data.favorite_positions,
           data.arm_strength, data.throwing_accuracy, data.contact_hitting, data.power_hitting,
           data.pitching, data.infield_defense, data.outfield_defense, data.catcher_skill,
-          data.baseball_iq, data.contacts, new Date().toISOString(), id
+          data.baseball_iq, data.contacts, data.jersey_number, new Date().toISOString(), id
         );
       },
       addPlayer: async (p) => {
@@ -542,8 +570,8 @@ async function init() {
         }
       },
       getLineupGrid: async (eventId, subEventId) => {
-        if (eventId) return sqliteDb.prepare('SELECT g.*, p.player_name, p.best_positions FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.team_event_id = ? ORDER BY g.batting_order, g.inning').all(eventId);
-        return sqliteDb.prepare('SELECT g.*, p.player_name, p.best_positions FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.sub_event_id = ? ORDER BY g.batting_order, g.inning').all(subEventId);
+        if (eventId) return sqliteDb.prepare('SELECT g.*, p.player_name, p.best_positions, p.jersey_number FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.team_event_id = ? ORDER BY g.batting_order, g.inning').all(eventId);
+        return sqliteDb.prepare('SELECT g.*, p.player_name, p.best_positions, p.jersey_number FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.sub_event_id = ? ORDER BY g.batting_order, g.inning').all(subEventId);
       },
       saveLineupGrid: async (eventId, subEventId, entries) => {
         if (eventId) sqliteDb.prepare('DELETE FROM lineup_grid WHERE team_event_id = ?').run(eventId);
@@ -577,6 +605,11 @@ async function init() {
       logReminder: async (eventId, playerId, type, channel, value) => {
         sqliteDb.prepare('INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES (?,?,?,?,?)').run(eventId, playerId, type, channel, value);
       },
+      updateJerseyNumber: async (id, number) => sqliteDb.prepare('UPDATE players SET jersey_number = ? WHERE id = ?').run(number, id),
+      getAllMessages: async () => sqliteDb.prepare('SELECT * FROM team_messages ORDER BY pinned DESC, created_at DESC').all(),
+      addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message) VALUES (?,?,?)').run(m.author_name, m.author_type, m.message),
+      removeMessage: async (id) => sqliteDb.prepare('DELETE FROM team_messages WHERE id = ?').run(id),
+      togglePinMessage: async (id) => sqliteDb.prepare('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id),
     };
   }
 }
@@ -632,4 +665,9 @@ module.exports = {
   upsertRsvp: (...args) => impl.upsertRsvp(...args),
   hasReminderBeenSent: (...args) => impl.hasReminderBeenSent(...args),
   logReminder: (...args) => impl.logReminder(...args),
+  updateJerseyNumber: (...args) => impl.updateJerseyNumber(...args),
+  getAllMessages: (...args) => impl.getAllMessages(...args),
+  addMessage: (...args) => impl.addMessage(...args),
+  removeMessage: (...args) => impl.removeMessage(...args),
+  togglePinMessage: (...args) => impl.togglePinMessage(...args),
 };

@@ -435,6 +435,7 @@ app.post('/profile/:id', async (req, res) => {
     catcher_skill: toInt(req.body.catcher_skill),
     baseball_iq: toInt(req.body.baseball_iq),
     contacts: JSON.stringify(contacts),
+    jersey_number: (req.body.jersey_number || '').trim() || null,
   });
 
   const updated = await db.getPlayer(Number(req.params.id));
@@ -896,6 +897,12 @@ app.get('/admin/event/:id/rsvps', requireAdmin, async (req, res) => {
   });
 });
 
+app.post('/admin/jersey-number', requireAdmin, async (req, res) => {
+  const { player_id, jersey_number } = req.body;
+  await db.updateJerseyNumber(Number(player_id), (jersey_number || '').trim() || null);
+  res.json({ ok: true });
+});
+
 // --- Admin Settings ---
 
 app.get('/admin/settings', requireAdmin, async (req, res) => {
@@ -958,6 +965,62 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
   }
   await db.removeAdmin(targetId);
   res.redirect('/admin/settings?success=Admin+removed.');
+});
+
+// --- Team Messages ---
+
+app.get('/messages', async (req, res) => {
+  const messages = await db.getAllMessages();
+  const isAdmin = !!req.session.admin;
+  res.render('messages', { messages, isAdmin, error: null, success: null, phone: '' });
+});
+
+app.post('/messages', async (req, res) => {
+  const isAdmin = !!req.session.admin;
+  const phone = normalizePhone(req.body.phone || '');
+  const message = (req.body.message || '').trim();
+
+  if (!message) {
+    const messages = await db.getAllMessages();
+    return res.render('messages', { messages, isAdmin, error: 'Message cannot be empty.', success: null, phone: req.body.phone || '' });
+  }
+
+  let authorName, authorType;
+  if (isAdmin) {
+    authorName = req.session.admin.username;
+    authorType = 'admin';
+  } else {
+    if (phone.length !== 10) {
+      const messages = await db.getAllMessages();
+      return res.render('messages', { messages, isAdmin, error: 'Enter your 10-digit phone number to post.', success: null, phone: req.body.phone || '' });
+    }
+    const players = await db.getPlayersByPhone(phone);
+    const staff = await db.getStaffByPhone(phone);
+    if (players.length === 0 && !staff) {
+      const messages = await db.getAllMessages();
+      return res.render('messages', { messages, isAdmin, error: 'Phone number not recognized. Use the number on file.', success: null, phone: req.body.phone || '' });
+    }
+    if (staff) {
+      authorName = staff.name;
+      authorType = 'staff';
+    } else {
+      authorName = players[0].parent_name;
+      authorType = 'parent';
+    }
+  }
+
+  await db.addMessage({ author_name: authorName, author_type: authorType, message });
+  res.redirect('/messages');
+});
+
+app.post('/messages/delete', requireAdmin, async (req, res) => {
+  await db.removeMessage(Number(req.body.message_id));
+  res.redirect('/messages');
+});
+
+app.post('/messages/pin', requireAdmin, async (req, res) => {
+  await db.togglePinMessage(Number(req.body.message_id));
+  res.redirect('/messages');
 });
 
 // --- Staff View (read-only) ---
