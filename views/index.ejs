@@ -178,18 +178,19 @@
           var typeLabel = ev.type.charAt(0).toUpperCase() + ev.type.slice(1);
           var dateObj = new Date(ev.start_date + 'T12:00:00');
           var dateStr = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          if (ev.end_date) {
+          if (ev.end_date && ev.end_date !== ev.start_date) {
             var endObj = new Date(ev.end_date + 'T12:00:00');
             dateStr += ' – ' + endObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
           }
 
-          html += '<a href="/event/' + ev.id + '" class="te-card" data-date="' + ev.start_date + '" style="text-decoration:none;color:inherit;">';
-          html += '<div class="te-type-badge" style="background:' + color + '20;color:' + color + '">' + typeLabel + '</div>';
-          html += '<div class="te-title">' + ev.title + '</div>';
-          html += '<div class="te-meta">' + dateStr;
-          if (ev.start_time) html += ' at ' + formatTime(ev.start_time);
+          html += '<a href="/event/' + ev.id + '" class="te-card" data-date="' + ev.start_date + '">';
+          html += '<div class="te-header">';
+          html += '<span class="te-type-badge" style="background:' + color + '">' + typeLabel + '</span>';
+          html += '<span class="te-date">' + dateStr + '</span>';
           html += '</div>';
-          if (ev.location_name) html += '<div class="te-meta">' + ev.location_name + '</div>';
+          html += '<div class="te-title">' + ev.title + '</div>';
+          if (ev.start_time) html += '<div class="te-time">' + formatTime(ev.start_time) + '</div>';
+          if (ev.location_name) html += '<div class="te-location">' + ev.location_name + '</div>';
           html += '</a>';
         });
 
