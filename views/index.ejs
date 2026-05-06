@@ -183,8 +183,7 @@
           if (timeStr) html += '<div class="te-time">' + timeStr + '</div>';
           html += '</a>';
           html += '<div class="te-rsvp-area">';
-          html += '<button class="te-rsvp-btn" onclick="toggleRsvp(event,' + ev.id + ')">RSVP</button>';
-          html += '<div class="te-rsvp-form" id="rsvp-form-' + ev.id + '">';
+          html += '<div class="te-rsvp-label">RSVP</div>';
           html += '<input type="tel" class="te-rsvp-phone" id="rsvp-phone-' + ev.id + '" placeholder="Your phone #" maxlength="14">';
           html += '<div class="te-rsvp-choices">';
           html += '<button class="te-rsvp-choice te-rsvp-yes" onclick="submitRsvp(' + ev.id + ',\'yes\')">Yes</button>';
@@ -192,7 +191,6 @@
           html += '<button class="te-rsvp-choice te-rsvp-no" onclick="submitRsvp(' + ev.id + ',\'no\')">No</button>';
           html += '</div>';
           html += '<div class="te-rsvp-msg" id="rsvp-msg-' + ev.id + '"></div>';
-          html += '</div>';
           html += '</div>';
           html += '</div>';
           if (ev.location_name || ev.address) {
@@ -220,18 +218,6 @@
       document.getElementById('cal-prev').onclick = () => { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); };
       document.getElementById('cal-next').onclick = () => { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } renderCalendar(); };
 
-      function toggleRsvp(e, eventId) {
-        e.preventDefault();
-        e.stopPropagation();
-        const form = document.getElementById('rsvp-form-' + eventId);
-        const isOpen = form.classList.contains('open');
-        document.querySelectorAll('.te-rsvp-form.open').forEach(f => f.classList.remove('open'));
-        if (!isOpen) {
-          form.classList.add('open');
-          document.getElementById('rsvp-phone-' + eventId).focus();
-        }
-      }
-
       function submitRsvp(eventId, status) {
         const phoneInput = document.getElementById('rsvp-phone-' + eventId);
         const phone = phoneInput.value.replace(/\D/g, '');
@@ -253,9 +239,6 @@
             const label = status === 'yes' ? 'Attending' : status === 'no' ? 'Not attending' : 'Maybe';
             msgEl.textContent = label + ' — RSVP saved!';
             msgEl.className = 'te-rsvp-msg te-rsvp-msg-ok';
-            const btn = document.querySelector('#event-' + eventId + ' .te-rsvp-btn');
-            btn.textContent = label;
-            btn.classList.add('te-rsvp-done');
           } else {
             msgEl.textContent = 'Phone not found. Use number on file.';
             msgEl.className = 'te-rsvp-msg te-rsvp-msg-err';

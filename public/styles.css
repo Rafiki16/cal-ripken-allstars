@@ -44,6 +44,7 @@ body {
 /* Header */
 header {
   background: linear-gradient(135deg, #e65100, #ff9800);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
   color: var(--white);
   padding: 24px 0;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -73,7 +74,7 @@ header h1 {
 }
 
 .subtitle {
-  color: var(--gold);
+  color: rgba(255,255,255,0.9);
   font-size: 14px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1026,51 +1027,26 @@ main { flex: 1; padding-bottom: 40px; }
 }
 .te-rsvp-area {
   flex-shrink: 0;
-  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  min-width: 160px;
 }
-.te-rsvp-btn {
-  padding: 8px 20px;
-  border: 2px solid var(--primary);
-  border-radius: 8px;
-  background: var(--white);
-  color: var(--primary);
+.te-rsvp-label {
+  font-size: 11px;
   font-weight: 700;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b7280;
+  margin-bottom: 6px;
 }
-.te-rsvp-btn:hover {
-  background: var(--primary);
-  color: var(--white);
-}
-.te-rsvp-btn.te-rsvp-done {
-  background: #16a34a;
-  border-color: #16a34a;
-  color: var(--white);
-  font-size: 12px;
-  padding: 8px 14px;
-}
-.te-rsvp-form {
-  display: none;
-  margin-top: 8px;
-  padding: 12px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px solid var(--gray-200);
-  min-width: 180px;
-}
-.te-rsvp-form.open { display: block; }
 .te-rsvp-phone {
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border: 1px solid var(--gray-300);
   border-radius: 6px;
-  font-size: 14px;
-  margin-bottom: 8px;
+  font-size: 13px;
+  margin-bottom: 6px;
   box-sizing: border-box;
 }
 .te-rsvp-choices {
@@ -1291,8 +1267,6 @@ main { flex: 1; padding-bottom: 40px; }
   .cal-event-dot { width: 6px; height: 6px; }
   .te-card { padding: 16px; }
   .te-card-body { flex-direction: column; }
-  .te-rsvp-area { align-items: stretch; width: 100%; margin-top: 8px; }
-  .te-rsvp-btn { width: 100%; }
-  .te-rsvp-form { min-width: auto; }
+  .te-rsvp-area { align-items: stretch; width: 100%; margin-top: 8px; min-width: auto; }
   .te-title { font-size: 16px; }
 }
