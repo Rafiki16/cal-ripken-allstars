@@ -15,7 +15,8 @@
           <div class="logo">&#9918;</div>
           <div>
             <h1><%= event.title %></h1>
-            <p class="subtitle"><%= event.event_type === 'practice' ? 'Practice' : event.event_type === 'game' ? 'Game' : event.event_type === 'tournament' ? 'Tournament' : 'Event' %></p>
+            <% const typeLabel = event.event_type === 'practice' ? 'Practice' : event.event_type === 'game' ? 'Game' : event.event_type === 'tournament' ? 'Tournament' : 'Event'; %>
+            <p class="subtitle"><%= typeLabel %></p>
           </div>
         </div>
       </div>
@@ -23,99 +24,417 @@
   </header>
 
   <main class="container">
-    <div class="profile-section" style="max-width:640px; margin:24px auto;">
-      <div style="display:flex; flex-wrap:wrap; gap:20px; margin-bottom:20px;">
-        <div>
-          <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px;">Date</div>
-          <div style="font-size:16px; font-weight:700; color:var(--navy);">
-            <%= new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) %><% if (event.end_date) { %> &ndash; <%= new Date(event.end_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) %><% } %>
+    <div class="ed-body">
+      <!-- Event Info -->
+      <div class="ed-info">
+        <div class="ed-meta-row">
+          <div>
+            <div class="ed-label">Date</div>
+            <div class="ed-value">
+              <%= new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) %><% if (event.end_date && event.end_date !== event.start_date) { %> &ndash; <%= new Date(event.end_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) %><% } %>
+            </div>
           </div>
+          <% if (event.start_time) { %>
+          <div>
+            <div class="ed-label">Time</div>
+            <div class="ed-value">
+              <% const [h,m] = event.start_time.split(':'); const hr = parseInt(h); %>
+              <%= (hr % 12 || 12) + ':' + m + ' ' + (hr >= 12 ? 'PM' : 'AM') %><% if (event.end_time) { const [h2,m2] = event.end_time.split(':'); const hr2 = parseInt(h2); %> &ndash; <%= (hr2 % 12 || 12) + ':' + m2 + ' ' + (hr2 >= 12 ? 'PM' : 'AM') %><% } %>
+            </div>
+          </div>
+          <% } %>
         </div>
-        <% if (event.start_time) { %>
-        <div>
-          <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px;">Time</div>
-          <div style="font-size:16px; font-weight:700; color:var(--navy);">
-            <% const [h,m] = event.start_time.split(':'); const hr = parseInt(h); %>
-            <%= (hr % 12 || 12) + ':' + m + ' ' + (hr >= 12 ? 'PM' : 'AM') %><% if (event.end_time) { const [h2,m2] = event.end_time.split(':'); const hr2 = parseInt(h2); %> &ndash; <%= (hr2 % 12 || 12) + ':' + m2 + ' ' + (hr2 >= 12 ? 'PM' : 'AM') %><% } %>
-          </div>
+
+        <% if (event.location_name || event.address) { %>
+        <div style="margin-bottom:20px;">
+          <div class="ed-label">Location</div>
+          <% if (event.location_name) { %><div class="ed-value"><%= event.location_name %></div><% } %>
+          <% if (event.address) { %>
+            <div style="font-size:14px; color:var(--gray-700); margin-top:2px;"><%= event.address %></div>
+            <a href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(event.address) %>" target="_blank" rel="noopener" class="te-map-link" style="display:inline-block; margin-top:6px;">Open in Google Maps &rarr;</a>
+          <% } %>
         </div>
         <% } %>
-      </div>
 
-      <% if (event.location_name || event.address) { %>
-      <div style="margin-bottom:20px;">
-        <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:4px;">Location</div>
-        <% if (event.location_name) { %><div style="font-size:16px; font-weight:700; color:var(--navy);"><%= event.location_name %></div><% } %>
+        <% if (event.notes) { %>
+        <div style="margin-bottom:20px;">
+          <div class="ed-label">Notes</div>
+          <div style="font-size:14px; color:var(--gray-700);"><%= event.notes %></div>
+        </div>
+        <% } %>
+
+        <% if (event.event_type === 'tournament' && event.hotel_info) { %>
+        <div class="te-detail" style="margin-bottom:16px;">
+          <div class="ed-label">Hotels</div>
+          <div style="font-size:14px; color:var(--gray-700); white-space:pre-wrap;"><%= event.hotel_info %></div>
+        </div>
+        <% } %>
+        <% if (event.event_type === 'tournament' && event.carpool_info) { %>
+        <div class="te-detail" style="margin-bottom:16px;">
+          <div class="ed-label">Carpool Info</div>
+          <div style="font-size:14px; color:var(--gray-700); white-space:pre-wrap;"><%= event.carpool_info %></div>
+        </div>
+        <% } %>
+
         <% if (event.address) { %>
-          <div style="font-size:14px; color:var(--gray-700); margin-top:2px;"><%= event.address %></div>
-          <a href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(event.address) %>" target="_blank" rel="noopener" class="te-map-link" style="display:inline-block; margin-top:6px;">Open in Google Maps &rarr;</a>
+        <div class="te-map-embed">
+          <iframe src="https://www.google.com/maps?q=<%= encodeURIComponent(event.address) %>&output=embed" width="100%" height="250" style="border:0; border-radius:12px;" allowfullscreen loading="lazy"></iframe>
+        </div>
+        <% } %>
+      </div>
+
+      <!-- ============ PRACTICE PLAN ============ -->
+      <% if (event.event_type === 'practice') { %>
+      <div class="ed-section">
+        <h3 class="ed-section-title">Practice Plan</h3>
+
+        <% if (drills.length > 0) { %>
+        <div id="drill-list" class="drill-list">
+          <% drills.forEach((drill, i) => { %>
+          <div class="drill-card" data-duration="<%= drill.duration_minutes %>" data-name="<%= drill.drill_name %>" id="drill-<%= drill.id %>">
+            <div class="drill-num"><%= i + 1 %></div>
+            <div class="drill-body">
+              <div class="drill-name"><%= drill.drill_name %></div>
+              <% if (drill.description) { %><div class="drill-desc"><%= drill.description %></div><% } %>
+            </div>
+            <div class="drill-dur"><%= drill.duration_minutes %> min</div>
+          </div>
+          <% }); %>
+        </div>
+
+        <div class="drill-total">Total: <%= drills.reduce((s, d) => s + d.duration_minutes, 0) %> minutes</div>
+
+        <!-- Timer UI -->
+        <div id="timer-panel" class="timer-panel" style="display:none;">
+          <div class="timer-current-label" id="timer-label">—</div>
+          <div class="timer-countdown" id="timer-countdown">00:00</div>
+          <div class="timer-progress-bar"><div class="timer-progress-fill" id="timer-fill"></div></div>
+          <div class="timer-next" id="timer-next"></div>
+          <div class="timer-controls">
+            <button type="button" class="btn timer-btn" id="timer-pause">Pause</button>
+            <button type="button" class="btn timer-btn" id="timer-skip">Skip &rarr;</button>
+            <button type="button" class="btn timer-btn timer-btn-stop" id="timer-stop">End</button>
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-large" id="timer-start" style="margin-top:16px; width:100%;">Start Practice Timer</button>
+
+        <script>
+        (function(){
+          const drills = <%- JSON.stringify(drills.map(d => ({ id: d.id, name: d.drill_name, desc: d.description, mins: d.duration_minutes }))) %>;
+          let idx = 0, remaining = 0, interval = null, paused = false;
+          const panel = document.getElementById('timer-panel');
+          const label = document.getElementById('timer-label');
+          const countdown = document.getElementById('timer-countdown');
+          const fill = document.getElementById('timer-fill');
+          const next = document.getElementById('timer-next');
+          const cards = document.querySelectorAll('.drill-card');
+
+          function fmt(s) { return Math.floor(s/60).toString().padStart(2,'0') + ':' + (s%60).toString().padStart(2,'0'); }
+
+          function beep() {
+            try {
+              const ctx = new (window.AudioContext || window.webkitAudioContext)();
+              const osc = ctx.createOscillator(); const gain = ctx.createGain();
+              osc.connect(gain); gain.connect(ctx.destination);
+              osc.frequency.value = 880; gain.gain.value = 0.3;
+              osc.start(); osc.stop(ctx.currentTime + 0.3);
+              setTimeout(() => { const o2 = ctx.createOscillator(); o2.connect(gain); o2.frequency.value = 1100; o2.start(); o2.stop(ctx.currentTime + 0.3); }, 400);
+            } catch(e) {}
+          }
+
+          function highlight(i) {
+            cards.forEach((c, j) => { c.classList.toggle('drill-active', j === i); });
+            if (cards[i]) cards[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          function startDrill(i) {
+            if (i >= drills.length) { finish(); return; }
+            idx = i;
+            remaining = drills[i].mins * 60;
+            label.textContent = drills[i].name;
+            next.textContent = i + 1 < drills.length ? 'Next: ' + drills[i+1].name + ' (' + drills[i+1].mins + ' min)' : 'Last drill';
+            highlight(i);
+            tick();
+          }
+
+          function tick() {
+            const total = drills[idx].mins * 60;
+            countdown.textContent = fmt(remaining);
+            fill.style.width = ((total - remaining) / total * 100) + '%';
+            if (remaining <= 0) { beep(); startDrill(idx + 1); return; }
+            remaining--;
+          }
+
+          function finish() {
+            clearInterval(interval); interval = null;
+            panel.style.display = 'none';
+            document.getElementById('timer-start').style.display = '';
+            document.getElementById('timer-start').textContent = 'Restart Practice Timer';
+            cards.forEach(c => c.classList.remove('drill-active'));
+            beep(); setTimeout(beep, 600);
+            label.textContent = 'Practice Complete!';
+          }
+
+          document.getElementById('timer-start').onclick = function() {
+            this.style.display = 'none';
+            panel.style.display = '';
+            paused = false;
+            document.getElementById('timer-pause').textContent = 'Pause';
+            startDrill(0);
+            if (interval) clearInterval(interval);
+            interval = setInterval(() => { if (!paused) tick(); }, 1000);
+          };
+
+          document.getElementById('timer-pause').onclick = function() {
+            paused = !paused;
+            this.textContent = paused ? 'Resume' : 'Pause';
+          };
+
+          document.getElementById('timer-skip').onclick = function() {
+            startDrill(idx + 1);
+          };
+
+          document.getElementById('timer-stop').onclick = function() {
+            finish();
+          };
+        })();
+        </script>
+        <% } else if (!isAdmin) { %>
+          <p style="color:var(--gray-500); font-size:14px;">No practice plan posted yet.</p>
+        <% } %>
+
+        <% if (isAdmin) { %>
+        <div class="ed-admin-section">
+          <h4 class="ed-admin-title">Add Drill</h4>
+          <form method="POST" action="/event/<%= event.id %>/drill" class="drill-form">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <input type="text" name="drill_name" placeholder="Drill name" required class="form-input" style="flex:2; min-width:140px;">
+              <input type="text" name="description" placeholder="Description (optional)" class="form-input" style="flex:2; min-width:140px;">
+              <input type="number" name="duration_minutes" placeholder="Min" value="10" min="1" max="120" class="form-input" style="width:70px;">
+              <button type="submit" class="btn btn-confirm">Add</button>
+            </div>
+          </form>
+          <% if (drills.length > 0) { %>
+          <div style="margin-top:12px;">
+            <% drills.forEach(drill => { %>
+            <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--gray-100);">
+              <span style="flex:1; font-size:13px; font-weight:600;"><%= drill.drill_name %></span>
+              <span style="font-size:12px; color:var(--gray-500);"><%= drill.duration_minutes %>m</span>
+              <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/delete" style="margin:0;">
+                <button type="submit" class="btn-sm btn-sm-remove" title="Remove">&times;</button>
+              </form>
+            </div>
+            <% }); %>
+          </div>
+          <% } %>
+        </div>
         <% } %>
       </div>
       <% } %>
 
-      <% if (event.notes) { %>
-      <div style="margin-bottom:20px;">
-        <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:4px;">Notes</div>
-        <div style="font-size:14px; color:var(--gray-700);"><%= event.notes %></div>
-      </div>
-      <% } %>
+      <!-- ============ TOURNAMENT SUB-EVENTS ============ -->
+      <% if (event.event_type === 'tournament') { %>
+      <div class="ed-section">
+        <h3 class="ed-section-title">Tournament Schedule</h3>
 
-      <% if (event.event_type === 'tournament' && event.hotel_info) { %>
-      <div class="te-detail" style="margin-bottom:16px;">
-        <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:6px;">Hotels</div>
-        <div style="font-size:14px; color:var(--gray-700); white-space:pre-wrap;"><%= event.hotel_info %></div>
-      </div>
-      <% } %>
-
-      <% if (event.event_type === 'tournament' && event.carpool_info) { %>
-      <div class="te-detail" style="margin-bottom:16px;">
-        <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:6px;">Carpool Info</div>
-        <div style="font-size:14px; color:var(--gray-700); white-space:pre-wrap;"><%= event.carpool_info %></div>
-      </div>
-      <% } %>
-
-      <% if (event.address) { %>
-      <div class="te-map-embed">
-        <iframe src="https://www.google.com/maps?q=<%= encodeURIComponent(event.address) %>&output=embed" width="100%" height="300" style="border:0; border-radius:12px;" allowfullscreen loading="lazy"></iframe>
-      </div>
-      <% } %>
-    </div>
-
-    <!-- RSVP Section -->
-    <div class="rsvp-widget" style="max-width:640px; margin:24px auto;">
-      <%
-        const yesCount = rsvps.filter(r => r.status === 'yes').length;
-        const noCount = rsvps.filter(r => r.status === 'no').length;
-        const maybeCount = rsvps.filter(r => r.status === 'maybe').length;
-        const notResponded = confirmedPlayers.length - rsvps.filter(r => r.status !== 'pending').length;
-      %>
-      <h3 class="rsvp-widget-title">RSVP Status</h3>
-      <div class="rsvp-counts">
-        <div class="rsvp-count rsvp-count-yes"><span class="rsvp-count-num"><%= yesCount %></span> Attending</div>
-        <div class="rsvp-count rsvp-count-maybe"><span class="rsvp-count-num"><%= maybeCount %></span> Maybe</div>
-        <div class="rsvp-count rsvp-count-no"><span class="rsvp-count-num"><%= noCount %></span> Can't Make It</div>
-        <div class="rsvp-count rsvp-count-pending"><span class="rsvp-count-num"><%= notResponded %></span> No Response</div>
-      </div>
-
-      <% if (typeof rsvpSuccess !== 'undefined' || (typeof require !== 'undefined')) { %>
-      <% const qs = typeof require !== 'undefined' ? '' : ''; %>
-      <% } %>
-
-      <div class="rsvp-form-section">
-        <h4 style="margin:0 0 8px; color:var(--navy); font-size:15px;">RSVP for Your Player</h4>
-        <form method="POST" action="/event/<%= event.id %>/rsvp" class="rsvp-phone-form">
-          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
-            <div style="flex:1; min-width:180px;">
-              <label style="font-size:12px; color:var(--gray-500); font-weight:600; display:block; margin-bottom:4px;">Your Phone Number</label>
-              <input type="tel" name="phone" placeholder="(941) 555-1234" class="form-input" required style="margin:0;">
+        <% if (subEvents.length > 0) { %>
+        <div class="sub-events-list">
+          <% subEvents.forEach(se => { %>
+          <div class="sub-event-card" id="sub-<%= se.id %>">
+            <div class="sub-event-header">
+              <span class="sub-event-type sub-type-<%= se.sub_type %>"><%= se.sub_type === 'game' ? 'Game' : se.sub_type === 'practice' ? 'Practice' : se.sub_type === 'meeting' ? 'Meeting' : 'Other' %></span>
+              <span class="sub-event-title"><%= se.title %></span>
+              <% if (se.opponent) { %><span class="sub-event-vs">vs <%= se.opponent %></span><% } %>
             </div>
-            <div style="display:flex; gap:6px;">
-              <button type="submit" name="status" value="yes" class="btn rsvp-btn-sm rsvp-yes">Yes</button>
-              <button type="submit" name="status" value="maybe" class="btn rsvp-btn-sm rsvp-maybe">Maybe</button>
-              <button type="submit" name="status" value="no" class="btn rsvp-btn-sm rsvp-no">No</button>
+            <div class="sub-event-details">
+              <% if (se.start_date) { %>
+                <span><%= new Date(se.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) %></span>
+              <% } %>
+              <% if (se.start_time) { const [sh,sm] = se.start_time.split(':'); const shr = parseInt(sh); %>
+                <span><%= (shr % 12 || 12) + ':' + sm + ' ' + (shr >= 12 ? 'PM' : 'AM') %><% if (se.end_time) { const [eh,em] = se.end_time.split(':'); const ehr = parseInt(eh); %> &ndash; <%= (ehr % 12 || 12) + ':' + em + ' ' + (ehr >= 12 ? 'PM' : 'AM') %><% } %></span>
+              <% } %>
+              <% if (se.location_name) { %><span><%= se.location_name %></span><% } %>
             </div>
+            <% if (se.notes) { %><div class="sub-event-notes"><%= se.notes %></div><% } %>
+
+            <% if (se.sub_type === 'game') { %>
+              <% const seLineup = subLineups[se.id] || []; %>
+              <% if (seLineup.length > 0) { %>
+              <div class="lineup-section">
+                <h5 class="lineup-title">Lineup<% if (se.batting_all) { %> <span style="font-weight:400; color:var(--gray-500);">(Batting All)</span><% } %></h5>
+                <table class="lineup-table">
+                  <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Role</th></tr></thead>
+                  <tbody>
+                    <% seLineup.forEach(l => { %>
+                    <tr class="<%= l.is_starter ? '' : 'lineup-bench' %>">
+                      <td><%= l.batting_order || '-' %></td>
+                      <td><%= l.player_name %></td>
+                      <td><%= l.position || '-' %></td>
+                      <td><%= l.is_starter ? 'Starter' : 'Bench' %></td>
+                    </tr>
+                    <% }); %>
+                  </tbody>
+                </table>
+              </div>
+              <% } %>
+
+              <% if (isAdmin) { %>
+              <details class="ed-admin-details">
+                <summary>Manage Lineup</summary>
+                <form method="POST" action="/event/<%= event.id %>/sub-event/<%= se.id %>/lineup" class="lineup-form">
+                  <label style="display:flex; align-items:center; gap:6px; margin-bottom:10px; font-size:13px;">
+                    <input type="checkbox" name="batting_all" value="1" <%= se.batting_all ? 'checked' : '' %>> Batting everyone
+                  </label>
+                  <table class="lineup-edit-table">
+                    <thead><tr><th>Order</th><th>Player</th><th>Position</th><th>Start</th></tr></thead>
+                    <tbody>
+                      <% const sePlayers = confirmedPlayers; const seExisting = subLineups[se.id] || []; %>
+                      <% sePlayers.forEach((p, i) => { const ex = seExisting.find(l => l.player_id === p.id); %>
+                      <tr>
+                        <td><input type="number" name="batting_order" value="<%= ex ? ex.batting_order : (i+1) %>" min="1" style="width:50px;" class="form-input"></td>
+                        <td><%= p.player_name %><input type="hidden" name="player_id" value="<%= p.id %>"></td>
+                        <td><select name="position" class="form-input" style="width:70px;">
+                          <option value="">—</option>
+                          <% POSITIONS.forEach(pos => { %><option value="<%= pos %>" <%= ex && ex.position === pos ? 'selected' : '' %>><%= pos %></option><% }); %>
+                        </select></td>
+                        <td><input type="checkbox" name="is_starter" value="<%= p.id %>" <%= !ex || ex.is_starter ? 'checked' : '' %>></td>
+                      </tr>
+                      <% }); %>
+                    </tbody>
+                  </table>
+                  <button type="submit" class="btn btn-confirm" style="margin-top:8px;">Save Lineup</button>
+                </form>
+              </details>
+              <% } %>
+            <% } %>
+
+            <% if (isAdmin) { %>
+            <div style="margin-top:8px; display:flex; gap:6px;">
+              <form method="POST" action="/event/<%= event.id %>/sub-event/<%= se.id %>/delete" style="margin:0;" onsubmit="return confirm('Remove this sub-event?')">
+                <button type="submit" class="btn-sm btn-sm-remove">&times; Remove</button>
+              </form>
+            </div>
+            <% } %>
           </div>
-        </form>
+          <% }); %>
+        </div>
+        <% } else if (!isAdmin) { %>
+          <p style="color:var(--gray-500); font-size:14px;">Tournament schedule not posted yet.</p>
+        <% } %>
+
+        <% if (isAdmin) { %>
+        <div class="ed-admin-section">
+          <h4 class="ed-admin-title">Add Sub-Event</h4>
+          <form method="POST" action="/event/<%= event.id %>/sub-event" class="sub-event-form">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+              <select name="sub_type" class="form-input" style="width:110px;">
+                <option value="game">Game</option>
+                <option value="practice">Practice</option>
+                <option value="meeting">Meeting</option>
+                <option value="other">Other</option>
+              </select>
+              <input type="text" name="title" placeholder="Title (e.g. Game 1)" required class="form-input" style="flex:1; min-width:120px;">
+              <input type="text" name="opponent" placeholder="Opponent" class="form-input" style="width:140px;">
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+              <input type="date" name="start_date" value="<%= event.start_date %>" class="form-input" style="width:150px;">
+              <input type="time" name="start_time" class="form-input" style="width:120px;">
+              <input type="time" name="end_time" class="form-input" style="width:120px;">
+              <input type="text" name="location_name" placeholder="Field / Location" class="form-input" style="flex:1; min-width:120px;">
+            </div>
+            <input type="text" name="notes" placeholder="Notes (optional)" class="form-input" style="margin-bottom:8px;">
+            <button type="submit" class="btn btn-confirm">Add Sub-Event</button>
+          </form>
+        </div>
+        <% } %>
+      </div>
+      <% } %>
+
+      <!-- ============ GAME LINEUP ============ -->
+      <% if (event.event_type === 'game') { %>
+      <div class="ed-section">
+        <h3 class="ed-section-title">Lineup<% if (event.batting_all) { %> <span style="font-weight:400; color:var(--gray-500);">(Batting All)</span><% } %></h3>
+
+        <% if (lineup.length > 0) { %>
+        <table class="lineup-table">
+          <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Role</th></tr></thead>
+          <tbody>
+            <% lineup.forEach(l => { %>
+            <tr class="<%= l.is_starter ? '' : 'lineup-bench' %>">
+              <td><%= l.batting_order || '-' %></td>
+              <td><%= l.player_name %></td>
+              <td><%= l.position || '-' %></td>
+              <td><%= l.is_starter ? 'Starter' : 'Bench' %></td>
+            </tr>
+            <% }); %>
+          </tbody>
+        </table>
+        <% } else if (!isAdmin) { %>
+          <p style="color:var(--gray-500); font-size:14px;">Lineup not posted yet.</p>
+        <% } %>
+
+        <% if (isAdmin) { %>
+        <details class="ed-admin-details" <%= lineup.length === 0 ? 'open' : '' %>>
+          <summary>Manage Lineup</summary>
+          <form method="POST" action="/event/<%= event.id %>/lineup" class="lineup-form">
+            <label style="display:flex; align-items:center; gap:6px; margin-bottom:10px; font-size:13px;">
+              <input type="checkbox" name="batting_all" value="1" <%= event.batting_all ? 'checked' : '' %>> Batting everyone (all players bat, 9 field)
+            </label>
+            <table class="lineup-edit-table">
+              <thead><tr><th>Order</th><th>Player</th><th>Position</th><th>Start</th></tr></thead>
+              <tbody>
+                <% confirmedPlayers.forEach((p, i) => { const ex = lineup.find(l => l.player_id === p.id); %>
+                <tr>
+                  <td><input type="number" name="batting_order" value="<%= ex ? ex.batting_order : (i+1) %>" min="1" style="width:50px;" class="form-input"></td>
+                  <td><%= p.player_name %><input type="hidden" name="player_id" value="<%= p.id %>"></td>
+                  <td><select name="position" class="form-input" style="width:70px;">
+                    <option value="">—</option>
+                    <% POSITIONS.forEach(pos => { %><option value="<%= pos %>" <%= ex && ex.position === pos ? 'selected' : '' %>><%= pos %></option><% }); %>
+                  </select></td>
+                  <td><input type="checkbox" name="is_starter" value="<%= p.id %>" <%= !ex || ex.is_starter ? 'checked' : '' %>></td>
+                </tr>
+                <% }); %>
+              </tbody>
+            </table>
+            <button type="submit" class="btn btn-confirm" style="margin-top:8px;">Save Lineup</button>
+          </form>
+        </details>
+        <% } %>
+      </div>
+      <% } %>
+
+      <!-- ============ RSVP ============ -->
+      <div class="ed-section">
+        <%
+          const yesCount = rsvps.filter(r => r.status === 'yes').length;
+          const noCount = rsvps.filter(r => r.status === 'no').length;
+          const maybeCount = rsvps.filter(r => r.status === 'maybe').length;
+          const notResponded = confirmedPlayers.length - rsvps.filter(r => r.status !== 'pending').length;
+        %>
+        <h3 class="ed-section-title">RSVP Status</h3>
+        <div class="rsvp-counts">
+          <div class="rsvp-count rsvp-count-yes"><span class="rsvp-count-num"><%= yesCount %></span> Attending</div>
+          <div class="rsvp-count rsvp-count-maybe"><span class="rsvp-count-num"><%= maybeCount %></span> Maybe</div>
+          <div class="rsvp-count rsvp-count-no"><span class="rsvp-count-num"><%= noCount %></span> Can't Make It</div>
+          <div class="rsvp-count rsvp-count-pending"><span class="rsvp-count-num"><%= notResponded %></span> No Response</div>
+        </div>
+
+        <div class="rsvp-form-section">
+          <h4 style="margin:0 0 8px; color:var(--navy); font-size:15px;">RSVP for Your Player</h4>
+          <form method="POST" action="/event/<%= event.id %>/rsvp" class="rsvp-phone-form">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+              <div style="flex:1; min-width:180px;">
+                <label style="font-size:12px; color:var(--gray-500); font-weight:600; display:block; margin-bottom:4px;">Your Phone Number</label>
+                <input type="tel" name="phone" placeholder="(941) 555-1234" class="form-input" required style="margin:0;">
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button type="submit" name="status" value="yes" class="btn rsvp-btn-sm rsvp-yes">Yes</button>
+                <button type="submit" name="status" value="maybe" class="btn rsvp-btn-sm rsvp-maybe">Maybe</button>
+                <button type="submit" name="status" value="no" class="btn rsvp-btn-sm rsvp-no">No</button>
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   </main>

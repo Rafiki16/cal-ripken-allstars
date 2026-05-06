@@ -263,6 +263,60 @@
         <button type="submit" class="btn btn-confirm">Add Event</button>
       </form>
 
+      <!-- Admin Calendar -->
+      <div class="calendar-section" style="margin-top:24px;">
+        <div class="calendar-header">
+          <button type="button" class="cal-nav" id="adm-cal-prev">&larr;</button>
+          <h3 class="cal-month-title" id="adm-cal-title"></h3>
+          <button type="button" class="cal-nav" id="adm-cal-next">&rarr;</button>
+        </div>
+        <div class="cal-grid">
+          <div class="cal-day-header">Sun</div><div class="cal-day-header">Mon</div><div class="cal-day-header">Tue</div><div class="cal-day-header">Wed</div><div class="cal-day-header">Thu</div><div class="cal-day-header">Fri</div><div class="cal-day-header">Sat</div>
+          <% for (let i = 0; i < 42; i++) { %><div class="cal-cell adm-cal-cell" data-index="<%= i %>"></div><% } %>
+        </div>
+        <div style="display:flex; gap:12px; margin-top:8px; font-size:11px; color:var(--gray-500); flex-wrap:wrap;">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#16a34a;vertical-align:middle;"></span> Practice</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#111827;vertical-align:middle;"></span> Game</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2563eb;vertical-align:middle;"></span> Tournament</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#dc2626;vertical-align:middle;"></span> Player Absence</span>
+        </div>
+      </div>
+      <script>
+      (function(){
+        const TE = <%- JSON.stringify(teamEvents.map(e => ({ type: e.event_type, title: e.title, start_date: e.start_date, end_date: e.end_date }))) %>;
+        const ABS = <%- JSON.stringify(allEvents.map(e => ({ start_date: e.start_date, end_date: e.end_date }))) %>;
+        const TC = { practice:'#16a34a', game:'#111827', tournament:'#2563eb', other:'#6b7280' };
+        const today = new Date();
+        let cMonth = today.getMonth(), cYear = today.getFullYear();
+
+        function renderAdmCal() {
+          const firstDay = new Date(cYear, cMonth, 1).getDay();
+          const daysInMonth = new Date(cYear, cMonth + 1, 0).getDate();
+          document.getElementById('adm-cal-title').textContent = new Date(cYear, cMonth).toLocaleDateString('en-US', { month:'long', year:'numeric' });
+          const cells = document.querySelectorAll('.adm-cal-cell');
+          cells.forEach((cell, i) => {
+            cell.innerHTML = ''; cell.className = 'cal-cell adm-cal-cell';
+            const day = i - firstDay + 1;
+            if (day >= 1 && day <= daysInMonth) {
+              const ds = cYear + '-' + String(cMonth+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+              cell.innerHTML = '<span class="cal-day-num">' + day + '</span>';
+              if (ds === today.toISOString().slice(0,10)) cell.classList.add('cal-today');
+              TE.filter(e => { if (e.end_date) return ds >= e.start_date && ds <= e.end_date; return e.start_date === ds; }).forEach(ev => {
+                const dot = document.createElement('div'); dot.className = 'cal-event-dot'; dot.style.background = TC[ev.type] || TC.other; dot.title = ev.title; cell.appendChild(dot);
+              });
+              const hasAbsence = ABS.some(a => { if (a.end_date) return ds >= a.start_date && ds <= a.end_date; return a.start_date === ds; });
+              if (hasAbsence) {
+                const dot = document.createElement('div'); dot.className = 'cal-event-dot'; dot.style.background = '#dc2626'; dot.title = 'Player absence'; cell.appendChild(dot);
+              }
+            } else { cell.classList.add('cal-empty'); }
+          });
+        }
+        document.getElementById('adm-cal-prev').onclick = () => { cMonth--; if (cMonth<0){cMonth=11;cYear--;} renderAdmCal(); };
+        document.getElementById('adm-cal-next').onclick = () => { cMonth++; if (cMonth>11){cMonth=0;cYear++;} renderAdmCal(); };
+        renderAdmCal();
+      })();
+      </script>
+
       <% if (teamEvents.length > 0) { %>
         <table class="admin-table" style="margin-top:20px; min-width:auto;">
           <thead>
@@ -280,7 +334,7 @@
             <% teamEvents.forEach(ev => { %>
               <tr>
                 <td>
-                  <span class="te-type-badge" style="background:<%= ev.event_type === 'practice' ? '#16a34a' : ev.event_type === 'game' ? '#1a2744' : ev.event_type === 'tournament' ? '#c41e3a' : '#6b7280' %>; font-size:10px;">
+                  <span class="te-type-badge" style="background:<%= ev.event_type === 'practice' ? '#16a34a' : ev.event_type === 'game' ? '#111827' : ev.event_type === 'tournament' ? '#2563eb' : '#6b7280' %>; font-size:10px;">
                     <%= ev.event_type === 'practice' ? 'Practice' : ev.event_type === 'game' ? 'Game' : ev.event_type === 'tournament' ? 'Tournament' : 'Other' %>
                   </span>
                 </td>

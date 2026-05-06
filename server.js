@@ -212,7 +212,17 @@ app.get('/event/:id', async (req, res) => {
   const rsvps = await db.getRsvpsForEvent(event.id);
   const players = await db.getAllPlayers();
   const confirmed = players.filter(p => p.status === 'confirmed');
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed });
+  const isAdmin = !!req.session.admin;
+  let drills = [], subEvents = [], lineup = [], subLineups = {};
+  if (event.event_type === 'practice') drills = await db.getDrills(event.id);
+  if (event.event_type === 'tournament') {
+    subEvents = await db.getSubEvents(event.id);
+    for (const se of subEvents) {
+      if (se.sub_type === 'game') subLineups[se.id] = await db.getLineupForSubEvent(se.id);
+    }
+  }
+  if (event.event_type === 'game') lineup = await db.getLineupForEvent(event.id);
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, drills, subEvents, lineup, subLineups, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'] });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -499,6 +509,7 @@ function requireAdmin(req, res, next) {
 }
 
 app.get('/admin/login', async (req, res) => {
+  if (req.session.admin) return res.redirect('/admin');
   const count = await db.countAdmins();
   if (count === 0) return res.redirect('/admin/setup');
   res.render('admin-login', { error: null });
@@ -716,6 +727,122 @@ app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
 app.post('/admin/remove-team-event', requireAdmin, async (req, res) => {
   await db.removeTeamEvent(Number(req.body.event_id));
   res.redirect('/admin?success=Event+removed');
+});
+
+// --- Practice Drills ---
+app.post('/event/:id/drill', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/admin');
+  const drills = await db.getDrills(event.id);
+  await db.addDrill({
+    team_event_id: event.id,
+    drill_name: (req.body.drill_name || '').trim() || 'New Drill',
+    description: (req.body.description || '').trim() || null,
+    duration_minutes: parseInt(req.body.duration_minutes) || 10,
+    sort_order: drills.length,
+  });
+  res.redirect('/event/' + event.id);
+});
+
+app.post('/event/:id/drill/:drillId/update', requireAdmin, async (req, res) => {
+  await db.updateDrill(Number(req.params.drillId), {
+    drill_name: (req.body.drill_name || '').trim() || 'Drill',
+    description: (req.body.description || '').trim() || null,
+    duration_minutes: parseInt(req.body.duration_minutes) || 10,
+    sort_order: parseInt(req.body.sort_order) || 0,
+  });
+  res.redirect('/event/' + req.params.id);
+});
+
+app.post('/event/:id/drill/:drillId/delete', requireAdmin, async (req, res) => {
+  await db.removeDrill(Number(req.params.drillId));
+  res.redirect('/event/' + req.params.id);
+});
+
+// --- Tournament Sub-Events ---
+app.post('/event/:id/sub-event', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/admin');
+  await db.addSubEvent({
+    team_event_id: event.id,
+    sub_type: req.body.sub_type || 'game',
+    title: (req.body.title || '').trim() || 'Game',
+    start_date: req.body.start_date || event.start_date,
+    start_time: req.body.start_time || null,
+    end_time: req.body.end_time || null,
+    location_name: (req.body.location_name || '').trim() || null,
+    opponent: (req.body.opponent || '').trim() || null,
+    notes: (req.body.notes || '').trim() || null,
+    batting_all: req.body.batting_all ? 1 : 0,
+  });
+  res.redirect('/event/' + event.id);
+});
+
+app.post('/event/:id/sub-event/:subId/update', requireAdmin, async (req, res) => {
+  await db.updateSubEvent(Number(req.params.subId), {
+    sub_type: req.body.sub_type || 'game',
+    title: (req.body.title || '').trim() || 'Game',
+    start_date: req.body.start_date || null,
+    start_time: req.body.start_time || null,
+    end_time: req.body.end_time || null,
+    location_name: (req.body.location_name || '').trim() || null,
+    opponent: (req.body.opponent || '').trim() || null,
+    notes: (req.body.notes || '').trim() || null,
+    batting_all: req.body.batting_all ? 1 : 0,
+  });
+  res.redirect('/event/' + req.params.id);
+});
+
+app.post('/event/:id/sub-event/:subId/delete', requireAdmin, async (req, res) => {
+  await db.removeSubEvent(Number(req.params.subId));
+  res.redirect('/event/' + req.params.id);
+});
+
+// --- Game Lineups ---
+app.post('/event/:id/lineup', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/admin');
+  if (req.body.batting_all !== undefined) {
+    await db.updateBattingAll(event.id, req.body.batting_all === '1');
+  }
+  const playerIds = Array.isArray(req.body.player_id) ? req.body.player_id : [req.body.player_id].filter(Boolean);
+  const positions = Array.isArray(req.body.position) ? req.body.position : [req.body.position].filter(Boolean);
+  const orders = Array.isArray(req.body.batting_order) ? req.body.batting_order : [req.body.batting_order].filter(Boolean);
+  const starters = Array.isArray(req.body.is_starter) ? req.body.is_starter : [req.body.is_starter].filter(Boolean);
+  const starterSet = new Set(starters);
+  const entries = playerIds.map((pid, i) => ({
+    team_event_id: event.id,
+    sub_event_id: null,
+    player_id: Number(pid),
+    position: (positions[i] || '').trim() || null,
+    batting_order: parseInt(orders[i]) || (i + 1),
+    is_starter: starterSet.has(pid) ? 1 : 0,
+  }));
+  if (entries.length > 0) await db.saveLineup(entries);
+  res.redirect('/event/' + event.id);
+});
+
+app.post('/event/:id/sub-event/:subId/lineup', requireAdmin, async (req, res) => {
+  const subId = Number(req.params.subId);
+  if (req.body.batting_all !== undefined) {
+    const sub = await db.getSubEvent(subId);
+    if (sub) await db.updateSubEvent(subId, { ...sub, batting_all: req.body.batting_all === '1' ? 1 : 0 });
+  }
+  const playerIds = Array.isArray(req.body.player_id) ? req.body.player_id : [req.body.player_id].filter(Boolean);
+  const positions = Array.isArray(req.body.position) ? req.body.position : [req.body.position].filter(Boolean);
+  const orders = Array.isArray(req.body.batting_order) ? req.body.batting_order : [req.body.batting_order].filter(Boolean);
+  const starters = Array.isArray(req.body.is_starter) ? req.body.is_starter : [req.body.is_starter].filter(Boolean);
+  const starterSet = new Set(starters);
+  const entries = playerIds.map((pid, i) => ({
+    team_event_id: null,
+    sub_event_id: subId,
+    player_id: Number(pid),
+    position: (positions[i] || '').trim() || null,
+    batting_order: parseInt(orders[i]) || (i + 1),
+    is_starter: starterSet.has(pid) ? 1 : 0,
+  }));
+  if (entries.length > 0) await db.saveLineup(entries);
+  res.redirect('/event/' + req.params.id);
 });
 
 app.get('/admin/event/:id/rsvps', requireAdmin, async (req, res) => {

@@ -114,6 +114,48 @@ async function init() {
       )
     `);
 
+    try { await pool.query('ALTER TABLE team_events ADD COLUMN batting_all INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* exists */ }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS practice_drills (
+        id SERIAL PRIMARY KEY,
+        team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
+        drill_name TEXT NOT NULL,
+        description TEXT,
+        duration_minutes INTEGER NOT NULL DEFAULT 10,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tournament_sub_events (
+        id SERIAL PRIMARY KEY,
+        team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
+        sub_type TEXT NOT NULL DEFAULT 'game',
+        title TEXT NOT NULL,
+        start_date TEXT,
+        start_time TEXT,
+        end_time TEXT,
+        location_name TEXT,
+        opponent TEXT,
+        notes TEXT,
+        batting_all INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS game_lineups (
+        id SERIAL PRIMARY KEY,
+        team_event_id INTEGER REFERENCES team_events(id) ON DELETE CASCADE,
+        sub_event_id INTEGER REFERENCES tournament_sub_events(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        position TEXT,
+        batting_order INTEGER,
+        is_starter INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS rsvps (
         id SERIAL PRIMARY KEY,
@@ -193,6 +235,31 @@ async function init() {
         [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, id]
       ),
       removeTeamEvent: async (id) => pool.query('DELETE FROM team_events WHERE id = $1', [id]),
+      updateBattingAll: async (id, val) => pool.query('UPDATE team_events SET batting_all = $1 WHERE id = $2', [val ? 1 : 0, id]),
+      getDrills: async (eventId) => (await pool.query('SELECT * FROM practice_drills WHERE team_event_id = $1 ORDER BY sort_order', [eventId])).rows,
+      addDrill: async (d) => (await pool.query('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id', [d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order])).rows[0],
+      updateDrill: async (id, d) => pool.query('UPDATE practice_drills SET drill_name=$1, description=$2, duration_minutes=$3, sort_order=$4 WHERE id=$5', [d.drill_name, d.description, d.duration_minutes, d.sort_order, id]),
+      removeDrill: async (id) => pool.query('DELETE FROM practice_drills WHERE id = $1', [id]),
+      getSubEvents: async (eventId) => (await pool.query('SELECT * FROM tournament_sub_events WHERE team_event_id = $1 ORDER BY start_date, start_time, sort_order', [eventId])).rows,
+      getSubEvent: async (id) => (await pool.query('SELECT * FROM tournament_sub_events WHERE id = $1', [id])).rows[0] || null,
+      addSubEvent: async (s) => (await pool.query('INSERT INTO tournament_sub_events (team_event_id, sub_type, title, start_date, start_time, end_time, location_name, opponent, notes, batting_all, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id', [s.team_event_id, s.sub_type, s.title, s.start_date, s.start_time, s.end_time, s.location_name, s.opponent, s.notes, s.batting_all || 0, s.sort_order || 0])).rows[0],
+      updateSubEvent: async (id, s) => pool.query('UPDATE tournament_sub_events SET sub_type=$1, title=$2, start_date=$3, start_time=$4, end_time=$5, location_name=$6, opponent=$7, notes=$8, batting_all=$9 WHERE id=$10', [s.sub_type, s.title, s.start_date, s.start_time, s.end_time, s.location_name, s.opponent, s.notes, s.batting_all || 0, id]),
+      removeSubEvent: async (id) => pool.query('DELETE FROM tournament_sub_events WHERE id = $1', [id]),
+      getLineupForEvent: async (eventId) => (await pool.query('SELECT l.*, p.player_name FROM game_lineups l JOIN players p ON l.player_id = p.id WHERE l.team_event_id = $1 ORDER BY l.batting_order NULLS LAST, p.player_name', [eventId])).rows,
+      getLineupForSubEvent: async (subEventId) => (await pool.query('SELECT l.*, p.player_name FROM game_lineups l JOIN players p ON l.player_id = p.id WHERE l.sub_event_id = $1 ORDER BY l.batting_order NULLS LAST, p.player_name', [subEventId])).rows,
+      saveLineup: async (entries) => {
+        for (const e of entries) {
+          if (e.team_event_id) {
+            await pool.query('DELETE FROM game_lineups WHERE team_event_id = $1', [e.team_event_id]);
+          } else {
+            await pool.query('DELETE FROM game_lineups WHERE sub_event_id = $1', [e.sub_event_id]);
+          }
+          break;
+        }
+        for (const e of entries) {
+          await pool.query('INSERT INTO game_lineups (team_event_id, sub_event_id, player_id, position, batting_order, is_starter) VALUES ($1,$2,$3,$4,$5,$6)', [e.team_event_id || null, e.sub_event_id || null, e.player_id, e.position, e.batting_order, e.is_starter]);
+        }
+      },
       getAdminByUsername: async (username) => (await pool.query('SELECT * FROM admins WHERE username = $1', [username])).rows[0] || null,
       getAdminById: async (id) => (await pool.query('SELECT * FROM admins WHERE id = $1', [id])).rows[0] || null,
       getAllAdmins: async () => (await pool.query('SELECT id, username, created_at FROM admins ORDER BY created_at')).rows,
@@ -291,6 +358,48 @@ async function init() {
       )
     `);
 
+    try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN batting_all INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* exists */ }
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS practice_drills (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
+        drill_name TEXT NOT NULL,
+        description TEXT,
+        duration_minutes INTEGER NOT NULL DEFAULT 10,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS tournament_sub_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
+        sub_type TEXT NOT NULL DEFAULT 'game',
+        title TEXT NOT NULL,
+        start_date TEXT,
+        start_time TEXT,
+        end_time TEXT,
+        location_name TEXT,
+        opponent TEXT,
+        notes TEXT,
+        batting_all INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS game_lineups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_event_id INTEGER REFERENCES team_events(id) ON DELETE CASCADE,
+        sub_event_id INTEGER REFERENCES tournament_sub_events(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        position TEXT,
+        batting_order INTEGER,
+        is_starter INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS rsvps (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -364,6 +473,36 @@ async function init() {
         'UPDATE team_events SET event_type=?, title=?, start_date=?, start_time=?, end_date=?, end_time=?, location_name=?, address=?, notes=?, hotel_info=?, carpool_info=? WHERE id=?'
       ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, id),
       removeTeamEvent: async (id) => sqliteDb.prepare('DELETE FROM team_events WHERE id = ?').run(id),
+      updateBattingAll: async (id, val) => sqliteDb.prepare('UPDATE team_events SET batting_all = ? WHERE id = ?').run(val ? 1 : 0, id),
+      getDrills: async (eventId) => sqliteDb.prepare('SELECT * FROM practice_drills WHERE team_event_id = ? ORDER BY sort_order').all(eventId),
+      addDrill: async (d) => {
+        const r = sqliteDb.prepare('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order) VALUES (?,?,?,?,?)').run(d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order);
+        return { id: r.lastInsertRowid };
+      },
+      updateDrill: async (id, d) => sqliteDb.prepare('UPDATE practice_drills SET drill_name=?, description=?, duration_minutes=?, sort_order=? WHERE id=?').run(d.drill_name, d.description, d.duration_minutes, d.sort_order, id),
+      removeDrill: async (id) => sqliteDb.prepare('DELETE FROM practice_drills WHERE id = ?').run(id),
+      getSubEvents: async (eventId) => sqliteDb.prepare('SELECT * FROM tournament_sub_events WHERE team_event_id = ? ORDER BY start_date, start_time, sort_order').all(eventId),
+      getSubEvent: async (id) => sqliteDb.prepare('SELECT * FROM tournament_sub_events WHERE id = ?').get(id) || null,
+      addSubEvent: async (s) => {
+        const r = sqliteDb.prepare('INSERT INTO tournament_sub_events (team_event_id, sub_type, title, start_date, start_time, end_time, location_name, opponent, notes, batting_all, sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(s.team_event_id, s.sub_type, s.title, s.start_date, s.start_time, s.end_time, s.location_name, s.opponent, s.notes, s.batting_all || 0, s.sort_order || 0);
+        return { id: r.lastInsertRowid };
+      },
+      updateSubEvent: async (id, s) => sqliteDb.prepare('UPDATE tournament_sub_events SET sub_type=?, title=?, start_date=?, start_time=?, end_time=?, location_name=?, opponent=?, notes=?, batting_all=? WHERE id=?').run(s.sub_type, s.title, s.start_date, s.start_time, s.end_time, s.location_name, s.opponent, s.notes, s.batting_all || 0, id),
+      removeSubEvent: async (id) => sqliteDb.prepare('DELETE FROM tournament_sub_events WHERE id = ?').run(id),
+      getLineupForEvent: async (eventId) => sqliteDb.prepare('SELECT l.*, p.player_name FROM game_lineups l JOIN players p ON l.player_id = p.id WHERE l.team_event_id = ? ORDER BY l.batting_order, p.player_name').all(eventId),
+      getLineupForSubEvent: async (subEventId) => sqliteDb.prepare('SELECT l.*, p.player_name FROM game_lineups l JOIN players p ON l.player_id = p.id WHERE l.sub_event_id = ? ORDER BY l.batting_order, p.player_name').all(subEventId),
+      saveLineup: async (entries) => {
+        if (entries.length === 0) return;
+        if (entries[0].team_event_id) {
+          sqliteDb.prepare('DELETE FROM game_lineups WHERE team_event_id = ?').run(entries[0].team_event_id);
+        } else {
+          sqliteDb.prepare('DELETE FROM game_lineups WHERE sub_event_id = ?').run(entries[0].sub_event_id);
+        }
+        const ins = sqliteDb.prepare('INSERT INTO game_lineups (team_event_id, sub_event_id, player_id, position, batting_order, is_starter) VALUES (?,?,?,?,?,?)');
+        for (const e of entries) {
+          ins.run(e.team_event_id || null, e.sub_event_id || null, e.player_id, e.position, e.batting_order, e.is_starter);
+        }
+      },
       getAdminByUsername: async (username) => sqliteDb.prepare('SELECT * FROM admins WHERE username = ?').get(username) || null,
       getAdminById: async (id) => sqliteDb.prepare('SELECT * FROM admins WHERE id = ?').get(id) || null,
       getAllAdmins: async () => sqliteDb.prepare('SELECT id, username, created_at FROM admins ORDER BY created_at').all(),
@@ -416,6 +555,19 @@ module.exports = {
   addTeamEvent: (...args) => impl.addTeamEvent(...args),
   updateTeamEvent: (...args) => impl.updateTeamEvent(...args),
   removeTeamEvent: (...args) => impl.removeTeamEvent(...args),
+  updateBattingAll: (...args) => impl.updateBattingAll(...args),
+  getDrills: (...args) => impl.getDrills(...args),
+  addDrill: (...args) => impl.addDrill(...args),
+  updateDrill: (...args) => impl.updateDrill(...args),
+  removeDrill: (...args) => impl.removeDrill(...args),
+  getSubEvents: (...args) => impl.getSubEvents(...args),
+  getSubEvent: (...args) => impl.getSubEvent(...args),
+  addSubEvent: (...args) => impl.addSubEvent(...args),
+  updateSubEvent: (...args) => impl.updateSubEvent(...args),
+  removeSubEvent: (...args) => impl.removeSubEvent(...args),
+  getLineupForEvent: (...args) => impl.getLineupForEvent(...args),
+  getLineupForSubEvent: (...args) => impl.getLineupForSubEvent(...args),
+  saveLineup: (...args) => impl.saveLineup(...args),
   getAdminByUsername: (...args) => impl.getAdminByUsername(...args),
   getAdminById: (...args) => impl.getAdminById(...args),
   getAllAdmins: (...args) => impl.getAllAdmins(...args),

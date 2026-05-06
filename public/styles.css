@@ -1127,6 +1127,71 @@ main { flex: 1; padding-bottom: 40px; }
 .rsvp-form-section { border-top:1px solid var(--gray-200); padding-top:16px; }
 .rsvp-btn-sm { padding:8px 14px; font-size:13px; font-weight:700; border-radius:8px; border:2px solid transparent; cursor:pointer; }
 
+/* Event Detail Layout */
+.ed-body { max-width:700px; margin:24px auto; }
+.ed-info { background:white; border-radius:14px; padding:24px; border:1px solid var(--gray-200); margin-bottom:16px; }
+.ed-meta-row { display:flex; flex-wrap:wrap; gap:20px; margin-bottom:20px; }
+.ed-label { font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:4px; }
+.ed-value { font-size:16px; font-weight:700; color:var(--navy); }
+.ed-section { background:white; border-radius:14px; padding:24px; border:1px solid var(--gray-200); margin-bottom:16px; }
+.ed-section-title { font-size:17px; font-weight:800; color:var(--navy); margin:0 0 16px; }
+.ed-admin-section { border-top:1px solid var(--gray-200); margin-top:20px; padding-top:16px; }
+.ed-admin-title { font-size:14px; font-weight:700; color:var(--navy); margin:0 0 10px; }
+.ed-admin-details { margin-top:12px; }
+.ed-admin-details summary { font-size:13px; font-weight:700; color:var(--navy); cursor:pointer; padding:8px 0; }
+
+/* Practice Drills */
+.drill-list { display:flex; flex-direction:column; gap:8px; margin-bottom:12px; }
+.drill-card { display:flex; align-items:center; gap:12px; padding:12px 16px; border-radius:10px; border:2px solid var(--gray-200); transition:all 0.3s; }
+.drill-card.drill-active { border-color:var(--green); background:var(--green-bg); }
+.drill-num { width:28px; height:28px; border-radius:50%; background:var(--gray-100); color:var(--gray-500); font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.drill-active .drill-num { background:var(--green); color:white; }
+.drill-body { flex:1; }
+.drill-name { font-weight:700; font-size:15px; color:var(--navy); }
+.drill-desc { font-size:13px; color:var(--gray-500); margin-top:2px; }
+.drill-dur { font-weight:700; font-size:14px; color:var(--gray-500); white-space:nowrap; }
+.drill-total { font-size:14px; font-weight:700; color:var(--gray-500); text-align:right; margin-bottom:16px; }
+
+/* Timer */
+.timer-panel { text-align:center; padding:24px; background:var(--navy); border-radius:14px; color:white; }
+.timer-current-label { font-size:20px; font-weight:700; margin-bottom:8px; }
+.timer-countdown { font-size:64px; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:2px; margin-bottom:12px; }
+.timer-progress-bar { height:8px; background:rgba(255,255,255,0.2); border-radius:4px; overflow:hidden; margin-bottom:12px; }
+.timer-progress-fill { height:100%; background:var(--green); border-radius:4px; transition:width 1s linear; width:0; }
+.timer-next { font-size:14px; color:#9ca3af; margin-bottom:16px; }
+.timer-controls { display:flex; gap:10px; justify-content:center; }
+.timer-btn { padding:8px 20px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; background:rgba(255,255,255,0.15); color:white; }
+.timer-btn:hover { background:rgba(255,255,255,0.25); }
+.timer-btn-stop { background:rgba(220,38,38,0.3); }
+.timer-btn-stop:hover { background:rgba(220,38,38,0.5); }
+
+/* Tournament Sub-Events */
+.sub-events-list { display:flex; flex-direction:column; gap:12px; }
+.sub-event-card { padding:16px; border-radius:10px; border:1px solid var(--gray-200); background:var(--gray-50); }
+.sub-event-header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.sub-event-type { font-size:10px; text-transform:uppercase; font-weight:700; padding:3px 8px; border-radius:4px; color:white; }
+.sub-type-game { background:#2563eb; }
+.sub-type-practice { background:#16a34a; }
+.sub-type-meeting { background:#7c3aed; }
+.sub-type-other { background:#6b7280; }
+.sub-event-title { font-weight:700; font-size:15px; color:var(--navy); }
+.sub-event-vs { font-size:14px; color:var(--gray-500); font-style:italic; }
+.sub-event-details { display:flex; gap:12px; flex-wrap:wrap; font-size:13px; color:var(--gray-700); margin-bottom:4px; }
+.sub-event-notes { font-size:13px; color:var(--gray-500); font-style:italic; }
+
+/* Lineup */
+.lineup-section { margin-top:12px; }
+.lineup-title { font-size:14px; font-weight:700; color:var(--navy); margin:0 0 8px; }
+.lineup-table { width:100%; border-collapse:collapse; font-size:13px; }
+.lineup-table th { text-align:left; padding:6px 8px; font-size:11px; text-transform:uppercase; color:var(--gray-500); border-bottom:2px solid var(--gray-200); }
+.lineup-table td { padding:6px 8px; border-bottom:1px solid var(--gray-100); }
+.lineup-bench { color:var(--gray-500); }
+.lineup-bench td { font-style:italic; }
+.lineup-edit-table { width:100%; border-collapse:collapse; font-size:13px; }
+.lineup-edit-table th { text-align:left; padding:4px 6px; font-size:11px; text-transform:uppercase; color:var(--gray-500); }
+.lineup-edit-table td { padding:4px 6px; }
+.lineup-edit-table .form-input { padding:4px 6px; font-size:13px; }
+
 @media (max-width: 600px) {
   .calendar-section { padding: 16px; }
   .cal-cell { min-height: 36px; }
