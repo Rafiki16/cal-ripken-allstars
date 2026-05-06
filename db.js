@@ -16,6 +16,22 @@ const ROSTER = [
   ['Austin James Pepper',   'Major', 'Sunrise Drainage',              12, 'Alexander Pepper',   '9419007649'],
 ];
 
+const PROFILE_COLS = [
+  'birthdate TEXT',
+  'best_positions TEXT',
+  'favorite_positions TEXT',
+  'arm_strength INTEGER',
+  'throwing_accuracy INTEGER',
+  'contact_hitting INTEGER',
+  'power_hitting INTEGER',
+  'pitching INTEGER',
+  'infield_defense INTEGER',
+  'outfield_defense INTEGER',
+  'catcher_skill INTEGER',
+  'baseball_iq INTEGER',
+  'profile_updated_at TEXT',
+];
+
 let impl;
 
 async function init() {
@@ -40,6 +56,11 @@ async function init() {
       )
     `);
 
+    for (const col of PROFILE_COLS) {
+      const colName = col.split(' ')[0];
+      try { await pool.query(`ALTER TABLE players ADD COLUMN ${col}`); } catch (e) { /* exists */ }
+    }
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -55,6 +76,19 @@ async function init() {
       getPlayersByPhone: async (phone) => (await pool.query('SELECT * FROM players WHERE parent_phone = $1', [phone])).rows,
       getPlayer: async (id) => (await pool.query('SELECT * FROM players WHERE id = $1', [id])).rows[0] || null,
       updateStatus: async (id, status) => pool.query('UPDATE players SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]),
+      updateProfile: async (id, data) => {
+        await pool.query(`
+          UPDATE players SET birthdate=$1, best_positions=$2, favorite_positions=$3,
+            arm_strength=$4, throwing_accuracy=$5, contact_hitting=$6, power_hitting=$7,
+            pitching=$8, infield_defense=$9, outfield_defense=$10, catcher_skill=$11,
+            baseball_iq=$12, profile_updated_at=NOW()
+          WHERE id=$13`,
+          [data.birthdate, data.best_positions, data.favorite_positions,
+           data.arm_strength, data.throwing_accuracy, data.contact_hitting, data.power_hitting,
+           data.pitching, data.infield_defense, data.outfield_defense, data.catcher_skill,
+           data.baseball_iq, id]
+        );
+      },
     };
   } else {
     const Database = require('better-sqlite3');
@@ -77,6 +111,10 @@ async function init() {
       )
     `);
 
+    for (const col of PROFILE_COLS) {
+      try { sqliteDb.exec(`ALTER TABLE players ADD COLUMN ${col}`); } catch (e) { /* exists */ }
+    }
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -89,6 +127,20 @@ async function init() {
       getPlayersByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM players WHERE parent_phone = ?').all(phone),
       getPlayer: async (id) => sqliteDb.prepare('SELECT * FROM players WHERE id = ?').get(id) || null,
       updateStatus: async (id, status) => sqliteDb.prepare('UPDATE players SET status = ?, updated_at = ? WHERE id = ?').run(status, new Date().toISOString(), id),
+      updateProfile: async (id, data) => {
+        sqliteDb.prepare(`
+          UPDATE players SET birthdate=?, best_positions=?, favorite_positions=?,
+            arm_strength=?, throwing_accuracy=?, contact_hitting=?, power_hitting=?,
+            pitching=?, infield_defense=?, outfield_defense=?, catcher_skill=?,
+            baseball_iq=?, profile_updated_at=?
+          WHERE id=?`
+        ).run(
+          data.birthdate, data.best_positions, data.favorite_positions,
+          data.arm_strength, data.throwing_accuracy, data.contact_hitting, data.power_hitting,
+          data.pitching, data.infield_defense, data.outfield_defense, data.catcher_skill,
+          data.baseball_iq, new Date().toISOString(), id
+        );
+      },
     };
   }
 }
@@ -99,4 +151,5 @@ module.exports = {
   getPlayersByPhone: (...args) => impl.getPlayersByPhone(...args),
   getPlayer: (...args) => impl.getPlayer(...args),
   updateStatus: (...args) => impl.updateStatus(...args),
+  updateProfile: (...args) => impl.updateProfile(...args),
 };

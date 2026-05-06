@@ -75,6 +75,72 @@ app.post('/respond', async (req, res) => {
   });
 });
 
+const POSITIONS = ['P','C','1B','2B','3B','SS','LF','CF','RF'];
+const RATING_FIELDS = [
+  { key: 'arm_strength',      label: 'Arm Strength' },
+  { key: 'throwing_accuracy',  label: 'Throwing Accuracy' },
+  { key: 'contact_hitting',    label: 'Contact Hitting' },
+  { key: 'power_hitting',      label: 'Power' },
+  { key: 'pitching',           label: 'Pitching' },
+  { key: 'infield_defense',    label: 'Infield Defense' },
+  { key: 'outfield_defense',   label: 'Outfield Defense' },
+  { key: 'catcher_skill',      label: 'Catcher' },
+  { key: 'baseball_iq',        label: 'Baseball IQ' },
+];
+
+app.get('/profile/:id', async (req, res) => {
+  const phone = normalizePhone(req.query.phone || '');
+  if (phone.length !== 10) return res.redirect('/verify');
+
+  const player = await db.getPlayer(Number(req.params.id));
+  if (!player || player.parent_phone !== phone) {
+    return res.render('verify', {
+      players: null, phone: '',
+      error: 'Unauthorized. You can only edit your own child\'s profile.',
+      success: null
+    });
+  }
+
+  res.render('profile', { player, phone, POSITIONS, RATING_FIELDS, error: null, success: null });
+});
+
+app.post('/profile/:id', async (req, res) => {
+  const phone = normalizePhone(req.body.phone || '');
+  const player = await db.getPlayer(Number(req.params.id));
+  if (!player || player.parent_phone !== phone) {
+    return res.render('verify', {
+      players: null, phone: '',
+      error: 'Unauthorized. You can only edit your own child\'s profile.',
+      success: null
+    });
+  }
+
+  const toInt = (v) => { const n = parseInt(v); return (n >= 1 && n <= 5) ? n : null; };
+  const toList = (v) => Array.isArray(v) ? v.filter(p => POSITIONS.includes(p)).join(',') : '';
+
+  await db.updateProfile(Number(req.params.id), {
+    birthdate: req.body.birthdate || null,
+    best_positions: toList(req.body.best_positions),
+    favorite_positions: toList(req.body.favorite_positions),
+    arm_strength: toInt(req.body.arm_strength),
+    throwing_accuracy: toInt(req.body.throwing_accuracy),
+    contact_hitting: toInt(req.body.contact_hitting),
+    power_hitting: toInt(req.body.power_hitting),
+    pitching: toInt(req.body.pitching),
+    infield_defense: toInt(req.body.infield_defense),
+    outfield_defense: toInt(req.body.outfield_defense),
+    catcher_skill: toInt(req.body.catcher_skill),
+    baseball_iq: toInt(req.body.baseball_iq),
+  });
+
+  const updated = await db.getPlayer(Number(req.params.id));
+  res.render('profile', {
+    player: updated, phone, POSITIONS, RATING_FIELDS,
+    error: null,
+    success: `${player.player_name}'s profile has been saved.`
+  });
+});
+
 app.get('/api/stats', async (req, res) => {
   const players = await db.getAllPlayers();
   const confirmed = players.filter(p => p.status === 'confirmed').length;

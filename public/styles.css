@@ -445,6 +445,204 @@ header h1 {
   border: 1px solid var(--red-border);
 }
 
+/* Profile link on verify page */
+.profile-link-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--gray-200);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-profile {
+  background: var(--navy);
+  color: var(--white);
+  padding: 12px 20px;
+  font-size: 14px;
+}
+.btn-profile:hover { background: var(--navy-light); }
+
+.profile-complete-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+/* Mini badges on roster cards */
+.player-positions-mini {
+  font-size: 11px;
+  color: var(--navy);
+  font-weight: 600;
+  margin-top: 6px;
+  letter-spacing: 0.3px;
+}
+
+.profile-badge-mini {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-top: 6px;
+}
+
+/* Profile Form */
+.profile-form {
+  max-width: 640px;
+  margin: 24px auto;
+}
+
+.profile-section {
+  background: var(--white);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border: 1px solid var(--gray-200);
+  margin-bottom: 20px;
+}
+
+.profile-section-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--navy);
+  margin-bottom: 4px;
+}
+
+.section-hint {
+  font-size: 13px;
+  color: var(--gray-500);
+  margin-bottom: 16px;
+}
+
+.form-group { margin-bottom: 16px; }
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gray-700);
+  margin-bottom: 6px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 16px;
+  border: 2px solid var(--gray-200);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.form-input:focus { border-color: var(--navy); }
+
+/* Position checkboxes */
+.positions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+}
+
+.position-checkbox {
+  cursor: pointer;
+}
+
+.position-checkbox input {
+  display: none;
+}
+
+.position-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 6px;
+  border-radius: 8px;
+  border: 2px solid var(--gray-200);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gray-500);
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.position-checkbox input:checked + .position-label {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: var(--white);
+}
+
+.position-label:hover {
+  border-color: var(--gray-300);
+}
+
+/* Rating rows */
+.ratings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rating-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.rating-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gray-700);
+  min-width: 130px;
+  flex-shrink: 0;
+}
+
+.rating-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.rating-option { cursor: pointer; }
+.rating-option input { display: none; }
+
+.rating-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--gray-200);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gray-500);
+  transition: all 0.15s ease;
+}
+
+.rating-option input:checked + .rating-circle {
+  border-color: var(--red);
+  background: var(--red);
+  color: var(--white);
+}
+
+.rating-circle:hover {
+  border-color: var(--gray-300);
+  transform: scale(1.05);
+}
+
+.profile-actions {
+  text-align: center;
+  margin: 24px 0;
+}
+
 /* Footer */
 footer {
   margin-top: auto;
@@ -470,4 +668,10 @@ main { flex: 1; padding-bottom: 40px; }
   .action-buttons form { min-width: unset; }
   .player-name { padding-right: 80px; }
   .roster-grid { grid-template-columns: 1fr; }
+  .rating-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .rating-label { min-width: unset; }
+  .rating-circle { width: 44px; height: 44px; font-size: 16px; }
+  .positions-grid { grid-template-columns: repeat(3, 1fr); }
+  .profile-section { padding: 20px; }
+  .profile-link-section { flex-direction: column; align-items: flex-start; }
 }

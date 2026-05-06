@@ -59,6 +59,12 @@
               <span class="player-team"><%= player.team %></span>
               <span class="player-age">Age <%= player.age %></span>
             </div>
+            <% if (player.best_positions) { %>
+              <div class="player-positions-mini"><%- player.best_positions.split(',').join(' &middot; ') %></div>
+            <% } %>
+            <% if (player.profile_updated_at) { %>
+              <div class="profile-badge-mini">Profile Complete</div>
+            <% } %>
           </div>
         <% }); %>
       </div>
@@ -77,6 +83,12 @@
               <span class="player-team"><%= player.team %></span>
               <span class="player-age">Age <%= player.age %></span>
             </div>
+            <% if (player.best_positions) { %>
+              <div class="player-positions-mini"><%- player.best_positions.split(',').join(' &middot; ') %></div>
+            <% } %>
+            <% if (player.profile_updated_at) { %>
+              <div class="profile-badge-mini">Profile Complete</div>
+            <% } %>
           </div>
         <% }); %>
       </div>

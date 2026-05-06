@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= player.player_name %> Profile &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/verify" class="back-link">&larr; Back</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1><%= player.player_name %></h1>
+            <p class="subtitle">Player Profile</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <form method="POST" action="/profile/<%= player.id %>" class="profile-form">
+      <input type="hidden" name="phone" value="<%= phone %>">
+
+      <!-- Personal Info -->
+      <div class="profile-section">
+        <h2 class="profile-section-title">Personal Info</h2>
+        <div class="form-group">
+          <label for="birthdate">Date of Birth</label>
+          <input type="date" id="birthdate" name="birthdate" value="<%= player.birthdate || '' %>" class="form-input">
+        </div>
+      </div>
+
+      <!-- Positions -->
+      <div class="profile-section">
+        <h2 class="profile-section-title">Best Positions</h2>
+        <p class="section-hint">Select all positions the player excels at</p>
+        <div class="positions-grid">
+          <% POSITIONS.forEach(pos => { %>
+            <label class="position-checkbox">
+              <input type="checkbox" name="best_positions" value="<%= pos %>"
+                <%= (player.best_positions || '').split(',').includes(pos) ? 'checked' : '' %>>
+              <span class="position-label"><%= pos %></span>
+            </label>
+          <% }); %>
+        </div>
+      </div>
+
+      <div class="profile-section">
+        <h2 class="profile-section-title">Favorite Positions</h2>
+        <p class="section-hint">Select positions the player prefers to play</p>
+        <div class="positions-grid">
+          <% POSITIONS.forEach(pos => { %>
+            <label class="position-checkbox">
+              <input type="checkbox" name="favorite_positions" value="<%= pos %>"
+                <%= (player.favorite_positions || '').split(',').includes(pos) ? 'checked' : '' %>>
+              <span class="position-label"><%= pos %></span>
+            </label>
+          <% }); %>
+        </div>
+      </div>
+
+      <!-- Skills Ratings -->
+      <div class="profile-section">
+        <h2 class="profile-section-title">Skills Assessment</h2>
+        <p class="section-hint">Rate each skill from 1 (developing) to 5 (elite)</p>
+
+        <div class="ratings-list">
+          <% RATING_FIELDS.forEach(field => { %>
+            <div class="rating-row">
+              <span class="rating-label"><%= field.label %></span>
+              <div class="rating-buttons">
+                <% for (let i = 1; i <= 5; i++) { %>
+                  <label class="rating-option">
+                    <input type="radio" name="<%= field.key %>" value="<%= i %>"
+                      <%= player[field.key] == i ? 'checked' : '' %>>
+                    <span class="rating-circle"><%= i %></span>
+                  </label>
+                <% } %>
+              </div>
+            </div>
+          <% }); %>
+        </div>
+      </div>
+
+      <div class="profile-actions">
+        <button type="submit" class="btn btn-confirm btn-large">Save Profile</button>
+      </div>
+    </form>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -103,6 +103,15 @@
             </form>
           </div>
 
+          <div class="profile-link-section">
+            <a href="/profile/<%= player.id %>?phone=<%= phone %>" class="btn btn-profile">
+              &#9997; <%= player.profile_updated_at ? 'Edit Player Profile' : 'Fill Out Player Profile' %>
+            </a>
+            <% if (player.profile_updated_at) { %>
+              <span class="profile-complete-badge">Profile Complete</span>
+            <% } %>
+          </div>
+
           <% if (player.status !== 'pending') { %>
             <p class="change-note">You can change your response at any time by revisiting this page.</p>
           <% } %>
