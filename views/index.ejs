@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Summer 2026 Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <div class="logo">&#9918;</div>
+        <div>
+          <h1>Cal Ripken All-Stars</h1>
+          <p class="subtitle">Summer 2026 &middot; Major Division</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="stats-bar">
+      <div class="stat">
+        <span class="stat-number"><%= total %></span>
+        <span class="stat-label">Players</span>
+      </div>
+      <div class="stat stat-confirmed">
+        <span class="stat-number"><%= confirmed %></span>
+        <span class="stat-label">Confirmed</span>
+      </div>
+      <div class="stat stat-declined">
+        <span class="stat-number"><%= declined %></span>
+        <span class="stat-label">Declined</span>
+      </div>
+      <div class="stat stat-pending">
+        <span class="stat-number"><%= pending %></span>
+        <span class="stat-label">Pending</span>
+      </div>
+    </div>
+
+    <div class="cta-section">
+      <a href="/verify" class="btn btn-primary btn-large">Confirm Your Player</a>
+      <p class="cta-hint">Parents: verify your child's participation using your registered phone number</p>
+    </div>
+
+    <h2 class="section-title">Roster</h2>
+
+    <div class="roster-section">
+      <h3 class="age-group-title">11U</h3>
+      <div class="roster-grid">
+        <% players.filter(p => p.age === 11).forEach(player => { %>
+          <div class="player-card">
+            <div class="player-status-badge badge-<%= player.status %>">
+              <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
+            </div>
+            <h3 class="player-name"><%= player.player_name %></h3>
+            <div class="player-details">
+              <span class="player-team"><%= player.team %></span>
+              <span class="player-age">Age <%= player.age %></span>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+
+    <div class="roster-section">
+      <h3 class="age-group-title">12U</h3>
+      <div class="roster-grid">
+        <% players.filter(p => p.age === 12).forEach(player => { %>
+          <div class="player-card">
+            <div class="player-status-badge badge-<%= player.status %>">
+              <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
+            </div>
+            <h3 class="player-name"><%= player.player_name %></h3>
+            <div class="player-details">
+              <span class="player-team"><%= player.team %></span>
+              <span class="player-age">Age <%= player.age %></span>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

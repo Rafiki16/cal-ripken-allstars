@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Player &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="back-link">&larr; Back to Roster</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Verify Your Player</h1>
+            <p class="subtitle">Summer 2026 Cal Ripken All-Stars</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <% if (!players) { %>
+      <div class="verify-box">
+        <h2>Enter Your Phone Number</h2>
+        <p>Use the phone number your league has on file to look up your player.</p>
+        <form method="POST" action="/verify" class="phone-form">
+          <div class="input-group">
+            <input
+              type="tel"
+              name="phone"
+              placeholder="(941) 555-1234"
+              value="<%= phone %>"
+              required
+              autofocus
+              class="phone-input"
+              autocomplete="tel"
+            >
+          </div>
+          <button type="submit" class="btn btn-primary">Look Up My Player</button>
+        </form>
+      </div>
+    <% } else { %>
+      <% players.forEach(player => { %>
+        <div class="player-verify-card">
+          <div class="player-verify-header">
+            <h2><%= player.player_name %></h2>
+            <div class="player-status-badge badge-<%= player.status %>">
+              <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
+            </div>
+          </div>
+          <div class="player-verify-details">
+            <div class="detail-row">
+              <span class="detail-label">Division</span>
+              <span class="detail-value"><%= player.division %></span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Regular Season Team</span>
+              <span class="detail-value"><%= player.team %></span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Age</span>
+              <span class="detail-value"><%= player.age %></span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Parent</span>
+              <span class="detail-value"><%= player.parent_name %></span>
+            </div>
+            <% if (player.updated_at) { %>
+              <div class="detail-row">
+                <span class="detail-label">Last Updated</span>
+                <span class="detail-value"><%= new Date(player.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) %></span>
+              </div>
+            <% } %>
+          </div>
+
+          <div class="action-buttons">
+            <form method="POST" action="/respond" style="display:inline">
+              <input type="hidden" name="player_id" value="<%= player.id %>">
+              <input type="hidden" name="phone" value="<%= phone %>">
+              <input type="hidden" name="status" value="confirmed">
+              <button type="submit" class="btn btn-confirm <%= player.status === 'confirmed' ? 'btn-active' : '' %>">
+                &#10003; Confirm Participation
+              </button>
+            </form>
+            <form method="POST" action="/respond" style="display:inline">
+              <input type="hidden" name="player_id" value="<%= player.id %>">
+              <input type="hidden" name="phone" value="<%= phone %>">
+              <input type="hidden" name="status" value="declined">
+              <button type="submit" class="btn btn-decline <%= player.status === 'declined' ? 'btn-active' : '' %>">
+                &#10007; Decline
+              </button>
+            </form>
+          </div>
+
+          <% if (player.status !== 'pending') { %>
+            <p class="change-note">You can change your response at any time by revisiting this page.</p>
+          <% } %>
+        </div>
+      <% }); %>
+
+      <div class="verify-again">
+        <a href="/verify" class="btn btn-secondary">Look Up Another Number</a>
+      </div>
+    <% } %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>
