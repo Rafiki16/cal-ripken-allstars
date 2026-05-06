@@ -59,10 +59,7 @@ async function sendConfirmationEmail(player, email) {
 
 app.get('/', async (req, res) => {
   const players = await db.getAllPlayers();
-  const confirmed = players.filter(p => p.status === 'confirmed').length;
-  const declined = players.filter(p => p.status === 'declined').length;
-  const pending = players.filter(p => p.status === 'pending').length;
-  res.render('index', { players, confirmed, declined, pending, total: players.length });
+  res.render('index', { players });
 });
 
 app.get('/verify', (req, res) => {

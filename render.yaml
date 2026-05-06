@@ -8,5 +8,15 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: BASE_URL
+        sync: false
       - key: NODE_ENV
         value: production
