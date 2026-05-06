@@ -56,6 +56,61 @@
         </div>
         <% } %>
 
+        <% if (event.event_type === 'game' && event.opponent_name) { %>
+        <div style="margin-bottom:20px;">
+          <div class="ed-label">Opponent</div>
+          <div class="ed-value"><%= event.opponent_name %></div>
+        </div>
+        <% } %>
+
+        <% if (event.event_type === 'game' && event.our_score != null && event.opponent_score != null) { %>
+        <div style="margin-bottom:20px; padding:16px; background:#f0f4ff; border-radius:12px; text-align:center;">
+          <div class="ed-label" style="margin-bottom:8px;">Game Result</div>
+          <div style="font-size:28px; font-weight:800; color:var(--navy); letter-spacing:2px;">
+            <%= event.our_score %> &ndash; <%= event.opponent_score %>
+          </div>
+          <div style="margin-top:6px; font-size:14px; font-weight:700; color:<%= event.our_score > event.opponent_score ? '#16a34a' : event.our_score < event.opponent_score ? '#dc2626' : '#854d0e' %>;">
+            <%= event.our_score > event.opponent_score ? 'WIN' : event.our_score < event.opponent_score ? 'LOSS' : 'TIE' %>
+          </div>
+          <% if (event.opponent_name) { %>
+          <div style="font-size:13px; color:var(--gray-500); margin-top:4px;">vs <%= event.opponent_name %></div>
+          <% } %>
+        </div>
+        <% } %>
+
+        <% if (event.event_type === 'game' && isAdmin && (event.our_score == null || event.opponent_score == null)) { %>
+        <div style="margin-bottom:20px; padding:16px; background:#fef9c3; border-radius:12px;">
+          <div class="ed-label" style="margin-bottom:8px;">Enter Game Score</div>
+          <form method="POST" action="/admin/update-score" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+            <input type="hidden" name="event_id" value="<%= event.id %>">
+            <div>
+              <label style="font-size:12px; color:var(--gray-500); display:block; margin-bottom:2px;">Us</label>
+              <input type="number" name="our_score" min="0" class="form-input" style="width:70px;" required>
+            </div>
+            <div>
+              <label style="font-size:12px; color:var(--gray-500); display:block; margin-bottom:2px;">Them</label>
+              <input type="number" name="opponent_score" min="0" class="form-input" style="width:70px;" required>
+            </div>
+            <button type="submit" class="btn btn-confirm">Save Score</button>
+          </form>
+        </div>
+        <% } else if (event.event_type === 'game' && isAdmin && event.our_score != null) { %>
+        <div style="margin-bottom:12px;">
+          <form method="POST" action="/admin/update-score" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+            <input type="hidden" name="event_id" value="<%= event.id %>">
+            <div>
+              <label style="font-size:12px; color:var(--gray-500); display:block; margin-bottom:2px;">Us</label>
+              <input type="number" name="our_score" min="0" value="<%= event.our_score %>" class="form-input" style="width:70px;" required>
+            </div>
+            <div>
+              <label style="font-size:12px; color:var(--gray-500); display:block; margin-bottom:2px;">Them</label>
+              <input type="number" name="opponent_score" min="0" value="<%= event.opponent_score %>" class="form-input" style="width:70px;" required>
+            </div>
+            <button type="submit" class="btn btn-confirm" style="font-size:12px;">Update Score</button>
+          </form>
+        </div>
+        <% } %>
+
         <% if (event.notes) { %>
         <div style="margin-bottom:20px;">
           <div class="ed-label">Notes</div>
@@ -350,8 +405,8 @@
       </div>
       <% } %>
 
-      <!-- ============ GAME LINEUP ============ -->
-      <% if (event.event_type === 'game') { %>
+      <!-- ============ GAME LINEUP (admin only) ============ -->
+      <% if (event.event_type === 'game' && isAdmin) { %>
       <div class="ed-section lineup-grid-section" id="lineup-grid-section">
         <h3 class="ed-section-title">Game Lineup</h3>
         <div class="lg-legend">1=P 2=C 3=1B 4=2B 5=3B 6=SS 7=LF 8=CF 9=RF &middot; X=Sit &middot; Y=Sub In</div>
@@ -381,6 +436,7 @@
         <div class="lg-controls">
           <button type="button" class="btn btn-confirm" onclick="saveLineupGrid()">Save Lineup</button>
           <button type="button" class="btn" onclick="printLineup()" style="margin-left:8px;">Print Lineup Card</button>
+          <button type="button" class="btn" onclick="clearEntireLineup()" style="margin-left:8px; background:#dc2626; color:white;">Clear All</button>
           <span class="lg-save-msg" id="lg-save-msg"></span>
         </div>
         <div class="lg-add-player" id="lg-add-player">
@@ -472,6 +528,13 @@
             nameTd.className = 'lg-cell-name';
             nameTd.innerHTML = (row.jersey ? '<span class="lg-jersey">' + row.jersey + '</span>' : '') + '<span class="lg-name-text">' + row.name + '</span>';
             if (isAdmin) {
+              const clrBtn = document.createElement('button');
+              clrBtn.className = 'lg-rm-btn';
+              clrBtn.textContent = '⌫';
+              clrBtn.title = 'Clear positions';
+              clrBtn.style.marginRight = '2px';
+              clrBtn.onclick = () => clearPlayerLineup(ri);
+              nameTd.appendChild(clrBtn);
               const rmBtn = document.createElement('button');
               rmBtn.className = 'lg-rm-btn';
               rmBtn.textContent = '×';
@@ -649,6 +712,17 @@
           window.print();
         };
 
+        window.clearEntireLineup = function() {
+          if (!confirm('Clear all lineup assignments? You will need to Save to persist.')) return;
+          grid.forEach(row => { row.cells = Array(INNINGS).fill(null); });
+          renderGrid();
+        };
+
+        window.clearPlayerLineup = function(ri) {
+          grid[ri].cells = Array(INNINGS).fill(null);
+          renderGrid();
+        };
+
         initGrid();
       })();
       </script>
@@ -670,6 +744,25 @@
           <div class="rsvp-count rsvp-count-pending"><span class="rsvp-count-num"><%= notResponded %></span> No Response</div>
         </div>
 
+        <% if (parentUser) { %>
+        <% const myRsvps = rsvps.filter(r => parentUser.player_ids && parentUser.player_ids.includes(r.player_id)); %>
+        <% const myStatus = myRsvps.length > 0 ? myRsvps[0].status : null; %>
+        <div class="rsvp-form-section">
+          <% if (myStatus) { %>
+          <div style="margin-bottom:12px; padding:10px 16px; border-radius:10px; background:<%= myStatus === 'yes' ? '#dcfce7' : myStatus === 'no' ? '#fee2e2' : '#fef9c3' %>; font-size:14px; font-weight:600; color:<%= myStatus === 'yes' ? '#166534' : myStatus === 'no' ? '#991b1b' : '#854d0e' %>;">
+            You RSVP'd: <%= myStatus === 'yes' ? 'Attending' : myStatus === 'no' ? 'Not Attending' : 'Maybe' %>
+          </div>
+          <% } %>
+          <h4 style="margin:0 0 8px; color:var(--navy); font-size:15px;"><%= myStatus ? 'Change RSVP' : 'RSVP for Your Player' %></h4>
+          <form method="POST" action="/event/<%= event.id %>/rsvp" class="rsvp-phone-form">
+            <div style="display:flex; gap:6px;">
+              <button type="submit" name="status" value="yes" class="btn rsvp-btn-sm rsvp-yes">Yes</button>
+              <button type="submit" name="status" value="maybe" class="btn rsvp-btn-sm rsvp-maybe">Maybe</button>
+              <button type="submit" name="status" value="no" class="btn rsvp-btn-sm rsvp-no">No</button>
+            </div>
+          </form>
+        </div>
+        <% } else { %>
         <div class="rsvp-form-section">
           <h4 style="margin:0 0 8px; color:var(--navy); font-size:15px;">RSVP for Your Player</h4>
           <form method="POST" action="/event/<%= event.id %>/rsvp" class="rsvp-phone-form">
@@ -686,6 +779,7 @@
             </div>
           </form>
         </div>
+        <% } %>
       </div>
     </div>
   </main>

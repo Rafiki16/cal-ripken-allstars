@@ -102,7 +102,12 @@
         notes: e.notes,
         hotel_info: e.hotel_info,
         carpool_info: e.carpool_info,
+        opponent_name: e.opponent_name,
+        our_score: e.our_score,
+        opponent_score: e.opponent_score,
       }))) %>;
+
+      const PARENT_RSVPS = <%- JSON.stringify(parentRsvps) %>;
 
       const PARENT_PHONE = '<%= parentUser ? parentUser.phone : '' %>';
       const TYPE_LABELS = { practice: 'Practice', game: 'Game', tournament: 'Tournament', other: 'Event' };
@@ -190,10 +195,23 @@
           html += '<span class="te-date">' + dateStr + endStr + '</span>';
           html += '</div>';
           html += '<h4 class="te-title">' + ev.title + '</h4>';
+          if (ev.type === 'game' && ev.opponent_name) html += '<div style="font-size:13px;color:#6b7280;margin-top:2px;">vs ' + ev.opponent_name + '</div>';
+          if (ev.type === 'game' && ev.our_score != null && ev.opponent_score != null) {
+            var result = ev.our_score > ev.opponent_score ? 'W' : ev.our_score < ev.opponent_score ? 'L' : 'T';
+            var resultColor = result === 'W' ? '#16a34a' : result === 'L' ? '#dc2626' : '#854d0e';
+            html += '<div style="margin-top:4px;font-size:15px;font-weight:800;"><span style="color:' + resultColor + ';">' + result + '</span> ' + ev.our_score + ' &ndash; ' + ev.opponent_score + '</div>';
+          }
           if (timeStr) html += '<div class="te-time">' + timeStr + '</div>';
           html += '</a>';
+          var myRsvp = PARENT_RSVPS[ev.id];
+          if (myRsvp) {
+            var rLabel = myRsvp === 'yes' ? 'Attending' : myRsvp === 'no' ? 'Not Attending' : 'Maybe';
+            var rBg = myRsvp === 'yes' ? '#dcfce7' : myRsvp === 'no' ? '#fee2e2' : '#fef9c3';
+            var rColor = myRsvp === 'yes' ? '#166534' : myRsvp === 'no' ? '#991b1b' : '#854d0e';
+            html += '<div style="padding:6px 12px;border-radius:8px;background:' + rBg + ';color:' + rColor + ';font-size:13px;font-weight:600;margin:8px 0;">RSVP: ' + rLabel + '</div>';
+          }
           html += '<div class="te-rsvp-area">';
-          html += '<div class="te-rsvp-label">RSVP</div>';
+          html += '<div class="te-rsvp-label">' + (myRsvp ? 'Change RSVP' : 'RSVP') + '</div>';
           if (!PARENT_PHONE) html += '<input type="tel" class="te-rsvp-phone" id="rsvp-phone-' + ev.id + '" placeholder="Your phone #" maxlength="14">';
           html += '<div class="te-rsvp-choices">';
           html += '<button class="te-rsvp-choice te-rsvp-yes" onclick="submitRsvp(' + ev.id + ',\'yes\')">Yes</button>';

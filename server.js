@@ -92,7 +92,8 @@ app.use(async (req, res, next) => {
   if (phone) {
     const account = await db.getParentAccountByPhone(phone);
     if (account) {
-      req.parentUser = account;
+      const pPlayers = await db.getPlayersByPhone(phone);
+      req.parentUser = { ...account, player_ids: pPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
     }
   }
   next();
@@ -260,7 +261,19 @@ async function sendConfirmationEmail(player, email) {
 app.get('/', async (req, res) => {
   const players = await db.getAllPlayers();
   const teamEvents = await db.getAllTeamEvents();
-  res.render('index', { players, teamEvents, parentUser: req.parentUser || null });
+  let parentRsvps = {};
+  if (req.parentUser && req.parentUser.player_ids.length > 0) {
+    for (const ev of teamEvents) {
+      for (const pid of req.parentUser.player_ids) {
+        const rsvp = await db.getRsvp(ev.id, pid);
+        if (rsvp && rsvp.status !== 'pending') {
+          parentRsvps[ev.id] = rsvp.status;
+          break;
+        }
+      }
+    }
+  }
+  res.render('index', { players, teamEvents, parentUser: req.parentUser || null, parentRsvps });
 });
 
 app.get('/event/:id', async (req, res) => {
@@ -803,7 +816,7 @@ function requireAdminOrStaff(req, res, next) {
 }
 
 app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
-  const { event_type, title, start_date, start_time, end_date, end_time, duration, location_name, address, notes, hotel_info, carpool_info, save_location } = req.body;
+  const { event_type, title, start_date, start_time, end_date, end_time, duration, location_name, address, notes, hotel_info, carpool_info, save_location, opponent_name } = req.body;
   const dates = req.body.dates;
   const multiDates = dates ? (Array.isArray(dates) ? dates : [dates]).filter(Boolean).sort() : [];
 
@@ -824,6 +837,7 @@ app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
     notes: (notes || '').trim() || null,
     hotel_info: (hotel_info || '').trim() || null,
     carpool_info: (carpool_info || '').trim() || null,
+    opponent_name: (opponent_name || '').trim() || null,
   };
 
   const locName = (location_name || '').trim();
@@ -846,7 +860,7 @@ app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
 });
 
 app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
-  const { event_id, event_type, title, start_date, start_time, end_date, end_time, duration, location_name, address, notes, hotel_info, carpool_info, save_location } = req.body;
+  const { event_id, event_type, title, start_date, start_time, end_date, end_time, duration, location_name, address, notes, hotel_info, carpool_info, save_location, opponent_name } = req.body;
   if (!title || !title.trim() || !start_date) {
     const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
     return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and start date are required.'));
@@ -864,6 +878,7 @@ app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
     notes: (notes || '').trim() || null,
     hotel_info: (hotel_info || '').trim() || null,
     carpool_info: (carpool_info || '').trim() || null,
+    opponent_name: (opponent_name || '').trim() || null,
   });
   const locName = (location_name || '').trim();
   const locAddr = (address || '').trim();
@@ -882,6 +897,23 @@ app.post('/admin/remove-team-event', requireAdmin, async (req, res) => {
 app.post('/admin/remove-saved-location', requireAdmin, async (req, res) => {
   await db.removeSavedLocation(Number(req.body.location_id));
   res.redirect('/admin?success=Location+removed');
+});
+
+app.post('/admin/update-score', requireAdmin, async (req, res) => {
+  const { event_id, our_score, opponent_score } = req.body;
+  await db.updateGameScore(Number(event_id), parseInt(our_score) || 0, parseInt(opponent_score) || 0);
+  res.redirect('/event/' + event_id);
+});
+
+app.post('/event/:id/clear-lineup', requireAdmin, async (req, res) => {
+  await db.clearLineupGrid(Number(req.params.id), null);
+  res.json({ ok: true });
+});
+
+app.post('/event/:id/clear-player-lineup', requireAdmin, async (req, res) => {
+  const { player_id } = req.body;
+  await db.clearPlayerFromLineupGrid(Number(req.params.id), null, Number(player_id));
+  res.json({ ok: true });
 });
 
 // --- Practice Drills ---
@@ -1106,19 +1138,19 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
 // --- Team Messages ---
 
 app.get('/messages', async (req, res) => {
-  const messages = await db.getAllMessages();
+  const topics = await db.getAllMessages();
+  const topicReplies = {};
+  for (const t of topics) {
+    topicReplies[t.id] = await db.getTopicReplies(t.id);
+  }
   const isAdmin = !!req.session.admin;
-  res.render('messages', { messages, isAdmin, error: null, success: null, phone: '', parentUser: req.parentUser || null });
+  res.render('messages', { topics, topicReplies, isAdmin, parentUser: req.parentUser || null, error: req.query.error || null, success: req.query.success || null });
 });
 
 app.post('/messages', async (req, res) => {
   const isAdmin = !!req.session.admin;
   const message = (req.body.message || '').trim();
-
-  if (!message) {
-    const messages = await db.getAllMessages();
-    return res.render('messages', { messages, isAdmin, error: 'Message cannot be empty.', success: null, phone: req.body.phone || '', parentUser: req.parentUser || null });
-  }
+  if (!message) return res.redirect('/messages?error=' + encodeURIComponent('Message cannot be empty.'));
 
   let authorName, authorType;
   if (isAdmin) {
@@ -1129,26 +1161,30 @@ app.post('/messages', async (req, res) => {
     authorType = 'parent';
   } else {
     const phone = normalizePhone(req.body.phone || '');
-    if (phone.length !== 10) {
-      const messages = await db.getAllMessages();
-      return res.render('messages', { messages, isAdmin, error: 'Enter your 10-digit phone number to post.', success: null, phone: req.body.phone || '', parentUser: null });
-    }
+    if (phone.length !== 10) return res.redirect('/messages?error=' + encodeURIComponent('Enter your 10-digit phone number to post.'));
     const players = await db.getPlayersByPhone(phone);
     const staff = await db.getStaffByPhone(phone);
-    if (players.length === 0 && !staff) {
-      const messages = await db.getAllMessages();
-      return res.render('messages', { messages, isAdmin, error: 'Phone number not recognized. Use the number on file.', success: null, phone: req.body.phone || '', parentUser: null });
-    }
-    if (staff) {
-      authorName = staff.name;
-      authorType = 'staff';
-    } else {
-      authorName = players[0].parent_name;
-      authorType = 'parent';
-    }
+    if (players.length === 0 && !staff) return res.redirect('/messages?error=' + encodeURIComponent('Phone number not recognized.'));
+    if (staff) { authorName = staff.name; authorType = 'staff'; }
+    else { authorName = players[0].parent_name; authorType = 'parent'; }
   }
 
   await db.addMessage({ author_name: authorName, author_type: authorType, message });
+  res.redirect('/messages');
+});
+
+app.post('/messages/:id/reply', async (req, res) => {
+  const topicId = Number(req.params.id);
+  const isAdmin = !!req.session.admin;
+  const message = (req.body.message || '').trim();
+  if (!message) return res.redirect('/messages');
+
+  let authorName, authorType;
+  if (isAdmin) { authorName = req.session.admin.username; authorType = 'admin'; }
+  else if (req.parentUser) { authorName = req.parentUser.display_name; authorType = 'parent'; }
+  else return res.redirect('/messages');
+
+  await db.addMessage({ author_name: authorName, author_type: authorType, message, parent_id: topicId });
   res.redirect('/messages');
 });
 

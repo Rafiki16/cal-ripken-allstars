@@ -5,6 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Team Board &middot; Cal Ripken All-Stars</title>
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    .thread-card { background:white; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.08); margin-bottom:16px; overflow:hidden; border:1px solid var(--gray-100); }
+    .thread-card.msg-pinned { border-left:4px solid var(--gold); }
+    .thread-topic { padding:16px; }
+    .thread-replies { border-top:1px solid var(--gray-100); background:#f9fafb; }
+    .thread-reply { padding:12px 16px 12px 32px; border-bottom:1px solid var(--gray-100); }
+    .thread-reply:last-child { border-bottom:none; }
+    .thread-reply-form { padding:10px 16px; background:#f3f4f6; border-top:1px solid var(--gray-100); }
+    .thread-reply-form form { display:flex; gap:8px; }
+    .thread-reply-form input[type="text"] { flex:1; }
+    .reply-count { font-size:12px; color:var(--gray-500); margin-top:8px; }
+  </style>
 </head>
 <body>
   <header>
@@ -33,50 +45,96 @@
     <div class="msg-board">
       <div class="msg-compose">
         <form method="POST" action="/messages">
-          <textarea name="message" placeholder="Write a message to the team..." required></textarea>
+          <h4 style="margin:0 0 8px; font-size:15px; color:var(--navy);">Start New Topic</h4>
+          <textarea name="message" placeholder="Start a new discussion topic..." required></textarea>
           <div class="msg-compose-row">
             <% if (!isAdmin && !parentUser) { %>
-              <input type="tel" name="phone" class="form-input" placeholder="Your phone #" value="<%= phone %>" style="max-width:200px;" required>
+              <input type="tel" name="phone" class="form-input" placeholder="Your phone #" style="max-width:200px;" required>
             <% } else if (parentUser && !isAdmin) { %>
               <span style="font-size:13px;color:#6b7280;">Posting as <strong><%= parentUser.display_name %></strong></span>
             <% } %>
-            <button type="submit" class="btn btn-confirm">Post Message</button>
+            <button type="submit" class="btn btn-confirm">Post Topic</button>
           </div>
         </form>
       </div>
 
       <div class="msg-list">
-        <% if (messages.length === 0) { %>
-          <p style="color:#6b7280;font-size:14px;text-align:center;padding:24px;">No messages yet. Be the first to post!</p>
+        <% if (topics.length === 0) { %>
+          <p style="color:#6b7280;font-size:14px;text-align:center;padding:24px;">No topics yet. Start a discussion!</p>
         <% } %>
-        <% messages.forEach(msg => { %>
-          <div class="msg-card<%= msg.pinned ? ' msg-pinned' : '' %>">
-            <% if (msg.pinned) { %>
-              <div class="msg-pin-badge">Pinned</div>
-            <% } %>
+        <% topics.forEach(topic => { %>
+        <% const replies = topicReplies[topic.id] || []; %>
+        <div class="thread-card<%= topic.pinned ? ' msg-pinned' : '' %>">
+          <% if (topic.pinned) { %><div class="msg-pin-badge">Pinned</div><% } %>
+
+          <div class="thread-topic">
             <div class="msg-header">
               <div>
-                <span class="msg-author"><%= msg.author_name %></span>
-                <span class="msg-author-badge msg-badge-<%= msg.author_type %>">
-                  <%= msg.author_type === 'admin' ? 'Coach' : msg.author_type === 'staff' ? 'Staff' : 'Parent' %>
+                <span class="msg-author"><%= topic.author_name %></span>
+                <span class="msg-author-badge msg-badge-<%= topic.author_type %>">
+                  <%= topic.author_type === 'admin' ? 'Coach' : topic.author_type === 'staff' ? 'Staff' : 'Parent' %>
                 </span>
               </div>
-              <span class="msg-time"><%= new Date(msg.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %></span>
+              <span class="msg-time"><%= new Date(topic.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %></span>
             </div>
-            <div class="msg-body"><%= msg.message %></div>
+            <div class="msg-body"><%= topic.message %></div>
+            <% if (replies.length > 0) { %>
+              <div class="reply-count"><%= replies.length %> repl<%= replies.length === 1 ? 'y' : 'ies' %></div>
+            <% } %>
             <% if (isAdmin) { %>
               <div class="msg-actions">
                 <form method="POST" action="/messages/pin" style="margin:0;">
-                  <input type="hidden" name="message_id" value="<%= msg.id %>">
-                  <button type="submit" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 10px;"><%= msg.pinned ? 'Unpin' : 'Pin' %></button>
+                  <input type="hidden" name="message_id" value="<%= topic.id %>">
+                  <button type="submit" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 10px;"><%= topic.pinned ? 'Unpin' : 'Pin' %></button>
                 </form>
-                <form method="POST" action="/messages/delete" style="margin:0;" onsubmit="return confirm('Delete this message?')">
-                  <input type="hidden" name="message_id" value="<%= msg.id %>">
+                <form method="POST" action="/messages/delete" style="margin:0;" onsubmit="return confirm('Delete this topic and all replies?')">
+                  <input type="hidden" name="message_id" value="<%= topic.id %>">
                   <button type="submit" class="btn-sm btn-sm-remove" style="font-size:11px;padding:3px 10px;">Delete</button>
                 </form>
               </div>
             <% } %>
           </div>
+
+          <% if (replies.length > 0) { %>
+          <div class="thread-replies">
+            <% replies.forEach(reply => { %>
+            <div class="thread-reply">
+              <div class="msg-header">
+                <div>
+                  <span class="msg-author" style="font-size:13px;"><%= reply.author_name %></span>
+                  <span class="msg-author-badge msg-badge-<%= reply.author_type %>" style="font-size:10px;">
+                    <%= reply.author_type === 'admin' ? 'Coach' : reply.author_type === 'staff' ? 'Staff' : 'Parent' %>
+                  </span>
+                </div>
+                <span class="msg-time" style="font-size:11px;"><%= new Date(reply.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %></span>
+              </div>
+              <div class="msg-body" style="font-size:14px;"><%= reply.message %></div>
+              <% if (isAdmin) { %>
+              <div class="msg-actions" style="margin-top:4px;">
+                <form method="POST" action="/messages/delete" style="margin:0;" onsubmit="return confirm('Delete this reply?')">
+                  <input type="hidden" name="message_id" value="<%= reply.id %>">
+                  <button type="submit" class="btn-sm btn-sm-remove" style="font-size:10px;padding:2px 8px;">Delete</button>
+                </form>
+              </div>
+              <% } %>
+            </div>
+            <% }); %>
+          </div>
+          <% } %>
+
+          <% if (isAdmin || parentUser) { %>
+          <div class="thread-reply-form">
+            <form method="POST" action="/messages/<%= topic.id %>/reply">
+              <input type="text" name="message" placeholder="Write a reply..." required class="form-input">
+              <button type="submit" class="btn btn-confirm" style="white-space:nowrap;">Reply</button>
+            </form>
+          </div>
+          <% } else { %>
+          <div style="padding:8px 16px; font-size:13px; color:#6b7280; background:#f3f4f6; border-top:1px solid var(--gray-100);">
+            <a href="/parent/login" style="color:var(--navy); font-weight:600;">Log in</a> to reply.
+          </div>
+          <% } %>
+        </div>
         <% }); %>
       </div>
     </div>

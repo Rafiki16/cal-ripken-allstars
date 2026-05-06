@@ -223,6 +223,11 @@ async function init() {
       )
     `);
 
+    try { await pool.query('ALTER TABLE team_events ADD COLUMN opponent_name TEXT'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE team_events ADD COLUMN our_score INTEGER'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE team_events ADD COLUMN opponent_score INTEGER'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE team_messages ADD COLUMN parent_id INTEGER REFERENCES team_messages(id) ON DELETE CASCADE'); } catch (e) { /* exists */ }
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -271,12 +276,12 @@ async function init() {
       getAllTeamEvents: async () => (await pool.query('SELECT * FROM team_events ORDER BY start_date, start_time')).rows,
       getTeamEvent: async (id) => (await pool.query('SELECT * FROM team_events WHERE id = $1', [id])).rows[0] || null,
       addTeamEvent: async (e) => pool.query(
-        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
-        [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info]
+        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info, opponent_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
+        [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null]
       ),
       updateTeamEvent: async (id, e) => pool.query(
-        'UPDATE team_events SET event_type=$1, title=$2, start_date=$3, start_time=$4, end_date=$5, end_time=$6, location_name=$7, address=$8, notes=$9, hotel_info=$10, carpool_info=$11 WHERE id=$12',
-        [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, id]
+        'UPDATE team_events SET event_type=$1, title=$2, start_date=$3, start_time=$4, end_date=$5, end_time=$6, location_name=$7, address=$8, notes=$9, hotel_info=$10, carpool_info=$11, opponent_name=$12 WHERE id=$13',
+        [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null, id]
       ),
       removeTeamEvent: async (id) => pool.query('DELETE FROM team_events WHERE id = $1', [id]),
       updateBattingAll: async (id, val) => pool.query('UPDATE team_events SET batting_all = $1 WHERE id = $2', [val ? 1 : 0, id]),
@@ -340,8 +345,23 @@ async function init() {
       updateJerseyNumber: async (id, number) => pool.query('UPDATE players SET jersey_number = $1 WHERE id = $2', [number, id]),
       getParentAccountByPhone: async (phone) => (await pool.query('SELECT * FROM parent_accounts WHERE phone = $1', [phone])).rows[0] || null,
       createParentAccount: async (phone, displayName, passwordHash) => pool.query('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES ($1, $2, $3)', [phone, displayName, passwordHash]),
-      getAllMessages: async () => (await pool.query('SELECT * FROM team_messages ORDER BY pinned DESC, created_at DESC')).rows,
-      addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message) VALUES ($1,$2,$3)', [m.author_name, m.author_type, m.message]),
+      updateGameScore: async (id, ourScore, opponentScore) => pool.query('UPDATE team_events SET our_score = $1, opponent_score = $2 WHERE id = $3', [ourScore, opponentScore, id]),
+      clearLineupGrid: async (eventId, subEventId) => {
+        if (eventId) {
+          await pool.query('DELETE FROM lineup_grid WHERE team_event_id = $1', [eventId]);
+          await pool.query('DELETE FROM game_lineups WHERE team_event_id = $1', [eventId]);
+        } else {
+          await pool.query('DELETE FROM lineup_grid WHERE sub_event_id = $1', [subEventId]);
+          await pool.query('DELETE FROM game_lineups WHERE sub_event_id = $1', [subEventId]);
+        }
+      },
+      clearPlayerFromLineupGrid: async (eventId, subEventId, playerId) => {
+        if (eventId) await pool.query('DELETE FROM lineup_grid WHERE team_event_id = $1 AND player_id = $2', [eventId, playerId]);
+        else await pool.query('DELETE FROM lineup_grid WHERE sub_event_id = $1 AND player_id = $2', [subEventId, playerId]);
+      },
+      getAllMessages: async () => (await pool.query('SELECT m.*, (SELECT COUNT(*) FROM team_messages r WHERE r.parent_id = m.id) as reply_count FROM team_messages m WHERE m.parent_id IS NULL ORDER BY m.pinned DESC, m.created_at DESC')).rows,
+      getTopicReplies: async (topicId) => (await pool.query('SELECT * FROM team_messages WHERE parent_id = $1 ORDER BY created_at ASC', [topicId])).rows,
+      addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES ($1,$2,$3,$4)', [m.author_name, m.author_type, m.message, m.parent_id || null]),
       removeMessage: async (id) => pool.query('DELETE FROM team_messages WHERE id = $1', [id]),
       togglePinMessage: async (id) => pool.query('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = $1', [id]),
       getAllSavedLocations: async () => (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
@@ -532,6 +552,11 @@ async function init() {
       )
     `);
 
+    try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN opponent_name TEXT'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN our_score INTEGER'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN opponent_score INTEGER'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE team_messages ADD COLUMN parent_id INTEGER REFERENCES team_messages(id) ON DELETE CASCADE'); } catch (e) { /* exists */ }
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -576,11 +601,11 @@ async function init() {
       getAllTeamEvents: async () => sqliteDb.prepare('SELECT * FROM team_events ORDER BY start_date, start_time').all(),
       getTeamEvent: async (id) => sqliteDb.prepare('SELECT * FROM team_events WHERE id = ?').get(id) || null,
       addTeamEvent: async (e) => sqliteDb.prepare(
-        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-      ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info),
+        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info, opponent_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+      ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null),
       updateTeamEvent: async (id, e) => sqliteDb.prepare(
-        'UPDATE team_events SET event_type=?, title=?, start_date=?, start_time=?, end_date=?, end_time=?, location_name=?, address=?, notes=?, hotel_info=?, carpool_info=? WHERE id=?'
-      ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, id),
+        'UPDATE team_events SET event_type=?, title=?, start_date=?, start_time=?, end_date=?, end_time=?, location_name=?, address=?, notes=?, hotel_info=?, carpool_info=?, opponent_name=? WHERE id=?'
+      ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null, id),
       removeTeamEvent: async (id) => sqliteDb.prepare('DELETE FROM team_events WHERE id = ?').run(id),
       updateBattingAll: async (id, val) => sqliteDb.prepare('UPDATE team_events SET batting_all = ? WHERE id = ?').run(val ? 1 : 0, id),
       getDrills: async (eventId) => sqliteDb.prepare('SELECT * FROM practice_drills WHERE team_event_id = ? ORDER BY sort_order').all(eventId),
@@ -651,8 +676,23 @@ async function init() {
       updateJerseyNumber: async (id, number) => sqliteDb.prepare('UPDATE players SET jersey_number = ? WHERE id = ?').run(number, id),
       getParentAccountByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE phone = ?').get(phone) || null,
       createParentAccount: async (phone, displayName, passwordHash) => sqliteDb.prepare('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES (?, ?, ?)').run(phone, displayName, passwordHash),
-      getAllMessages: async () => sqliteDb.prepare('SELECT * FROM team_messages ORDER BY pinned DESC, created_at DESC').all(),
-      addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message) VALUES (?,?,?)').run(m.author_name, m.author_type, m.message),
+      updateGameScore: async (id, ourScore, opponentScore) => sqliteDb.prepare('UPDATE team_events SET our_score = ?, opponent_score = ? WHERE id = ?').run(ourScore, opponentScore, id),
+      clearLineupGrid: async (eventId, subEventId) => {
+        if (eventId) {
+          sqliteDb.prepare('DELETE FROM lineup_grid WHERE team_event_id = ?').run(eventId);
+          sqliteDb.prepare('DELETE FROM game_lineups WHERE team_event_id = ?').run(eventId);
+        } else {
+          sqliteDb.prepare('DELETE FROM lineup_grid WHERE sub_event_id = ?').run(subEventId);
+          sqliteDb.prepare('DELETE FROM game_lineups WHERE sub_event_id = ?').run(subEventId);
+        }
+      },
+      clearPlayerFromLineupGrid: async (eventId, subEventId, playerId) => {
+        if (eventId) sqliteDb.prepare('DELETE FROM lineup_grid WHERE team_event_id = ? AND player_id = ?').run(eventId, playerId);
+        else sqliteDb.prepare('DELETE FROM lineup_grid WHERE sub_event_id = ? AND player_id = ?').run(subEventId, playerId);
+      },
+      getAllMessages: async () => sqliteDb.prepare('SELECT m.*, (SELECT COUNT(*) FROM team_messages r WHERE r.parent_id = m.id) as reply_count FROM team_messages m WHERE m.parent_id IS NULL ORDER BY m.pinned DESC, m.created_at DESC').all(),
+      getTopicReplies: async (topicId) => sqliteDb.prepare('SELECT * FROM team_messages WHERE parent_id = ? ORDER BY created_at ASC').all(topicId),
+      addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES (?,?,?,?)').run(m.author_name, m.author_type, m.message, m.parent_id || null),
       removeMessage: async (id) => sqliteDb.prepare('DELETE FROM team_messages WHERE id = ?').run(id),
       togglePinMessage: async (id) => sqliteDb.prepare('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id),
       getAllSavedLocations: async () => sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
@@ -716,7 +756,11 @@ module.exports = {
   updateJerseyNumber: (...args) => impl.updateJerseyNumber(...args),
   getParentAccountByPhone: (...args) => impl.getParentAccountByPhone(...args),
   createParentAccount: (...args) => impl.createParentAccount(...args),
+  updateGameScore: (...args) => impl.updateGameScore(...args),
+  clearLineupGrid: (...args) => impl.clearLineupGrid(...args),
+  clearPlayerFromLineupGrid: (...args) => impl.clearPlayerFromLineupGrid(...args),
   getAllMessages: (...args) => impl.getAllMessages(...args),
+  getTopicReplies: (...args) => impl.getTopicReplies(...args),
   addMessage: (...args) => impl.addMessage(...args),
   removeMessage: (...args) => impl.removeMessage(...args),
   togglePinMessage: (...args) => impl.togglePinMessage(...args),
