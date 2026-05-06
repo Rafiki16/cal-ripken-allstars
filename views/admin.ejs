@@ -212,22 +212,32 @@
             <input type="text" name="title" required class="form-input" placeholder="e.g. Practice at Twin Lakes">
           </div>
         </div>
-        <div id="single-date-row" class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr;">
+        <div id="single-date-row" class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
           <div class="form-group">
             <label>Start Date *</label>
             <input type="date" name="start_date" id="add-start-date" class="form-input">
           </div>
           <div class="form-group">
             <label>Start Time</label>
-            <input type="time" name="start_time" class="form-input">
+            <input type="time" name="start_time" id="add-start-time" class="form-input">
           </div>
-          <div class="form-group">
+          <div class="form-group" id="add-duration-group">
+            <label>Duration</label>
+            <select name="duration" id="add-duration" class="form-input">
+              <option value="">None</option>
+              <option value="60">1 hour</option>
+              <option value="90">1.5 hours</option>
+              <option value="120" selected>2 hours</option>
+              <option value="150">2.5 hours</option>
+              <option value="180">3 hours</option>
+              <option value="210">3.5 hours</option>
+              <option value="240">4 hours</option>
+              <option value="300">5 hours</option>
+            </select>
+          </div>
+          <div class="form-group" id="add-end-date-group" style="display:none;">
             <label>End Date</label>
             <input type="date" name="end_date" class="form-input">
-          </div>
-          <div class="form-group">
-            <label>End Time</label>
-            <input type="time" name="end_time" class="form-input">
           </div>
         </div>
 
@@ -246,8 +256,18 @@
               <input type="time" id="multi-start-time" class="form-input">
             </div>
             <div class="form-group" style="margin:0;">
-              <label>End Time</label>
-              <input type="time" id="multi-end-time" class="form-input">
+              <label>Duration</label>
+              <select id="multi-duration" class="form-input">
+                <option value="">None</option>
+                <option value="60">1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120" selected>2 hours</option>
+                <option value="150">2.5 hours</option>
+                <option value="180">3 hours</option>
+                <option value="210">3.5 hours</option>
+                <option value="240">4 hours</option>
+                <option value="300">5 hours</option>
+              </select>
             </div>
           </div>
           <div class="multi-cal-wrap">
@@ -264,6 +284,17 @@
           <div id="mp-selected-info" style="margin-top:10px; font-size:13px; color:var(--gray-500);">No dates selected</div>
           <div id="mp-hidden-dates"></div>
         </div>
+        <% if (savedLocations.length > 0) { %>
+        <div class="form-group">
+          <label>Saved Locations</label>
+          <select id="add-saved-loc" class="form-input" onchange="applySavedLocation(this, 'add')">
+            <option value="">— Select a saved location —</option>
+            <% savedLocations.forEach(loc => { %>
+              <option value="<%= loc.id %>" data-name="<%= loc.location_name %>" data-address="<%= loc.address %>"><%= loc.location_name %> — <%= loc.address %></option>
+            <% }); %>
+          </select>
+        </div>
+        <% } %>
         <div class="form-group">
           <label>Search Location</label>
           <div style="display:flex; gap:8px;">
@@ -281,6 +312,11 @@
             <label>Address</label>
             <input type="text" name="address" id="add-loc-address" class="form-input" placeholder="Filled by search or type manually">
           </div>
+        </div>
+        <div class="form-group">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+            <input type="checkbox" name="save_location" value="1"> Save this location for future events
+          </label>
         </div>
         <div class="form-group">
           <label>Notes</label>
@@ -420,7 +456,7 @@
               <input type="text" name="title" id="edit-te-title" required class="form-input">
             </div>
           </div>
-          <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr;">
+          <div class="form-row" id="edit-date-row" style="grid-template-columns:1fr 1fr 1fr;">
             <div class="form-group">
               <label>Start Date *</label>
               <input type="date" name="start_date" id="edit-te-start-date" required class="form-input">
@@ -429,15 +465,36 @@
               <label>Start Time</label>
               <input type="time" name="start_time" id="edit-te-start-time" class="form-input">
             </div>
-            <div class="form-group">
+            <div class="form-group" id="edit-duration-group">
+              <label>Duration</label>
+              <select name="duration" id="edit-te-duration" class="form-input">
+                <option value="">None</option>
+                <option value="60">1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120">2 hours</option>
+                <option value="150">2.5 hours</option>
+                <option value="180">3 hours</option>
+                <option value="210">3.5 hours</option>
+                <option value="240">4 hours</option>
+                <option value="300">5 hours</option>
+              </select>
+            </div>
+            <div class="form-group" id="edit-end-date-group" style="display:none;">
               <label>End Date</label>
               <input type="date" name="end_date" id="edit-te-end-date" class="form-input">
             </div>
-            <div class="form-group">
-              <label>End Time</label>
-              <input type="time" name="end_time" id="edit-te-end-time" class="form-input">
-            </div>
           </div>
+          <% if (savedLocations.length > 0) { %>
+          <div class="form-group">
+            <label>Saved Locations</label>
+            <select id="edit-saved-loc" class="form-input" onchange="applySavedLocation(this, 'edit')">
+              <option value="">— Select a saved location —</option>
+              <% savedLocations.forEach(loc => { %>
+                <option value="<%= loc.id %>" data-name="<%= loc.location_name %>" data-address="<%= loc.address %>"><%= loc.location_name %> — <%= loc.address %></option>
+              <% }); %>
+            </select>
+          </div>
+          <% } %>
           <div class="form-group">
             <label>Search Location</label>
             <div style="display:flex; gap:8px;">
@@ -455,6 +512,11 @@
               <label>Address</label>
               <input type="text" name="address" id="edit-te-address" class="form-input">
             </div>
+          </div>
+          <div class="form-group">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+              <input type="checkbox" name="save_location" value="1"> Save this location for future events
+            </label>
           </div>
           <div class="form-group">
             <label>Notes</label>
@@ -544,6 +606,27 @@
           const show = type !== 'tournament';
           document.getElementById('multi-day-toggle').style.display = show ? '' : 'none';
           if (!show) { document.getElementById('multi-day-check').checked = false; toggleMultiDay(); }
+          document.getElementById('add-duration-group').style.display = type === 'tournament' ? 'none' : '';
+          document.getElementById('add-end-date-group').style.display = type === 'tournament' ? '' : 'none';
+          var row = document.getElementById('single-date-row');
+          row.style.gridTemplateColumns = type === 'tournament' ? '1fr 1fr 1fr' : '1fr 1fr 1fr';
+        } else {
+          document.getElementById('edit-duration-group').style.display = type === 'tournament' ? 'none' : '';
+          document.getElementById('edit-end-date-group').style.display = type === 'tournament' ? '' : 'none';
+        }
+      }
+
+      function applySavedLocation(sel, mode) {
+        var opt = sel.options[sel.selectedIndex];
+        if (!opt || !opt.value) return;
+        var name = opt.dataset.name;
+        var addr = opt.dataset.address;
+        if (mode === 'edit') {
+          document.getElementById('edit-te-location').value = name;
+          document.getElementById('edit-te-address').value = addr;
+        } else {
+          document.getElementById('add-loc-name').value = name;
+          document.getElementById('add-loc-address').value = addr;
         }
       }
 
@@ -612,13 +695,13 @@
         info.innerHTML = '<strong>' + sorted.length + ' date' + (sorted.length > 1 ? 's' : '') + ' selected:</strong> ' + labels.join(', ');
         hidden.innerHTML = sorted.map(function(d) { return '<input type="hidden" name="dates" value="' + d + '">'; }).join('');
         var st = document.getElementById('multi-start-time').value;
-        var et = document.getElementById('multi-end-time').value;
+        var dur = document.getElementById('multi-duration').value;
         if (st) hidden.innerHTML += '<input type="hidden" name="start_time" value="' + st + '">';
-        if (et) hidden.innerHTML += '<input type="hidden" name="end_time" value="' + et + '">';
+        if (dur) hidden.innerHTML += '<input type="hidden" name="duration" value="' + dur + '">';
       }
 
       document.getElementById('multi-start-time').addEventListener('change', updateMpInfo);
-      document.getElementById('multi-end-time').addEventListener('change', updateMpInfo);
+      document.getElementById('multi-duration').addEventListener('change', updateMpInfo);
       document.getElementById('mp-prev').onclick = function() { mpMonth--; if (mpMonth<0){mpMonth=11;mpYear--;} renderMpCal(); };
       document.getElementById('mp-next').onclick = function() { mpMonth++; if (mpMonth>11){mpMonth=0;mpYear++;} renderMpCal(); };
 
@@ -629,12 +712,19 @@
         document.getElementById('edit-te-start-date').value = ev.start_date;
         document.getElementById('edit-te-start-time').value = ev.start_time;
         document.getElementById('edit-te-end-date').value = ev.end_date;
-        document.getElementById('edit-te-end-time').value = ev.end_time;
         document.getElementById('edit-te-location').value = ev.location_name;
         document.getElementById('edit-te-address').value = ev.address;
         document.getElementById('edit-te-notes').value = ev.notes;
         document.getElementById('edit-te-hotel').value = ev.hotel_info;
         document.getElementById('edit-te-carpool').value = ev.carpool_info;
+        var dur = '';
+        if (ev.start_time && ev.end_time && ev.event_type !== 'tournament') {
+          var sp = ev.start_time.split(':').map(Number);
+          var ep = ev.end_time.split(':').map(Number);
+          var diff = (ep[0]*60+ep[1]) - (sp[0]*60+sp[1]);
+          if (diff > 0) dur = String(diff);
+        }
+        document.getElementById('edit-te-duration').value = dur;
         toggleTournamentFields(ev.event_type, 'edit');
         document.getElementById('edit-te-modal').style.display = 'block';
       }

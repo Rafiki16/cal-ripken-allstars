@@ -214,6 +214,15 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS saved_locations (
+        id SERIAL PRIMARY KEY,
+        location_name TEXT NOT NULL,
+        address TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -335,6 +344,9 @@ async function init() {
       addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message) VALUES ($1,$2,$3)', [m.author_name, m.author_type, m.message]),
       removeMessage: async (id) => pool.query('DELETE FROM team_messages WHERE id = $1', [id]),
       togglePinMessage: async (id) => pool.query('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = $1', [id]),
+      getAllSavedLocations: async () => (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
+      addSavedLocation: async (name, address) => pool.query('INSERT INTO saved_locations (location_name, address) VALUES ($1, $2)', [name, address]),
+      removeSavedLocation: async (id) => pool.query('DELETE FROM saved_locations WHERE id = $1', [id]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -511,6 +523,15 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS saved_locations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        location_name TEXT NOT NULL,
+        address TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -634,6 +655,9 @@ async function init() {
       addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message) VALUES (?,?,?)').run(m.author_name, m.author_type, m.message),
       removeMessage: async (id) => sqliteDb.prepare('DELETE FROM team_messages WHERE id = ?').run(id),
       togglePinMessage: async (id) => sqliteDb.prepare('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id),
+      getAllSavedLocations: async () => sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
+      addSavedLocation: async (name, address) => sqliteDb.prepare('INSERT INTO saved_locations (location_name, address) VALUES (?, ?)').run(name, address),
+      removeSavedLocation: async (id) => sqliteDb.prepare('DELETE FROM saved_locations WHERE id = ?').run(id),
     };
   }
 }
@@ -696,4 +720,7 @@ module.exports = {
   addMessage: (...args) => impl.addMessage(...args),
   removeMessage: (...args) => impl.removeMessage(...args),
   togglePinMessage: (...args) => impl.togglePinMessage(...args),
+  getAllSavedLocations: (...args) => impl.getAllSavedLocations(...args),
+  addSavedLocation: (...args) => impl.addSavedLocation(...args),
+  removeSavedLocation: (...args) => impl.removeSavedLocation(...args),
 };

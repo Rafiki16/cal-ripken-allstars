@@ -98,6 +98,15 @@ app.use(async (req, res, next) => {
   next();
 });
 
+function calcEndTime(startTime, durationMinutes) {
+  if (!startTime || !durationMinutes) return null;
+  const [h, m] = startTime.split(':').map(Number);
+  const total = h * 60 + m + Number(durationMinutes);
+  const eh = Math.floor(total / 60) % 24;
+  const em = total % 60;
+  return String(eh).padStart(2, '0') + ':' + String(em).padStart(2, '0');
+}
+
 const RSVP_SECRET = process.env.RSVP_SECRET || process.env.SESSION_SECRET || 'allstars-rsvp-2026';
 
 function generateRsvpToken(eventId, playerId) {
@@ -683,8 +692,9 @@ app.get('/admin', requireAdmin, async (req, res) => {
   const pending = players.filter(p => p.status === 'pending').length;
   const allEvents = await db.getAllEvents();
   const teamEvents = await db.getAllTeamEvents();
+  const savedLocations = await db.getAllSavedLocations();
   res.render('admin', {
-    players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents,
+    players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents, savedLocations,
     adminUser: req.session.admin,
     success: req.query.success || null,
     error: req.query.error || null,
@@ -793,7 +803,7 @@ function requireAdminOrStaff(req, res, next) {
 }
 
 app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
-  const { event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info } = req.body;
+  const { event_type, title, start_date, start_time, end_date, end_time, duration, location_name, address, notes, hotel_info, carpool_info, save_location } = req.body;
   const dates = req.body.dates;
   const multiDates = dates ? (Array.isArray(dates) ? dates : [dates]).filter(Boolean).sort() : [];
 
@@ -802,17 +812,25 @@ app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
     return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and at least one date are required.'));
   }
 
+  const resolvedEndTime = duration ? calcEndTime(start_time, duration) : (end_time || null);
+
   const eventData = {
     event_type: event_type || 'practice',
     title: title.trim(),
     start_time: start_time || null,
-    end_time: end_time || null,
+    end_time: resolvedEndTime,
     location_name: (location_name || '').trim() || null,
     address: (address || '').trim() || null,
     notes: (notes || '').trim() || null,
     hotel_info: (hotel_info || '').trim() || null,
     carpool_info: (carpool_info || '').trim() || null,
   };
+
+  const locName = (location_name || '').trim();
+  const locAddr = (address || '').trim();
+  if (save_location && locName && locAddr) {
+    await db.addSavedLocation(locName, locAddr);
+  }
 
   if (multiDates.length > 0) {
     for (const d of multiDates) {
@@ -828,24 +846,30 @@ app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
 });
 
 app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
-  const { event_id, event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info } = req.body;
+  const { event_id, event_type, title, start_date, start_time, end_date, end_time, duration, location_name, address, notes, hotel_info, carpool_info, save_location } = req.body;
   if (!title || !title.trim() || !start_date) {
     const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
     return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and start date are required.'));
   }
+  const resolvedEndTime = duration ? calcEndTime(start_time, duration) : (end_time || null);
   await db.updateTeamEvent(Number(event_id), {
     event_type: event_type || 'practice',
     title: title.trim(),
     start_date,
     start_time: start_time || null,
     end_date: end_date || null,
-    end_time: end_time || null,
+    end_time: resolvedEndTime,
     location_name: (location_name || '').trim() || null,
     address: (address || '').trim() || null,
     notes: (notes || '').trim() || null,
     hotel_info: (hotel_info || '').trim() || null,
     carpool_info: (carpool_info || '').trim() || null,
   });
+  const locName = (location_name || '').trim();
+  const locAddr = (address || '').trim();
+  if (save_location && locName && locAddr) {
+    await db.addSavedLocation(locName, locAddr);
+  }
   const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
   res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" updated`));
 });
@@ -853,6 +877,11 @@ app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
 app.post('/admin/remove-team-event', requireAdmin, async (req, res) => {
   await db.removeTeamEvent(Number(req.body.event_id));
   res.redirect('/admin?success=Event+removed');
+});
+
+app.post('/admin/remove-saved-location', requireAdmin, async (req, res) => {
+  await db.removeSavedLocation(Number(req.body.location_id));
+  res.redirect('/admin?success=Location+removed');
 });
 
 // --- Practice Drills ---
