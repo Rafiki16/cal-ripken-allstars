@@ -54,20 +54,19 @@
     <h2 class="section-title" style="margin-top:40px;">Schedule</h2>
 
     <div class="calendar-section">
-      <div class="cal-header">
+      <div class="calendar-header">
         <button class="cal-nav" id="calPrev">&larr;</button>
-        <h3 class="cal-month" id="calMonth"></h3>
+        <h3 class="cal-month-title" id="calMonth"></h3>
         <button class="cal-nav" id="calNext">&rarr;</button>
       </div>
-      <div class="cal-grid">
-        <div class="cal-day-label">Sun</div>
-        <div class="cal-day-label">Mon</div>
-        <div class="cal-day-label">Tue</div>
-        <div class="cal-day-label">Wed</div>
-        <div class="cal-day-label">Thu</div>
-        <div class="cal-day-label">Fri</div>
-        <div class="cal-day-label">Sat</div>
-        <div id="calCells"></div>
+      <div class="cal-grid" id="calGrid">
+        <div class="cal-day-header">Sun</div>
+        <div class="cal-day-header">Mon</div>
+        <div class="cal-day-header">Tue</div>
+        <div class="cal-day-header">Wed</div>
+        <div class="cal-day-header">Thu</div>
+        <div class="cal-day-header">Fri</div>
+        <div class="cal-day-header">Sat</div>
       </div>
     </div>
 
@@ -100,7 +99,7 @@
 
       function renderCalendar() {
         var monthEl = document.getElementById('calMonth');
-        var cellsEl = document.getElementById('calCells');
+        var gridEl = document.getElementById('calGrid');
         var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
         monthEl.textContent = months[calMonth] + ' ' + calYear;
 
@@ -119,6 +118,10 @@
           eventDates[d].push(e);
         });
 
+        // Remove old day cells, keep the 7 day headers
+        var oldCells = gridEl.querySelectorAll('.cal-cell');
+        oldCells.forEach(function(c) { c.remove(); });
+
         var html = '';
         for (var i = 0; i < startDay; i++) {
           html += '<div class="cal-cell cal-empty"></div>';
@@ -132,7 +135,7 @@
             html += ' onclick="scrollToEvent(\'' + dateStr + '\')" style="cursor:pointer"';
           }
           html += '>';
-          html += '<span class="cal-date">' + d + '</span>';
+          html += '<span class="cal-day-num">' + d + '</span>';
           if (hasEvent) {
             hasEvent.forEach(function(ev) {
               var color = ev.type === 'practice' ? '#2563eb' : ev.type === 'game' ? '#16a34a' : ev.type === 'tournament' ? '#9333ea' : '#6b7280';
@@ -141,7 +144,7 @@
           }
           html += '</div>';
         }
-        cellsEl.innerHTML = html;
+        gridEl.insertAdjacentHTML('beforeend', html);
       }
 
       function formatTime(t) {
