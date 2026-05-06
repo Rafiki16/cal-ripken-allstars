@@ -29,7 +29,7 @@
 
     <div class="roster-section">
       <div class="roster-grid">
-        <% players.forEach(player => { %>
+        <% players.filter(p => p.status !== 'declined').forEach(player => { %>
           <div class="player-card">
             <% if (player.status === 'pending') { %>
               <div class="player-status-badge badge-pending">Pending</div>
