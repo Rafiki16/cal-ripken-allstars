@@ -76,7 +76,14 @@ async function sendConfirmationEmail(player, email) {
 
 app.get('/', async (req, res) => {
   const players = await db.getAllPlayers();
-  res.render('index', { players });
+  const teamEvents = await db.getAllTeamEvents();
+  res.render('index', { players, teamEvents });
+});
+
+app.get('/event/:id', async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/');
+  res.render('event-detail', { event });
 });
 
 app.get('/verify', (req, res) => {
@@ -349,8 +356,9 @@ app.get('/admin', requireAdmin, async (req, res) => {
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
   const allEvents = await db.getAllEvents();
+  const teamEvents = await db.getAllTeamEvents();
   res.render('admin', {
-    players, staff, confirmed, declined, pending, total: players.length, allEvents,
+    players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents,
     adminUser: req.session.admin,
     success: req.query.success || null,
     error: req.query.error || null,
@@ -445,6 +453,70 @@ app.post('/admin/remove-staff', requireAdmin, async (req, res) => {
   res.redirect('/admin?success=Staff+member+removed');
 });
 
+// --- Team Events (admin + staff) ---
+
+function requireAdminOrStaff(req, res, next) {
+  if (req.session.admin) return next();
+  if (req.body.staff_phone) {
+    return db.getStaffByPhone(normalizePhone(req.body.staff_phone)).then(staff => {
+      if (staff) { req.staffUser = staff; return next(); }
+      res.redirect('/staff');
+    });
+  }
+  res.redirect('/admin/login');
+}
+
+app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
+  const { event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info } = req.body;
+  if (!title || !title.trim() || !start_date) {
+    const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
+    return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and start date are required.'));
+  }
+  await db.addTeamEvent({
+    event_type: event_type || 'practice',
+    title: title.trim(),
+    start_date,
+    start_time: start_time || null,
+    end_date: end_date || null,
+    end_time: end_time || null,
+    location_name: (location_name || '').trim() || null,
+    address: (address || '').trim() || null,
+    notes: (notes || '').trim() || null,
+    hotel_info: (hotel_info || '').trim() || null,
+    carpool_info: (carpool_info || '').trim() || null,
+  });
+  const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
+  res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" added to calendar`));
+});
+
+app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
+  const { event_id, event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info } = req.body;
+  if (!title || !title.trim() || !start_date) {
+    const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
+    return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and start date are required.'));
+  }
+  await db.updateTeamEvent(Number(event_id), {
+    event_type: event_type || 'practice',
+    title: title.trim(),
+    start_date,
+    start_time: start_time || null,
+    end_date: end_date || null,
+    end_time: end_time || null,
+    location_name: (location_name || '').trim() || null,
+    address: (address || '').trim() || null,
+    notes: (notes || '').trim() || null,
+    hotel_info: (hotel_info || '').trim() || null,
+    carpool_info: (carpool_info || '').trim() || null,
+  });
+  const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
+  res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" updated`));
+});
+
+app.post('/admin/remove-team-event', requireAdmin, async (req, res) => {
+  await db.removeTeamEvent(Number(req.body.event_id));
+  res.redirect('/admin?success=Event+removed');
+});
+
 // --- Admin Settings ---
 
 app.get('/admin/settings', requireAdmin, async (req, res) => {
@@ -533,7 +605,8 @@ app.get('/staff/dashboard', async (req, res) => {
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
   const allEvents = await db.getAllEvents();
-  res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS, allEvents });
+  const teamEvents = await db.getAllTeamEvents();
+  res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS, allEvents, teamEvents, success: req.query.success || null, error: req.query.error || null });
 });
 
 app.get('/api/stats', async (req, res) => {

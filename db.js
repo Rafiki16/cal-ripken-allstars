@@ -96,6 +96,24 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS team_events (
+        id SERIAL PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        start_time TEXT,
+        end_date TEXT,
+        end_time TEXT,
+        location_name TEXT,
+        address TEXT,
+        notes TEXT,
+        hotel_info TEXT,
+        carpool_info TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -141,6 +159,17 @@ async function init() {
       getAllEvents: async () => (await pool.query('SELECT * FROM events ORDER BY start_date')).rows,
       addEvent: async (e) => pool.query('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES ($1,$2,$3,$4,$5)', [e.player_id, e.event_type, e.start_date, e.end_date, e.notes]),
       removeEvent: async (id) => pool.query('DELETE FROM events WHERE id = $1', [id]),
+      getAllTeamEvents: async () => (await pool.query('SELECT * FROM team_events ORDER BY start_date, start_time')).rows,
+      getTeamEvent: async (id) => (await pool.query('SELECT * FROM team_events WHERE id = $1', [id])).rows[0] || null,
+      addTeamEvent: async (e) => pool.query(
+        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+        [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info]
+      ),
+      updateTeamEvent: async (id, e) => pool.query(
+        'UPDATE team_events SET event_type=$1, title=$2, start_date=$3, start_time=$4, end_date=$5, end_time=$6, location_name=$7, address=$8, notes=$9, hotel_info=$10, carpool_info=$11 WHERE id=$12',
+        [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, id]
+      ),
+      removeTeamEvent: async (id) => pool.query('DELETE FROM team_events WHERE id = $1', [id]),
       getAdminByUsername: async (username) => (await pool.query('SELECT * FROM admins WHERE username = $1', [username])).rows[0] || null,
       getAdminById: async (id) => (await pool.query('SELECT * FROM admins WHERE id = $1', [id])).rows[0] || null,
       getAllAdmins: async () => (await pool.query('SELECT id, username, created_at FROM admins ORDER BY created_at')).rows,
@@ -207,6 +236,24 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS team_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        start_time TEXT,
+        end_date TEXT,
+        end_time TEXT,
+        location_name TEXT,
+        address TEXT,
+        notes TEXT,
+        hotel_info TEXT,
+        carpool_info TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -248,6 +295,15 @@ async function init() {
       getAllEvents: async () => sqliteDb.prepare('SELECT * FROM events ORDER BY start_date').all(),
       addEvent: async (e) => sqliteDb.prepare('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES (?,?,?,?,?)').run(e.player_id, e.event_type, e.start_date, e.end_date, e.notes),
       removeEvent: async (id) => sqliteDb.prepare('DELETE FROM events WHERE id = ?').run(id),
+      getAllTeamEvents: async () => sqliteDb.prepare('SELECT * FROM team_events ORDER BY start_date, start_time').all(),
+      getTeamEvent: async (id) => sqliteDb.prepare('SELECT * FROM team_events WHERE id = ?').get(id) || null,
+      addTeamEvent: async (e) => sqliteDb.prepare(
+        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+      ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info),
+      updateTeamEvent: async (id, e) => sqliteDb.prepare(
+        'UPDATE team_events SET event_type=?, title=?, start_date=?, start_time=?, end_date=?, end_time=?, location_name=?, address=?, notes=?, hotel_info=?, carpool_info=? WHERE id=?'
+      ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, id),
+      removeTeamEvent: async (id) => sqliteDb.prepare('DELETE FROM team_events WHERE id = ?').run(id),
       getAdminByUsername: async (username) => sqliteDb.prepare('SELECT * FROM admins WHERE username = ?').get(username) || null,
       getAdminById: async (id) => sqliteDb.prepare('SELECT * FROM admins WHERE id = ?').get(id) || null,
       getAllAdmins: async () => sqliteDb.prepare('SELECT id, username, created_at FROM admins ORDER BY created_at').all(),
@@ -278,6 +334,11 @@ module.exports = {
   getAllEvents: (...args) => impl.getAllEvents(...args),
   addEvent: (...args) => impl.addEvent(...args),
   removeEvent: (...args) => impl.removeEvent(...args),
+  getAllTeamEvents: (...args) => impl.getAllTeamEvents(...args),
+  getTeamEvent: (...args) => impl.getTeamEvent(...args),
+  addTeamEvent: (...args) => impl.addTeamEvent(...args),
+  updateTeamEvent: (...args) => impl.updateTeamEvent(...args),
+  removeTeamEvent: (...args) => impl.removeTeamEvent(...args),
   getAdminByUsername: (...args) => impl.getAdminByUsername(...args),
   getAdminById: (...args) => impl.getAdminById(...args),
   getAllAdmins: (...args) => impl.getAllAdmins(...args),

@@ -189,6 +189,217 @@
         </table>
       </div>
     </div>
+    <!-- Team Events / Calendar -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Team Calendar</h2>
+      <p class="section-hint">Add practices, games, and tournaments. These appear on the public schedule.</p>
+
+      <form method="POST" action="/admin/add-team-event" class="add-player-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Event Type *</label>
+            <select name="event_type" class="form-input" id="admin-event-type" onchange="toggleTournamentFields(this.value, 'add')">
+              <option value="practice">Practice</option>
+              <option value="game">Game</option>
+              <option value="tournament">Tournament</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Title *</label>
+            <input type="text" name="title" required class="form-input" placeholder="e.g. Practice at Twin Lakes">
+          </div>
+        </div>
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr;">
+          <div class="form-group">
+            <label>Start Date *</label>
+            <input type="date" name="start_date" required class="form-input">
+          </div>
+          <div class="form-group">
+            <label>Start Time</label>
+            <input type="time" name="start_time" class="form-input">
+          </div>
+          <div class="form-group">
+            <label>End Date</label>
+            <input type="date" name="end_date" class="form-input">
+          </div>
+          <div class="form-group">
+            <label>End Time</label>
+            <input type="time" name="end_time" class="form-input">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Location Name</label>
+            <input type="text" name="location_name" class="form-input" placeholder="e.g. Twin Lakes Park">
+          </div>
+          <div class="form-group">
+            <label>Address</label>
+            <input type="text" name="address" class="form-input" placeholder="Full address for map">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <input type="text" name="notes" class="form-input" placeholder="Optional details">
+        </div>
+        <div id="add-tournament-fields" style="display:none;">
+          <div class="form-group">
+            <label>Hotel Info</label>
+            <textarea name="hotel_info" class="form-input" rows="3" placeholder="Preferred hotels, rates, booking info..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Carpool Info</label>
+            <textarea name="carpool_info" class="form-input" rows="3" placeholder="Carpool coordination, meeting points, departure times..."></textarea>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-confirm">Add Event</button>
+      </form>
+
+      <% if (teamEvents.length > 0) { %>
+        <table class="admin-table" style="margin-top:20px; min-width:auto;">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Title</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Location</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% teamEvents.forEach(ev => { %>
+              <tr>
+                <td>
+                  <span class="te-type-badge" style="background:<%= ev.event_type === 'practice' ? '#16a34a' : ev.event_type === 'game' ? '#1a2744' : ev.event_type === 'tournament' ? '#c41e3a' : '#6b7280' %>; font-size:10px;">
+                    <%= ev.event_type === 'practice' ? 'Practice' : ev.event_type === 'game' ? 'Game' : ev.event_type === 'tournament' ? 'Tournament' : 'Other' %>
+                  </span>
+                </td>
+                <td class="td-bold"><%= ev.title %></td>
+                <td style="white-space:nowrap; font-size:13px;"><%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %>&ndash;<%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %></td>
+                <td style="font-size:13px;"><%= ev.start_time || '-' %></td>
+                <td style="font-size:13px;"><%= ev.location_name || ev.address || '-' %></td>
+                <td>
+                  <div class="admin-action-row">
+                    <button type="button" class="btn-sm btn-sm-email" title="Edit" onclick='editTeamEvent(<%- JSON.stringify({id:ev.id,event_type:ev.event_type,title:ev.title,start_date:ev.start_date,start_time:ev.start_time||"",end_date:ev.end_date||"",end_time:ev.end_time||"",location_name:ev.location_name||"",address:ev.address||"",notes:ev.notes||"",hotel_info:ev.hotel_info||"",carpool_info:ev.carpool_info||""}) %>)'>&#9998;</button>
+                    <form method="POST" action="/admin/remove-team-event" onsubmit="return confirm('Remove this event?')" style="margin:0;">
+                      <input type="hidden" name="event_id" value="<%= ev.id %>">
+                      <button type="submit" class="btn-sm btn-sm-remove">&times;</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <p style="color:#6b7280; margin-top:16px; font-size:14px;">No events scheduled yet.</p>
+      <% } %>
+    </div>
+
+    <!-- Edit Team Event Modal -->
+    <div id="edit-te-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:100; overflow-y:auto;">
+      <div style="background:white; border-radius:16px; padding:28px; max-width:600px; width:90%; margin:60px auto;">
+        <h3 style="font-size:18px; font-weight:800; color:var(--navy); margin-bottom:16px;">Edit Event</h3>
+        <form method="POST" action="/admin/edit-team-event">
+          <input type="hidden" name="event_id" id="edit-te-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Event Type</label>
+              <select name="event_type" id="edit-te-type" class="form-input" onchange="toggleTournamentFields(this.value, 'edit')">
+                <option value="practice">Practice</option>
+                <option value="game">Game</option>
+                <option value="tournament">Tournament</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Title *</label>
+              <input type="text" name="title" id="edit-te-title" required class="form-input">
+            </div>
+          </div>
+          <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr;">
+            <div class="form-group">
+              <label>Start Date *</label>
+              <input type="date" name="start_date" id="edit-te-start-date" required class="form-input">
+            </div>
+            <div class="form-group">
+              <label>Start Time</label>
+              <input type="time" name="start_time" id="edit-te-start-time" class="form-input">
+            </div>
+            <div class="form-group">
+              <label>End Date</label>
+              <input type="date" name="end_date" id="edit-te-end-date" class="form-input">
+            </div>
+            <div class="form-group">
+              <label>End Time</label>
+              <input type="time" name="end_time" id="edit-te-end-time" class="form-input">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Location Name</label>
+              <input type="text" name="location_name" id="edit-te-location" class="form-input">
+            </div>
+            <div class="form-group">
+              <label>Address</label>
+              <input type="text" name="address" id="edit-te-address" class="form-input">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Notes</label>
+            <input type="text" name="notes" id="edit-te-notes" class="form-input">
+          </div>
+          <div id="edit-tournament-fields" style="display:none;">
+            <div class="form-group">
+              <label>Hotel Info</label>
+              <textarea name="hotel_info" id="edit-te-hotel" class="form-input" rows="3"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Carpool Info</label>
+              <textarea name="carpool_info" id="edit-te-carpool" class="form-input" rows="3"></textarea>
+            </div>
+          </div>
+          <div style="display:flex; gap:12px; margin-top:16px;">
+            <button type="submit" class="btn btn-confirm" style="flex:1;">Save Changes</button>
+            <button type="button" class="btn btn-secondary" style="flex:1;" onclick="closeEditTE()">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      function toggleTournamentFields(type, mode) {
+        const id = mode === 'edit' ? 'edit-tournament-fields' : 'add-tournament-fields';
+        document.getElementById(id).style.display = type === 'tournament' ? 'block' : 'none';
+      }
+
+      function editTeamEvent(ev) {
+        document.getElementById('edit-te-id').value = ev.id;
+        document.getElementById('edit-te-type').value = ev.event_type;
+        document.getElementById('edit-te-title').value = ev.title;
+        document.getElementById('edit-te-start-date').value = ev.start_date;
+        document.getElementById('edit-te-start-time').value = ev.start_time;
+        document.getElementById('edit-te-end-date').value = ev.end_date;
+        document.getElementById('edit-te-end-time').value = ev.end_time;
+        document.getElementById('edit-te-location').value = ev.location_name;
+        document.getElementById('edit-te-address').value = ev.address;
+        document.getElementById('edit-te-notes').value = ev.notes;
+        document.getElementById('edit-te-hotel').value = ev.hotel_info;
+        document.getElementById('edit-te-carpool').value = ev.carpool_info;
+        toggleTournamentFields(ev.event_type, 'edit');
+        document.getElementById('edit-te-modal').style.display = 'block';
+      }
+
+      function closeEditTE() {
+        document.getElementById('edit-te-modal').style.display = 'none';
+      }
+
+      document.getElementById('edit-te-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeEditTE();
+      });
+    </script>
+
     <!-- Staff Management -->
     <div class="admin-section">
       <h2 class="profile-section-title">Staff Members</h2>

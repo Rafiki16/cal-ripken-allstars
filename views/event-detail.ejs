@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= event.title %> &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="back-link">&larr; Back to Schedule</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1><%= event.title %></h1>
+            <p class="subtitle"><%= event.event_type === 'practice' ? 'Practice' : event.event_type === 'game' ? 'Game' : event.event_type === 'tournament' ? 'Tournament' : 'Event' %></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="profile-section" style="max-width:640px; margin:24px auto;">
+      <div style="display:flex; flex-wrap:wrap; gap:20px; margin-bottom:20px;">
+        <div>
+          <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px;">Date</div>
+          <div style="font-size:16px; font-weight:700; color:var(--navy);">
+            <%= new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) %><% if (event.end_date) { %> &ndash; <%= new Date(event.end_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) %><% } %>
+          </div>
+        </div>
+        <% if (event.start_time) { %>
+        <div>
+          <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px;">Time</div>
+          <div style="font-size:16px; font-weight:700; color:var(--navy);">
+            <% const [h,m] = event.start_time.split(':'); const hr = parseInt(h); %>
+            <%= (hr % 12 || 12) + ':' + m + ' ' + (hr >= 12 ? 'PM' : 'AM') %><% if (event.end_time) { const [h2,m2] = event.end_time.split(':'); const hr2 = parseInt(h2); %> &ndash; <%= (hr2 % 12 || 12) + ':' + m2 + ' ' + (hr2 >= 12 ? 'PM' : 'AM') %><% } %>
+          </div>
+        </div>
+        <% } %>
+      </div>
+
+      <% if (event.location_name || event.address) { %>
+      <div style="margin-bottom:20px;">
+        <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:4px;">Location</div>
+        <% if (event.location_name) { %><div style="font-size:16px; font-weight:700; color:var(--navy);"><%= event.location_name %></div><% } %>
+        <% if (event.address) { %>
+          <div style="font-size:14px; color:var(--gray-700); margin-top:2px;"><%= event.address %></div>
+          <a href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(event.address) %>" target="_blank" rel="noopener" class="te-map-link" style="display:inline-block; margin-top:6px;">Open in Google Maps &rarr;</a>
+        <% } %>
+      </div>
+      <% } %>
+
+      <% if (event.notes) { %>
+      <div style="margin-bottom:20px;">
+        <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:4px;">Notes</div>
+        <div style="font-size:14px; color:var(--gray-700);"><%= event.notes %></div>
+      </div>
+      <% } %>
+
+      <% if (event.event_type === 'tournament' && event.hotel_info) { %>
+      <div class="te-detail" style="margin-bottom:16px;">
+        <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:6px;">Hotels</div>
+        <div style="font-size:14px; color:var(--gray-700); white-space:pre-wrap;"><%= event.hotel_info %></div>
+      </div>
+      <% } %>
+
+      <% if (event.event_type === 'tournament' && event.carpool_info) { %>
+      <div class="te-detail" style="margin-bottom:16px;">
+        <div style="font-size:12px; text-transform:uppercase; color:var(--gray-500); font-weight:600; letter-spacing:0.5px; margin-bottom:6px;">Carpool Info</div>
+        <div style="font-size:14px; color:var(--gray-700); white-space:pre-wrap;"><%= event.carpool_info %></div>
+      </div>
+      <% } %>
+
+      <% if (event.address) { %>
+      <div class="te-map-embed">
+        <iframe src="https://www.google.com/maps?q=<%= encodeURIComponent(event.address) %>&output=embed" width="100%" height="300" style="border:0; border-radius:12px;" allowfullscreen loading="lazy"></iframe>
+      </div>
+      <% } %>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

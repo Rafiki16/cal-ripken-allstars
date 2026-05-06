@@ -25,6 +25,165 @@
       <p class="cta-hint">Parents: verify your child's participation using your registered phone number</p>
     </div>
 
+    <!-- Calendar -->
+    <% if (teamEvents.length > 0) { %>
+    <h2 class="section-title">Schedule</h2>
+
+    <div class="calendar-section">
+      <div class="calendar-header">
+        <button type="button" class="cal-nav" id="cal-prev">&larr;</button>
+        <h3 class="cal-month-title" id="cal-title"></h3>
+        <button type="button" class="cal-nav" id="cal-next">&rarr;</button>
+      </div>
+      <div class="cal-grid">
+        <div class="cal-day-header">Sun</div>
+        <div class="cal-day-header">Mon</div>
+        <div class="cal-day-header">Tue</div>
+        <div class="cal-day-header">Wed</div>
+        <div class="cal-day-header">Thu</div>
+        <div class="cal-day-header">Fri</div>
+        <div class="cal-day-header">Sat</div>
+        <% for (let i = 0; i < 42; i++) { %>
+          <div class="cal-cell" data-index="<%= i %>"></div>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="upcoming-events" id="upcoming-events">
+      <h3 class="upcoming-title" id="upcoming-title">Upcoming Events</h3>
+      <div id="events-list"></div>
+    </div>
+
+    <script>
+      const EVENTS = <%- JSON.stringify(teamEvents.map(e => ({
+        id: e.id,
+        type: e.event_type,
+        title: e.title,
+        start_date: e.start_date,
+        start_time: e.start_time,
+        end_date: e.end_date,
+        end_time: e.end_time,
+        location_name: e.location_name,
+        address: e.address,
+        notes: e.notes,
+        hotel_info: e.hotel_info,
+        carpool_info: e.carpool_info,
+      }))) %>;
+
+      const TYPE_LABELS = { practice: 'Practice', game: 'Game', tournament: 'Tournament', other: 'Event' };
+      const TYPE_COLORS = { practice: '#16a34a', game: '#1a2744', tournament: '#c41e3a', other: '#6b7280' };
+
+      let currentMonth, currentYear;
+      const today = new Date();
+      currentMonth = today.getMonth();
+      currentYear = today.getFullYear();
+
+      function formatTime(t) {
+        if (!t) return '';
+        const [h, m] = t.split(':');
+        const hr = parseInt(h);
+        const ampm = hr >= 12 ? 'PM' : 'AM';
+        return (hr % 12 || 12) + ':' + m + ' ' + ampm;
+      }
+
+      function renderCalendar() {
+        const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const title = new Date(currentYear, currentMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        document.getElementById('cal-title').textContent = title;
+
+        const cells = document.querySelectorAll('.cal-cell');
+        cells.forEach((cell, i) => {
+          cell.innerHTML = '';
+          cell.className = 'cal-cell';
+          const day = i - firstDay + 1;
+          if (day >= 1 && day <= daysInMonth) {
+            const dateStr = currentYear + '-' + String(currentMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+            cell.innerHTML = '<span class="cal-day-num">' + day + '</span>';
+            if (dateStr === today.toISOString().slice(0, 10)) cell.classList.add('cal-today');
+
+            const dayEvents = EVENTS.filter(e => {
+              if (e.end_date) return dateStr >= e.start_date && dateStr <= e.end_date;
+              return e.start_date === dateStr;
+            });
+            dayEvents.forEach(ev => {
+              const dot = document.createElement('div');
+              dot.className = 'cal-event-dot';
+              dot.style.background = TYPE_COLORS[ev.type] || TYPE_COLORS.other;
+              dot.title = ev.title;
+              cell.appendChild(dot);
+            });
+            if (dayEvents.length > 0) {
+              cell.style.cursor = 'pointer';
+              cell.onclick = () => scrollToEvent(dayEvents[0].id);
+            }
+          } else {
+            cell.classList.add('cal-empty');
+          }
+        });
+      }
+
+      function scrollToEvent(id) {
+        const el = document.getElementById('event-' + id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      function renderEvents(filter) {
+        const now = new Date().toISOString().slice(0, 10);
+        let filtered = filter === 'all' ? EVENTS : EVENTS.filter(e => (e.end_date || e.start_date) >= now);
+        const list = document.getElementById('events-list');
+        const titleEl = document.getElementById('upcoming-title');
+        titleEl.textContent = filter === 'all' ? 'All Events' : 'Upcoming Events';
+
+        if (filtered.length === 0) {
+          list.innerHTML = '<p style="color:#6b7280;font-size:14px;">No upcoming events.</p>';
+          return;
+        }
+
+        list.innerHTML = filtered.map(ev => {
+          const startDate = new Date(ev.start_date + 'T12:00:00');
+          const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          const endStr = ev.end_date ? ' &ndash; ' + new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+          const timeStr = ev.start_time ? formatTime(ev.start_time) + (ev.end_time ? ' &ndash; ' + formatTime(ev.end_time) : '') : '';
+          const color = TYPE_COLORS[ev.type] || TYPE_COLORS.other;
+
+          let html = '<div class="te-card" id="event-' + ev.id + '" style="border-left:4px solid ' + color + ';">';
+          html += '<div class="te-header">';
+          html += '<span class="te-type-badge" style="background:' + color + ';">' + (TYPE_LABELS[ev.type] || 'Event') + '</span>';
+          html += '<span class="te-date">' + dateStr + endStr + '</span>';
+          html += '</div>';
+          html += '<h4 class="te-title">' + ev.title + '</h4>';
+          if (timeStr) html += '<div class="te-time">' + timeStr + '</div>';
+          if (ev.location_name || ev.address) {
+            html += '<div class="te-location">';
+            if (ev.location_name) html += '<strong>' + ev.location_name + '</strong>';
+            if (ev.address) {
+              html += (ev.location_name ? ' &mdash; ' : '') + ev.address;
+              html += ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(ev.address) + '" target="_blank" rel="noopener" class="te-map-link">View Map</a>';
+            }
+            html += '</div>';
+          }
+          if (ev.notes) html += '<div class="te-notes">' + ev.notes + '</div>';
+          if (ev.type === 'tournament') {
+            if (ev.hotel_info) html += '<div class="te-detail"><strong>Hotels:</strong> ' + ev.hotel_info.replace(/\n/g, '<br>') + '</div>';
+            if (ev.carpool_info) html += '<div class="te-detail"><strong>Carpool:</strong> ' + ev.carpool_info.replace(/\n/g, '<br>') + '</div>';
+          }
+          if (ev.address) {
+            html += '<div class="te-map-embed"><iframe src="https://www.google.com/maps?q=' + encodeURIComponent(ev.address) + '&output=embed" width="100%" height="200" style="border:0;border-radius:8px;" allowfullscreen loading="lazy"></iframe></div>';
+          }
+          html += '</div>';
+          return html;
+        }).join('');
+      }
+
+      document.getElementById('cal-prev').onclick = () => { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); };
+      document.getElementById('cal-next').onclick = () => { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } renderCalendar(); };
+
+      renderCalendar();
+      renderEvents('upcoming');
+    </script>
+    <% } %>
+
     <h2 class="section-title">Roster</h2>
 
     <div class="roster-section">
