@@ -157,6 +157,19 @@ async function init() {
     `);
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS lineup_grid (
+        id SERIAL PRIMARY KEY,
+        team_event_id INTEGER REFERENCES team_events(id) ON DELETE CASCADE,
+        sub_event_id INTEGER REFERENCES tournament_sub_events(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        batting_order INTEGER NOT NULL,
+        inning INTEGER NOT NULL,
+        position_number INTEGER,
+        status TEXT NOT NULL DEFAULT 'field'
+      )
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS rsvps (
         id SERIAL PRIMARY KEY,
         team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
@@ -258,6 +271,18 @@ async function init() {
         }
         for (const e of entries) {
           await pool.query('INSERT INTO game_lineups (team_event_id, sub_event_id, player_id, position, batting_order, is_starter) VALUES ($1,$2,$3,$4,$5,$6)', [e.team_event_id || null, e.sub_event_id || null, e.player_id, e.position, e.batting_order, e.is_starter]);
+        }
+      },
+      getLineupGrid: async (eventId, subEventId) => {
+        if (eventId) return (await pool.query('SELECT g.*, p.player_name, p.best_positions FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.team_event_id = $1 ORDER BY g.batting_order, g.inning', [eventId])).rows;
+        return (await pool.query('SELECT g.*, p.player_name, p.best_positions FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.sub_event_id = $1 ORDER BY g.batting_order, g.inning', [subEventId])).rows;
+      },
+      saveLineupGrid: async (eventId, subEventId, entries) => {
+        if (eventId) await pool.query('DELETE FROM lineup_grid WHERE team_event_id = $1', [eventId]);
+        else await pool.query('DELETE FROM lineup_grid WHERE sub_event_id = $1', [subEventId]);
+        for (const e of entries) {
+          await pool.query('INSERT INTO lineup_grid (team_event_id, sub_event_id, player_id, batting_order, inning, position_number, status) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+            [eventId || null, subEventId || null, e.player_id, e.batting_order, e.inning, e.position_number || null, e.status || 'field']);
         }
       },
       getAdminByUsername: async (username) => (await pool.query('SELECT * FROM admins WHERE username = $1', [username])).rows[0] || null,
@@ -401,6 +426,19 @@ async function init() {
     `);
 
     sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS lineup_grid (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_event_id INTEGER REFERENCES team_events(id) ON DELETE CASCADE,
+        sub_event_id INTEGER REFERENCES tournament_sub_events(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        batting_order INTEGER NOT NULL,
+        inning INTEGER NOT NULL,
+        position_number INTEGER,
+        status TEXT NOT NULL DEFAULT 'field'
+      )
+    `);
+
+    sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS rsvps (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
@@ -503,6 +541,18 @@ async function init() {
           ins.run(e.team_event_id || null, e.sub_event_id || null, e.player_id, e.position, e.batting_order, e.is_starter);
         }
       },
+      getLineupGrid: async (eventId, subEventId) => {
+        if (eventId) return sqliteDb.prepare('SELECT g.*, p.player_name, p.best_positions FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.team_event_id = ? ORDER BY g.batting_order, g.inning').all(eventId);
+        return sqliteDb.prepare('SELECT g.*, p.player_name, p.best_positions FROM lineup_grid g JOIN players p ON g.player_id = p.id WHERE g.sub_event_id = ? ORDER BY g.batting_order, g.inning').all(subEventId);
+      },
+      saveLineupGrid: async (eventId, subEventId, entries) => {
+        if (eventId) sqliteDb.prepare('DELETE FROM lineup_grid WHERE team_event_id = ?').run(eventId);
+        else sqliteDb.prepare('DELETE FROM lineup_grid WHERE sub_event_id = ?').run(subEventId);
+        const ins = sqliteDb.prepare('INSERT INTO lineup_grid (team_event_id, sub_event_id, player_id, batting_order, inning, position_number, status) VALUES (?,?,?,?,?,?,?)');
+        for (const e of entries) {
+          ins.run(eventId || null, subEventId || null, e.player_id, e.batting_order, e.inning, e.position_number || null, e.status || 'field');
+        }
+      },
       getAdminByUsername: async (username) => sqliteDb.prepare('SELECT * FROM admins WHERE username = ?').get(username) || null,
       getAdminById: async (id) => sqliteDb.prepare('SELECT * FROM admins WHERE id = ?').get(id) || null,
       getAllAdmins: async () => sqliteDb.prepare('SELECT id, username, created_at FROM admins ORDER BY created_at').all(),
@@ -568,6 +618,8 @@ module.exports = {
   getLineupForEvent: (...args) => impl.getLineupForEvent(...args),
   getLineupForSubEvent: (...args) => impl.getLineupForSubEvent(...args),
   saveLineup: (...args) => impl.saveLineup(...args),
+  getLineupGrid: (...args) => impl.getLineupGrid(...args),
+  saveLineupGrid: (...args) => impl.saveLineupGrid(...args),
   getAdminByUsername: (...args) => impl.getAdminByUsername(...args),
   getAdminById: (...args) => impl.getAdminById(...args),
   getAllAdmins: (...args) => impl.getAllAdmins(...args),

@@ -352,55 +352,305 @@
 
       <!-- ============ GAME LINEUP ============ -->
       <% if (event.event_type === 'game') { %>
-      <div class="ed-section">
-        <h3 class="ed-section-title">Lineup<% if (event.batting_all) { %> <span style="font-weight:400; color:var(--gray-500);">(Batting All)</span><% } %></h3>
+      <div class="ed-section lineup-grid-section" id="lineup-grid-section">
+        <h3 class="ed-section-title">Game Lineup</h3>
+        <div class="lg-legend">1=P 2=C 3=1B 4=2B 5=3B 6=SS 7=LF 8=CF 9=RF &middot; X=Sit &middot; Y=Sub In</div>
 
-        <% if (lineup.length > 0) { %>
-        <table class="lineup-table">
-          <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Role</th></tr></thead>
-          <tbody>
-            <% lineup.forEach(l => { %>
-            <tr class="<%= l.is_starter ? '' : 'lineup-bench' %>">
-              <td><%= l.batting_order || '-' %></td>
-              <td><%= l.player_name %></td>
-              <td><%= l.position || '-' %></td>
-              <td><%= l.is_starter ? 'Starter' : 'Bench' %></td>
-            </tr>
-            <% }); %>
-          </tbody>
-        </table>
-        <% } else if (!isAdmin) { %>
-          <p style="color:var(--gray-500); font-size:14px;">Lineup not posted yet.</p>
-        <% } %>
+        <div class="lg-wrap">
+          <table class="lg-table" id="lg-table">
+            <thead>
+              <tr>
+                <th class="lg-th-order">#</th>
+                <th class="lg-th-name">Player</th>
+                <th class="lg-th-inn">1st</th>
+                <th class="lg-th-inn">2nd</th>
+                <th class="lg-th-inn">3rd</th>
+                <th class="lg-th-inn">4th</th>
+                <th class="lg-th-inn">5th</th>
+                <th class="lg-th-inn">6th</th>
+                <th class="lg-th-sit">Sit</th>
+              </tr>
+            </thead>
+            <tbody id="lg-body"></tbody>
+          </table>
+        </div>
+
+        <div class="lg-validation" id="lg-validation"></div>
 
         <% if (isAdmin) { %>
-        <details class="ed-admin-details" <%= lineup.length === 0 ? 'open' : '' %>>
-          <summary>Manage Lineup</summary>
-          <form method="POST" action="/event/<%= event.id %>/lineup" class="lineup-form">
-            <label style="display:flex; align-items:center; gap:6px; margin-bottom:10px; font-size:13px;">
-              <input type="checkbox" name="batting_all" value="1" <%= event.batting_all ? 'checked' : '' %>> Batting everyone (all players bat, 9 field)
-            </label>
-            <table class="lineup-edit-table">
-              <thead><tr><th>Order</th><th>Player</th><th>Position</th><th>Start</th></tr></thead>
-              <tbody>
-                <% confirmedPlayers.forEach((p, i) => { const ex = lineup.find(l => l.player_id === p.id); %>
-                <tr>
-                  <td><input type="number" name="batting_order" value="<%= ex ? ex.batting_order : (i+1) %>" min="1" style="width:50px;" class="form-input"></td>
-                  <td><%= p.player_name %><input type="hidden" name="player_id" value="<%= p.id %>"></td>
-                  <td><select name="position" class="form-input" style="width:70px;">
-                    <option value="">—</option>
-                    <% POSITIONS.forEach(pos => { %><option value="<%= pos %>" <%= ex && ex.position === pos ? 'selected' : '' %>><%= pos %></option><% }); %>
-                  </select></td>
-                  <td><input type="checkbox" name="is_starter" value="<%= p.id %>" <%= !ex || ex.is_starter ? 'checked' : '' %>></td>
-                </tr>
-                <% }); %>
-              </tbody>
-            </table>
-            <button type="submit" class="btn btn-confirm" style="margin-top:8px;">Save Lineup</button>
-          </form>
-        </details>
+        <div class="lg-controls">
+          <button type="button" class="btn btn-confirm" onclick="saveLineupGrid()">Save Lineup</button>
+          <button type="button" class="btn" onclick="printLineup()" style="margin-left:8px;">Print Lineup Card</button>
+          <span class="lg-save-msg" id="lg-save-msg"></span>
+        </div>
+        <div class="lg-add-player" id="lg-add-player">
+          <select id="lg-player-select" class="form-input">
+            <option value="">+ Add player to lineup...</option>
+          </select>
+        </div>
         <% } %>
+
+        <!-- Print-only field diagram -->
+        <div class="lg-print-field" id="lg-print-field">
+          <svg viewBox="0 0 300 280" xmlns="http://www.w3.org/2000/svg" style="width:260px;">
+            <polygon points="150,30 270,140 150,250 30,140" fill="none" stroke="#555" stroke-width="1.5"/>
+            <line x1="150" y1="30" x2="150" y2="250" stroke="#ccc" stroke-width="0.5" stroke-dasharray="4"/>
+            <line x1="30" y1="140" x2="270" y2="140" stroke="#ccc" stroke-width="0.5" stroke-dasharray="4"/>
+            <circle cx="150" cy="30" r="14" fill="#1e40af" opacity="0.9"/><text x="150" y="34" text-anchor="middle" fill="white" font-size="10" font-weight="bold">CF-8</text>
+            <circle cx="70" cy="80" r="14" fill="#1e40af" opacity="0.9"/><text x="70" y="84" text-anchor="middle" fill="white" font-size="10" font-weight="bold">LF-7</text>
+            <circle cx="230" cy="80" r="14" fill="#1e40af" opacity="0.9"/><text x="230" y="84" text-anchor="middle" fill="white" font-size="10" font-weight="bold">RF-9</text>
+            <circle cx="110" cy="130" r="14" fill="#16a34a" opacity="0.9"/><text x="110" y="134" text-anchor="middle" fill="white" font-size="10" font-weight="bold">SS-6</text>
+            <circle cx="190" cy="130" r="14" fill="#16a34a" opacity="0.9"/><text x="190" y="134" text-anchor="middle" fill="white" font-size="10" font-weight="bold">2B-4</text>
+            <circle cx="80" cy="175" r="14" fill="#16a34a" opacity="0.9"/><text x="80" y="179" text-anchor="middle" fill="white" font-size="10" font-weight="bold">3B-5</text>
+            <circle cx="220" cy="175" r="14" fill="#16a34a" opacity="0.9"/><text x="220" y="179" text-anchor="middle" fill="white" font-size="10" font-weight="bold">1B-3</text>
+            <circle cx="150" cy="190" r="14" fill="#dc2626" opacity="0.9"/><text x="150" y="194" text-anchor="middle" fill="white" font-size="10" font-weight="bold">P-1</text>
+            <circle cx="150" cy="240" r="14" fill="#dc2626" opacity="0.9"/><text x="150" y="244" text-anchor="middle" fill="white" font-size="10" font-weight="bold">C-2</text>
+          </svg>
+        </div>
       </div>
+
+      <script>
+      (function() {
+        const POS_MAP = {1:'P',2:'C',3:'1B',4:'2B',5:'3B',6:'SS',7:'LF',8:'CF',9:'RF'};
+        const INNINGS = 6;
+        const isAdmin = <%= isAdmin ? 'true' : 'false' %>;
+        const allPlayers = <%- JSON.stringify(confirmedPlayers.map(p => ({
+          id: p.id, name: p.player_name,
+          positions: (p.best_positions || '').split(',').filter(Boolean)
+        }))) %>;
+        const savedGrid = <%- JSON.stringify(lineupGrid) %>;
+
+        let grid = []; // [{playerId, name, positions, cells: [null or {pos, status}]}]
+
+        function initGrid() {
+          const playerMap = {};
+          savedGrid.forEach(g => {
+            if (!playerMap[g.player_id]) playerMap[g.player_id] = { order: g.batting_order, cells: {} };
+            playerMap[g.player_id].cells[g.inning] = { pos: g.position_number, status: g.status };
+          });
+          const usedIds = new Set();
+          const sorted = Object.entries(playerMap).sort((a,b) => a[1].order - b[1].order);
+          sorted.forEach(([pid, data]) => {
+            const p = allPlayers.find(x => x.id === Number(pid));
+            if (!p) return;
+            usedIds.add(p.id);
+            const cells = [];
+            for (let i = 1; i <= INNINGS; i++) {
+              const c = data.cells[i];
+              cells.push(c ? { pos: c.pos, status: c.status } : null);
+            }
+            grid.push({ playerId: p.id, name: p.name, positions: p.positions, cells });
+          });
+          if (grid.length === 0) {
+            allPlayers.forEach(p => {
+              grid.push({ playerId: p.id, name: p.name, positions: p.positions, cells: Array(INNINGS).fill(null) });
+            });
+          }
+          renderGrid();
+          updateAddSelect();
+        }
+
+        function isPositionFlagged(posNum, playerPositions) {
+          if (!posNum || posNum >= 7) return false;
+          if (!playerPositions || playerPositions.length === 0) return false;
+          const posStr = POS_MAP[posNum];
+          return !playerPositions.includes(posStr);
+        }
+
+        function renderGrid() {
+          const body = document.getElementById('lg-body');
+          body.innerHTML = '';
+          grid.forEach((row, ri) => {
+            const tr = document.createElement('tr');
+            const orderTd = document.createElement('td');
+            orderTd.className = 'lg-cell-order';
+            orderTd.textContent = ri + 1;
+            tr.appendChild(orderTd);
+
+            const nameTd = document.createElement('td');
+            nameTd.className = 'lg-cell-name';
+            nameTd.innerHTML = '<span class="lg-name-text">' + row.name + '</span>';
+            if (isAdmin) {
+              const rmBtn = document.createElement('button');
+              rmBtn.className = 'lg-rm-btn';
+              rmBtn.textContent = '×';
+              rmBtn.title = 'Remove from lineup';
+              rmBtn.onclick = () => { grid.splice(ri, 1); renderGrid(); updateAddSelect(); };
+              nameTd.appendChild(rmBtn);
+            }
+            if (row.positions.length > 0) {
+              const posTag = document.createElement('span');
+              posTag.className = 'lg-pos-tag';
+              posTag.textContent = row.positions.join(',');
+              nameTd.appendChild(posTag);
+            }
+            tr.appendChild(nameTd);
+
+            let sitCount = 0;
+            for (let inn = 0; inn < INNINGS; inn++) {
+              const td = document.createElement('td');
+              td.className = 'lg-cell';
+              const cell = row.cells[inn];
+              if (isAdmin) {
+                const inp = document.createElement('input');
+                inp.className = 'lg-inp';
+                inp.maxLength = 1;
+                inp.dataset.row = ri;
+                inp.dataset.inn = inn;
+                if (cell) {
+                  if (cell.status === 'sit') { inp.value = 'X'; td.classList.add('lg-sit'); sitCount++; }
+                  else if (cell.status === 'sub_in') { inp.value = 'Y'; td.classList.add('lg-sub'); }
+                  else if (cell.pos) { inp.value = cell.pos; }
+                }
+                if (cell && cell.pos && isPositionFlagged(cell.pos, row.positions)) {
+                  td.classList.add('lg-flagged');
+                }
+                inp.addEventListener('input', (e) => handleCellInput(e, ri, inn));
+                inp.addEventListener('keydown', (e) => handleCellNav(e, ri, inn));
+                td.appendChild(inp);
+              } else {
+                if (cell) {
+                  if (cell.status === 'sit') { td.textContent = 'X'; td.classList.add('lg-sit'); sitCount++; }
+                  else if (cell.status === 'sub_in') { td.textContent = 'Y'; td.classList.add('lg-sub'); }
+                  else if (cell.pos) { td.textContent = cell.pos; }
+                }
+                if (cell && cell.pos && isPositionFlagged(cell.pos, row.positions)) {
+                  td.classList.add('lg-flagged');
+                }
+              }
+              tr.appendChild(td);
+            }
+
+            const sitTd = document.createElement('td');
+            sitTd.className = 'lg-cell-sit';
+            sitTd.textContent = sitCount;
+            if (sitCount > 0) sitTd.style.fontWeight = '700';
+            tr.appendChild(sitTd);
+
+            body.appendChild(tr);
+          });
+          validateGrid();
+        }
+
+        function handleCellInput(e, ri, inn) {
+          let v = e.target.value.toUpperCase();
+          if (v === 'X') {
+            grid[ri].cells[inn] = { pos: null, status: 'sit' };
+          } else if (v === 'Y') {
+            grid[ri].cells[inn] = { pos: null, status: 'sub_in' };
+          } else if (/^[1-9]$/.test(v)) {
+            grid[ri].cells[inn] = { pos: parseInt(v), status: 'field' };
+          } else {
+            grid[ri].cells[inn] = null;
+            e.target.value = '';
+          }
+          renderGrid();
+          const next = document.querySelector('.lg-inp[data-row="' + ri + '"][data-inn="' + inn + '"]');
+          if (next) next.focus();
+          if (v && /^[1-9XY]$/i.test(v)) {
+            const nextInn = inn + 1;
+            if (nextInn < INNINGS) {
+              const nxt = document.querySelector('.lg-inp[data-row="' + ri + '"][data-inn="' + nextInn + '"]');
+              if (nxt) nxt.focus();
+            }
+          }
+        }
+
+        function handleCellNav(e, ri, inn) {
+          let nr = ri, ni = inn;
+          if (e.key === 'ArrowRight' || e.key === 'Tab' && !e.shiftKey) {
+            ni++; if (ni >= INNINGS) { ni = 0; nr++; }
+          } else if (e.key === 'ArrowLeft' || e.key === 'Tab' && e.shiftKey) {
+            ni--; if (ni < 0) { ni = INNINGS - 1; nr--; }
+          } else if (e.key === 'ArrowDown') { nr++; }
+          else if (e.key === 'ArrowUp') { nr--; }
+          else return;
+          if (nr < 0 || nr >= grid.length) return;
+          e.preventDefault();
+          const nxt = document.querySelector('.lg-inp[data-row="' + nr + '"][data-inn="' + ni + '"]');
+          if (nxt) { nxt.focus(); nxt.select(); }
+        }
+
+        function validateGrid() {
+          const el = document.getElementById('lg-validation');
+          const msgs = [];
+          for (let inn = 0; inn < INNINGS; inn++) {
+            const positions = {};
+            let fieldCount = 0;
+            grid.forEach((row, ri) => {
+              const cell = row.cells[inn];
+              if (cell && cell.status === 'field' && cell.pos) {
+                fieldCount++;
+                if (positions[cell.pos]) positions[cell.pos].push(row.name);
+                else positions[cell.pos] = [row.name];
+              }
+            });
+            if (fieldCount > 0 && fieldCount !== 9) {
+              msgs.push('Inning ' + (inn+1) + ': ' + fieldCount + ' fielders (need 9)');
+            }
+            Object.entries(positions).forEach(([pos, names]) => {
+              if (names.length > 1) msgs.push('Inning ' + (inn+1) + ': ' + POS_MAP[pos] + ' assigned to ' + names.join(', '));
+            });
+          }
+          el.innerHTML = msgs.map(m => '<div class="lg-val-err">' + m + '</div>').join('');
+        }
+
+        function updateAddSelect() {
+          const sel = document.getElementById('lg-player-select');
+          if (!sel) return;
+          const used = new Set(grid.map(r => r.playerId));
+          sel.innerHTML = '<option value="">+ Add player to lineup...</option>';
+          allPlayers.filter(p => !used.has(p.id)).forEach(p => {
+            sel.innerHTML += '<option value="' + p.id + '">' + p.name + '</option>';
+          });
+          sel.onchange = () => {
+            const pid = Number(sel.value);
+            if (!pid) return;
+            const p = allPlayers.find(x => x.id === pid);
+            if (p) {
+              grid.push({ playerId: p.id, name: p.name, positions: p.positions, cells: Array(INNINGS).fill(null) });
+              renderGrid();
+              updateAddSelect();
+            }
+          };
+        }
+
+        window.saveLineupGrid = async function() {
+          const entries = [];
+          grid.forEach((row, ri) => {
+            row.cells.forEach((cell, inn) => {
+              if (cell) {
+                entries.push({
+                  player_id: row.playerId,
+                  batting_order: ri + 1,
+                  inning: inn + 1,
+                  position_number: cell.pos || null,
+                  status: cell.status
+                });
+              }
+            });
+          });
+          const msgEl = document.getElementById('lg-save-msg');
+          try {
+            const r = await fetch('/event/<%= event.id %>/lineup-grid', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ entries })
+            });
+            const data = await r.json();
+            if (data.ok) { msgEl.textContent = 'Saved!'; msgEl.style.color = '#16a34a'; }
+            else { msgEl.textContent = 'Error saving'; msgEl.style.color = '#dc2626'; }
+          } catch(e) { msgEl.textContent = 'Error saving'; msgEl.style.color = '#dc2626'; }
+          setTimeout(() => msgEl.textContent = '', 3000);
+        };
+
+        window.printLineup = function() {
+          window.print();
+        };
+
+        initGrid();
+      })();
+      </script>
       <% } %>
 
       <!-- ============ RSVP ============ -->

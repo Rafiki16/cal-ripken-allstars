@@ -213,16 +213,22 @@ app.get('/event/:id', async (req, res) => {
   const players = await db.getAllPlayers();
   const confirmed = players.filter(p => p.status === 'confirmed');
   const isAdmin = !!req.session.admin;
-  let drills = [], subEvents = [], lineup = [], subLineups = {};
+  let drills = [], subEvents = [], lineup = [], subLineups = {}, lineupGrid = [], subGrids = {};
   if (event.event_type === 'practice') drills = await db.getDrills(event.id);
   if (event.event_type === 'tournament') {
     subEvents = await db.getSubEvents(event.id);
     for (const se of subEvents) {
-      if (se.sub_type === 'game') subLineups[se.id] = await db.getLineupForSubEvent(se.id);
+      if (se.sub_type === 'game') {
+        subLineups[se.id] = await db.getLineupForSubEvent(se.id);
+        subGrids[se.id] = await db.getLineupGrid(null, se.id);
+      }
     }
   }
-  if (event.event_type === 'game') lineup = await db.getLineupForEvent(event.id);
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, drills, subEvents, lineup, subLineups, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'] });
+  if (event.event_type === 'game') {
+    lineup = await db.getLineupForEvent(event.id);
+    lineupGrid = await db.getLineupGrid(event.id, null);
+  }
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'] });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -855,6 +861,23 @@ app.post('/event/:id/sub-event/:subId/lineup', requireAdmin, async (req, res) =>
   }));
   if (entries.length > 0) await db.saveLineup(entries);
   res.redirect('/event/' + req.params.id);
+});
+
+app.post('/event/:id/lineup-grid', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.status(404).json({ error: 'Not found' });
+  const { entries } = req.body;
+  if (!Array.isArray(entries)) return res.status(400).json({ error: 'Invalid data' });
+  await db.saveLineupGrid(event.id, null, entries);
+  res.json({ ok: true });
+});
+
+app.post('/event/:id/sub-event/:subId/lineup-grid', requireAdmin, async (req, res) => {
+  const subId = Number(req.params.subId);
+  const { entries } = req.body;
+  if (!Array.isArray(entries)) return res.status(400).json({ error: 'Invalid data' });
+  await db.saveLineupGrid(null, subId, entries);
+  res.json({ ok: true });
 });
 
 app.get('/admin/event/:id/rsvps', requireAdmin, async (req, res) => {
