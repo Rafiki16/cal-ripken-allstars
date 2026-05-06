@@ -10,7 +10,7 @@
   <header>
     <div class="container">
       <div class="header-content">
-        <a href="<%= adminKey ? '/admin?key=' + adminKey : '/verify' %>" class="back-link">&larr; Back</a>
+        <a href="<%= isAdmin ? '/admin' : '/verify' %>" class="back-link">&larr; Back</a>
         <div class="header-text">
           <div class="logo">&#9918;</div>
           <div>
@@ -32,7 +32,6 @@
 
     <form method="POST" action="/profile/<%= player.id %>" class="profile-form">
       <input type="hidden" name="phone" value="<%= phone %>">
-      <% if (adminKey) { %><input type="hidden" name="adminKey" value="<%= adminKey %>"><% } %>
 
       <!-- Personal Info -->
       <div class="profile-section">
@@ -143,7 +142,6 @@
 
       <form method="POST" action="/profile/<%= player.id %>/event" class="event-form">
         <input type="hidden" name="phone" value="<%= phone %>">
-        <% if (adminKey) { %><input type="hidden" name="adminKey" value="<%= adminKey %>"><% } %>
         <div class="form-row">
           <div class="form-group">
             <label>Type</label>

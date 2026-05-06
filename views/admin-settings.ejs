@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+          <a href="/admin" class="back-link">&larr; Back to Dashboard</a>
+          <a href="/admin/logout" style="color:#9ca3af;font-size:13px;text-decoration:none;">Log Out</a>
+        </div>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Admin Settings</h1>
+            <p class="subtitle">Account &amp; Security</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <!-- Change Password -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Change Password</h2>
+      <p class="section-hint">Signed in as <strong><%= adminUser.username %></strong></p>
+      <form method="POST" action="/admin/change-password" class="add-player-form">
+        <div class="form-group">
+          <label>Current Password</label>
+          <input type="password" name="current_password" required class="form-input" autocomplete="current-password">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>New Password</label>
+            <input type="password" name="new_password" required class="form-input" minlength="6" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label>Confirm New Password</label>
+            <input type="password" name="confirm_password" required class="form-input" minlength="6" autocomplete="new-password">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-confirm">Update Password</button>
+      </form>
+    </div>
+
+    <!-- Manage Admins -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Admin Accounts</h2>
+      <p class="section-hint">Add or remove admin users who can manage the roster.</p>
+
+      <table class="admin-table" style="min-width:auto; margin-bottom:24px;">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% admins.forEach(a => { %>
+            <tr>
+              <td class="td-bold">
+                <%= a.username %>
+                <% if (a.id === adminUser.id) { %>
+                  <span style="color:#6b7280;font-weight:400;font-size:12px;">(you)</span>
+                <% } %>
+              </td>
+              <td style="font-size:13px;color:#6b7280;"><%= new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %></td>
+              <td>
+                <% if (a.id !== adminUser.id) { %>
+                  <form method="POST" action="/admin/remove-admin" onsubmit="return confirm('Remove admin <%= a.username %>?')" style="margin:0;">
+                    <input type="hidden" name="admin_id" value="<%= a.id %>">
+                    <button type="submit" class="btn-sm btn-sm-remove" title="Remove Admin">&times;</button>
+                  </form>
+                <% } else { %>
+                  <span style="color:#9ca3af;font-size:12px;">&mdash;</span>
+                <% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+
+      <h3 style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:12px;">Add New Admin</h3>
+      <form method="POST" action="/admin/add-admin" class="add-player-form">
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" name="username" required class="form-input" placeholder="username" minlength="3" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" name="password" required class="form-input" minlength="6" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label>Confirm Password</label>
+            <input type="password" name="confirm_password" required class="form-input" minlength="6" autocomplete="new-password">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-confirm">Add Admin</button>
+      </form>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

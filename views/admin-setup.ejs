@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Setup &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="back-link">&larr; Back to Roster</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Admin Setup</h1>
+            <p class="subtitle">Create Your Admin Account</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <div class="verify-box">
+      <h2>Create First Admin</h2>
+      <p>No admin accounts exist yet. Create the first one to get started.</p>
+      <form method="POST" action="/admin/setup" class="phone-form">
+        <input type="text" name="username" placeholder="Username" required autofocus autocomplete="username" class="phone-input" style="font-size:16px;" minlength="3">
+        <input type="password" name="password" placeholder="Password (min 6 characters)" required autocomplete="new-password" class="phone-input" style="font-size:16px;" minlength="6">
+        <input type="password" name="confirm_password" placeholder="Confirm Password" required autocomplete="new-password" class="phone-input" style="font-size:16px;" minlength="6">
+        <button type="submit" class="btn btn-primary">Create Admin Account</button>
+      </form>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

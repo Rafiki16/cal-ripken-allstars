@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const nodemailer = require('nodemailer');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
 const db = require('./db');
 
 const app = express();
@@ -12,6 +14,19 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'allstars-2026-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production' && process.env.BASE_URL?.startsWith('https'),
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000,
+  },
+}));
+
+app.set('trust proxy', 1);
 
 function normalizePhone(phone) {
   return phone.replace(/\D/g, '').slice(-10);
@@ -56,6 +71,8 @@ async function sendConfirmationEmail(player, email) {
     console.error(`Failed to send email to ${email}:`, err.message);
   }
 }
+
+// --- Public Routes ---
 
 app.get('/', async (req, res) => {
   const players = await db.getAllPlayers();
@@ -114,6 +131,8 @@ app.post('/respond', async (req, res) => {
   });
 });
 
+// --- Profile Routes ---
+
 const POSITIONS = ['P','C','1B','2B','3B','SS','LF','CF','RF'];
 const RATING_FIELDS = [
   { key: 'arm_strength',      label: 'Arm Strength' },
@@ -129,8 +148,7 @@ const RATING_FIELDS = [
 
 app.get('/profile/:id', async (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
-  const adminKey = req.query.key || '';
-  const isAdmin = adminKey === ADMIN_PASS;
+  const isAdmin = !!req.session.admin;
 
   if (!isAdmin && phone.length !== 10) return res.redirect('/verify');
 
@@ -144,13 +162,12 @@ app.get('/profile/:id', async (req, res) => {
   }
 
   const events = await db.getPlayerEvents(player.id);
-  res.render('profile', { player, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events, error: null, success: null });
+  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, error: null, success: null });
 });
 
 app.post('/profile/:id', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
-  const adminKey = req.body.adminKey || '';
-  const isAdmin = adminKey === ADMIN_PASS;
+  const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
   if (!player || (!isAdmin && player.parent_phone !== phone)) {
@@ -199,7 +216,7 @@ app.post('/profile/:id', async (req, res) => {
   const updated = await db.getPlayer(Number(req.params.id));
   const events = await db.getPlayerEvents(updated.id);
   res.render('profile', {
-    player: updated, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events,
+    player: updated, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
     error: null,
     success: `${player.player_name}'s profile has been saved.`
   });
@@ -207,8 +224,7 @@ app.post('/profile/:id', async (req, res) => {
 
 app.post('/profile/:id/event', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
-  const adminKey = req.body.adminKey || '';
-  const isAdmin = adminKey === ADMIN_PASS;
+  const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
   if (!player || (!isAdmin && player.parent_phone !== phone)) {
@@ -223,7 +239,7 @@ app.post('/profile/:id/event', async (req, res) => {
   if (!start_date) {
     const events = await db.getPlayerEvents(player.id);
     return res.render('profile', {
-      player, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events,
+      player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
       error: 'Start date is required.',
       success: null
     });
@@ -239,7 +255,7 @@ app.post('/profile/:id/event', async (req, res) => {
 
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
-    player, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events,
+    player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
     error: null,
     success: 'Availability event added.'
   });
@@ -247,8 +263,7 @@ app.post('/profile/:id/event', async (req, res) => {
 
 app.post('/profile/:id/event/delete', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
-  const adminKey = req.body.adminKey || '';
-  const isAdmin = adminKey === ADMIN_PASS;
+  const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
   if (!player || (!isAdmin && player.parent_phone !== phone)) {
@@ -262,19 +277,70 @@ app.post('/profile/:id/event/delete', async (req, res) => {
   await db.removeEvent(Number(req.body.event_id));
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
-    player, phone: isAdmin ? '' : phone, adminKey: isAdmin ? adminKey : '', POSITIONS, RATING_FIELDS, events,
+    player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
     error: null,
     success: 'Event removed.'
   });
 });
 
-// --- Admin ---
-const ADMIN_PASS = process.env.ADMIN_PASS || 'allstars2026';
+// --- Admin Auth ---
 
 function requireAdmin(req, res, next) {
-  if (req.query.key === ADMIN_PASS || req.body.key === ADMIN_PASS) return next();
-  res.render('admin-login', { error: req.query.failed ? 'Incorrect password.' : null });
+  if (req.session.admin) return next();
+  res.redirect('/admin/login');
 }
+
+app.get('/admin/login', async (req, res) => {
+  const count = await db.countAdmins();
+  if (count === 0) return res.redirect('/admin/setup');
+  res.render('admin-login', { error: null });
+});
+
+app.post('/admin/login', async (req, res) => {
+  const { username, password } = req.body;
+  const admin = await db.getAdminByUsername((username || '').trim().toLowerCase());
+  if (!admin || !bcrypt.compareSync(password || '', admin.password_hash)) {
+    return res.render('admin-login', { error: 'Invalid username or password.' });
+  }
+  req.session.admin = { id: admin.id, username: admin.username };
+  res.redirect('/admin');
+});
+
+app.get('/admin/setup', async (req, res) => {
+  const count = await db.countAdmins();
+  if (count > 0) return res.redirect('/admin/login');
+  res.render('admin-setup', { error: null });
+});
+
+app.post('/admin/setup', async (req, res) => {
+  const count = await db.countAdmins();
+  if (count > 0) return res.redirect('/admin/login');
+
+  const { username, password, confirm_password } = req.body;
+  const user = (username || '').trim().toLowerCase();
+
+  if (!user || user.length < 3) {
+    return res.render('admin-setup', { error: 'Username must be at least 3 characters.' });
+  }
+  if (!password || password.length < 6) {
+    return res.render('admin-setup', { error: 'Password must be at least 6 characters.' });
+  }
+  if (password !== confirm_password) {
+    return res.render('admin-setup', { error: 'Passwords do not match.' });
+  }
+
+  const hash = bcrypt.hashSync(password, 10);
+  await db.createAdmin(user, hash);
+  const admin = await db.getAdminByUsername(user);
+  req.session.admin = { id: admin.id, username: admin.username };
+  res.redirect('/admin');
+});
+
+app.get('/admin/logout', (req, res) => {
+  req.session.destroy(() => res.redirect('/'));
+});
+
+// --- Admin Dashboard ---
 
 app.get('/admin', requireAdmin, async (req, res) => {
   const players = await db.getAllPlayers();
@@ -283,28 +349,22 @@ app.get('/admin', requireAdmin, async (req, res) => {
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
   const allEvents = await db.getAllEvents();
-  res.render('admin', { players, staff, confirmed, declined, pending, total: players.length, key: ADMIN_PASS, allEvents, success: req.query.success || null, error: req.query.error || null });
-});
-
-app.get('/admin/login', (req, res) => {
-  res.render('admin-login', { error: null });
-});
-
-app.post('/admin/login', (req, res) => {
-  if (req.body.password === ADMIN_PASS) {
-    return res.redirect('/admin?key=' + ADMIN_PASS);
-  }
-  res.render('admin-login', { error: 'Incorrect password.' });
+  res.render('admin', {
+    players, staff, confirmed, declined, pending, total: players.length, allEvents,
+    adminUser: req.session.admin,
+    success: req.query.success || null,
+    error: req.query.error || null,
+  });
 });
 
 app.post('/admin/status', requireAdmin, async (req, res) => {
   const { player_id, status } = req.body;
   if (!['confirmed', 'declined', 'pending'].includes(status)) {
-    return res.redirect('/admin?key=' + ADMIN_PASS + '&error=Invalid+status');
+    return res.redirect('/admin?error=Invalid+status');
   }
   await db.updateStatus(Number(player_id), status);
   const player = await db.getPlayer(Number(player_id));
-  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${player.player_name} set to ${status}`));
+  res.redirect('/admin?success=' + encodeURIComponent(`${player.player_name} set to ${status}`));
 });
 
 app.post('/admin/add-player', requireAdmin, async (req, res) => {
@@ -312,7 +372,7 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
   const phone = normalizePhone(parent_phone || '');
 
   if (!player_name || !player_name.trim() || !parent_name || !parent_name.trim() || phone.length !== 10) {
-    return res.redirect('/admin?key=' + ADMIN_PASS + '&error=' + encodeURIComponent('Player name, parent name, and valid 10-digit phone are required.'));
+    return res.redirect('/admin?error=' + encodeURIComponent('Player name, parent name, and valid 10-digit phone are required.'));
   }
 
   await db.addPlayer({
@@ -331,48 +391,112 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
     sendConfirmationEmail(newPlayer, newPlayer.parent_email);
   }
 
-  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${player_name.trim()} added to roster` + (parent_email ? ' — confirmation email sent' : '')));
+  res.redirect('/admin?success=' + encodeURIComponent(`${player_name.trim()} added to roster` + (parent_email ? ' — confirmation email sent' : '')));
 });
 
 app.post('/admin/remove-player', requireAdmin, async (req, res) => {
   const player = await db.getPlayer(Number(req.body.player_id));
   if (player) {
     await db.removePlayer(Number(req.body.player_id));
-    res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${player.player_name} removed from roster`));
+    res.redirect('/admin?success=' + encodeURIComponent(`${player.player_name} removed from roster`));
   } else {
-    res.redirect('/admin?key=' + ADMIN_PASS + '&error=Player+not+found');
+    res.redirect('/admin?error=Player+not+found');
   }
 });
 
 app.post('/admin/send-email', requireAdmin, async (req, res) => {
   const player = await db.getPlayer(Number(req.body.player_id));
-  if (!player) return res.redirect('/admin?key=' + ADMIN_PASS + '&error=Player+not+found');
+  if (!player) return res.redirect('/admin?error=Player+not+found');
 
   const email = player.parent_email || (() => {
     try { const c = JSON.parse(player.contacts || '[]'); return c.find(x => x.email)?.email; } catch { return null; }
   })();
 
   if (!email) {
-    return res.redirect('/admin?key=' + ADMIN_PASS + '&error=' + encodeURIComponent(`No email on file for ${player.player_name}`));
+    return res.redirect('/admin?error=' + encodeURIComponent(`No email on file for ${player.player_name}`));
   }
 
   await sendConfirmationEmail(player, email);
-  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`Confirmation email sent to ${email} for ${player.player_name}`));
+  res.redirect('/admin?success=' + encodeURIComponent(`Confirmation email sent to ${email} for ${player.player_name}`));
 });
 
 app.post('/admin/add-staff', requireAdmin, async (req, res) => {
   const { name, role, phone } = req.body;
   const normalized = normalizePhone(phone || '');
   if (!name || !name.trim() || normalized.length !== 10) {
-    return res.redirect('/admin?key=' + ADMIN_PASS + '&error=' + encodeURIComponent('Staff name and valid phone required.'));
+    return res.redirect('/admin?error=' + encodeURIComponent('Staff name and valid phone required.'));
   }
   await db.addStaff({ name: name.trim(), role: (role || 'Coach').trim(), phone: normalized });
-  res.redirect('/admin?key=' + ADMIN_PASS + '&success=' + encodeURIComponent(`${name.trim()} added as staff`));
+  res.redirect('/admin?success=' + encodeURIComponent(`${name.trim()} added as staff`));
 });
 
 app.post('/admin/remove-staff', requireAdmin, async (req, res) => {
   await db.removeStaff(Number(req.body.staff_id));
-  res.redirect('/admin?key=' + ADMIN_PASS + '&success=Staff+member+removed');
+  res.redirect('/admin?success=Staff+member+removed');
+});
+
+// --- Admin Settings ---
+
+app.get('/admin/settings', requireAdmin, async (req, res) => {
+  const admins = await db.getAllAdmins();
+  res.render('admin-settings', {
+    adminUser: req.session.admin,
+    admins,
+    success: req.query.success || null,
+    error: req.query.error || null,
+  });
+});
+
+app.post('/admin/change-password', requireAdmin, async (req, res) => {
+  const { current_password, new_password, confirm_password } = req.body;
+  const admin = await db.getAdminById(req.session.admin.id);
+
+  if (!bcrypt.compareSync(current_password || '', admin.password_hash)) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('Current password is incorrect.'));
+  }
+  if (!new_password || new_password.length < 6) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('New password must be at least 6 characters.'));
+  }
+  if (new_password !== confirm_password) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('New passwords do not match.'));
+  }
+
+  const hash = bcrypt.hashSync(new_password, 10);
+  await db.updateAdminPassword(admin.id, hash);
+  res.redirect('/admin/settings?success=' + encodeURIComponent('Password updated.'));
+});
+
+app.post('/admin/add-admin', requireAdmin, async (req, res) => {
+  const { username, password, confirm_password } = req.body;
+  const user = (username || '').trim().toLowerCase();
+
+  if (!user || user.length < 3) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('Username must be at least 3 characters.'));
+  }
+  if (!password || password.length < 6) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('Password must be at least 6 characters.'));
+  }
+  if (password !== confirm_password) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('Passwords do not match.'));
+  }
+
+  const existing = await db.getAdminByUsername(user);
+  if (existing) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('Username already exists.'));
+  }
+
+  const hash = bcrypt.hashSync(password, 10);
+  await db.createAdmin(user, hash);
+  res.redirect('/admin/settings?success=' + encodeURIComponent(`Admin "${user}" created.`));
+});
+
+app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
+  const targetId = Number(req.body.admin_id);
+  if (targetId === req.session.admin.id) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('You cannot remove yourself.'));
+  }
+  await db.removeAdmin(targetId);
+  res.redirect('/admin/settings?success=Admin+removed.');
 });
 
 // --- Staff View (read-only) ---

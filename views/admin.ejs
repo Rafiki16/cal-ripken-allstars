@@ -10,7 +10,14 @@
   <header>
     <div class="container">
       <div class="header-content">
-        <a href="/" class="back-link">&larr; Back to Roster</a>
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+          <a href="/" class="back-link">&larr; Back to Roster</a>
+          <div style="display:flex;gap:16px;align-items:center;">
+            <span style="color:#9ca3af;font-size:13px;">Signed in as <strong style="color:#d4a843;"><%= adminUser.username %></strong></span>
+            <a href="/admin/settings" style="color:#d4a843;font-size:13px;text-decoration:none;">Settings</a>
+            <a href="/admin/logout" style="color:#9ca3af;font-size:13px;text-decoration:none;">Log Out</a>
+          </div>
+        </div>
         <div class="header-text">
           <div class="logo">&#9918;</div>
           <div>
@@ -54,7 +61,6 @@
     <div class="admin-section">
       <h2 class="profile-section-title">Add New Player</h2>
       <form method="POST" action="/admin/add-player" class="add-player-form">
-        <input type="hidden" name="key" value="<%= key %>">
         <div class="form-row">
           <div class="form-group">
             <label>Player Name *</label>
@@ -124,7 +130,7 @@
             <tbody>
               <% players.filter(p => p.age == ageGroup).forEach(player => { %>
                 <tr>
-                  <td class="td-bold"><a href="/profile/<%= player.id %>?key=<%= key %>" class="admin-player-link"><%= player.player_name %></a></td>
+                  <td class="td-bold"><a href="/profile/<%= player.id %>" class="admin-player-link"><%= player.player_name %></a></td>
                   <td><%= player.team %></td>
                   <td><%= player.parent_name %></td>
                   <td class="td-mono"><%= player.parent_phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></td>
@@ -148,7 +154,6 @@
                     <div class="admin-action-row">
                       <% if (player.status !== 'confirmed') { %>
                         <form method="POST" action="/admin/status">
-                          <input type="hidden" name="key" value="<%= key %>">
                           <input type="hidden" name="player_id" value="<%= player.id %>">
                           <input type="hidden" name="status" value="confirmed">
                           <button type="submit" class="btn-sm btn-sm-confirm" title="Mark In">IN</button>
@@ -156,7 +161,6 @@
                       <% } %>
                       <% if (player.status !== 'declined') { %>
                         <form method="POST" action="/admin/status">
-                          <input type="hidden" name="key" value="<%= key %>">
                           <input type="hidden" name="player_id" value="<%= player.id %>">
                           <input type="hidden" name="status" value="declined">
                           <button type="submit" class="btn-sm btn-sm-decline" title="Mark Out">OUT</button>
@@ -164,19 +168,16 @@
                       <% } %>
                       <% if (player.status !== 'pending') { %>
                         <form method="POST" action="/admin/status">
-                          <input type="hidden" name="key" value="<%= key %>">
                           <input type="hidden" name="player_id" value="<%= player.id %>">
                           <input type="hidden" name="status" value="pending">
                           <button type="submit" class="btn-sm btn-sm-reset" title="Reset to Pending">RESET</button>
                         </form>
                       <% } %>
                       <form method="POST" action="/admin/send-email">
-                        <input type="hidden" name="key" value="<%= key %>">
                         <input type="hidden" name="player_id" value="<%= player.id %>">
                         <button type="submit" class="btn-sm btn-sm-email" title="Send Confirmation Email">&#9993;</button>
                       </form>
                       <form method="POST" action="/admin/remove-player" onsubmit="return confirm('Remove <%= player.player_name %> from the roster?')">
-                        <input type="hidden" name="key" value="<%= key %>">
                         <input type="hidden" name="player_id" value="<%= player.id %>">
                         <button type="submit" class="btn-sm btn-sm-remove" title="Remove Player">&times;</button>
                       </form>
@@ -195,7 +196,6 @@
       <p class="section-hint">Staff can view the full roster, profiles, ratings, and contacts at <strong>/staff</strong> using their phone number. They cannot edit anything.</p>
 
       <form method="POST" action="/admin/add-staff" class="add-player-form">
-        <input type="hidden" name="key" value="<%= key %>">
         <div class="form-row" style="grid-template-columns:1fr 1fr 1fr;">
           <div class="form-group">
             <label>Name *</label>
@@ -231,7 +231,6 @@
                 <td class="td-mono"><%= s.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></td>
                 <td>
                   <form method="POST" action="/admin/remove-staff" onsubmit="return confirm('Remove <%= s.name %>?')">
-                    <input type="hidden" name="key" value="<%= key %>">
                     <input type="hidden" name="staff_id" value="<%= s.id %>">
                     <button type="submit" class="btn-sm btn-sm-remove">&times;</button>
                   </form>

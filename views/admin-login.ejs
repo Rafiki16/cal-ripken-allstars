@@ -28,9 +28,10 @@
     <% } %>
 
     <div class="verify-box">
-      <h2>Enter Admin Password</h2>
+      <h2>Admin Login</h2>
       <form method="POST" action="/admin/login" class="phone-form">
-        <input type="password" name="password" placeholder="Password" required autofocus class="phone-input" style="font-size:16px;">
+        <input type="text" name="username" placeholder="Username" required autofocus autocomplete="username" class="phone-input" style="font-size:16px;">
+        <input type="password" name="password" placeholder="Password" required autocomplete="current-password" class="phone-input" style="font-size:16px;">
         <button type="submit" class="btn btn-primary">Log In</button>
       </form>
     </div>

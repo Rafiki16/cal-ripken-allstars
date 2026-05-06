@@ -85,6 +85,15 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS admins (
+        id SERIAL PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -128,6 +137,13 @@ async function init() {
       getAllEvents: async () => (await pool.query('SELECT * FROM events ORDER BY start_date')).rows,
       addEvent: async (e) => pool.query('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES ($1,$2,$3,$4,$5)', [e.player_id, e.event_type, e.start_date, e.end_date, e.notes]),
       removeEvent: async (id) => pool.query('DELETE FROM events WHERE id = $1', [id]),
+      getAdminByUsername: async (username) => (await pool.query('SELECT * FROM admins WHERE username = $1', [username])).rows[0] || null,
+      getAdminById: async (id) => (await pool.query('SELECT * FROM admins WHERE id = $1', [id])).rows[0] || null,
+      getAllAdmins: async () => (await pool.query('SELECT id, username, created_at FROM admins ORDER BY created_at')).rows,
+      countAdmins: async () => parseInt((await pool.query('SELECT COUNT(*) as c FROM admins')).rows[0].c),
+      createAdmin: async (username, passwordHash) => pool.query('INSERT INTO admins (username, password_hash) VALUES ($1, $2)', [username, passwordHash]),
+      updateAdminPassword: async (id, passwordHash) => pool.query('UPDATE admins SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
+      removeAdmin: async (id) => pool.query('DELETE FROM admins WHERE id = $1', [id]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -176,6 +192,15 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS admins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -215,6 +240,13 @@ async function init() {
       getAllEvents: async () => sqliteDb.prepare('SELECT * FROM events ORDER BY start_date').all(),
       addEvent: async (e) => sqliteDb.prepare('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES (?,?,?,?,?)').run(e.player_id, e.event_type, e.start_date, e.end_date, e.notes),
       removeEvent: async (id) => sqliteDb.prepare('DELETE FROM events WHERE id = ?').run(id),
+      getAdminByUsername: async (username) => sqliteDb.prepare('SELECT * FROM admins WHERE username = ?').get(username) || null,
+      getAdminById: async (id) => sqliteDb.prepare('SELECT * FROM admins WHERE id = ?').get(id) || null,
+      getAllAdmins: async () => sqliteDb.prepare('SELECT id, username, created_at FROM admins ORDER BY created_at').all(),
+      countAdmins: async () => sqliteDb.prepare('SELECT COUNT(*) as c FROM admins').get().c,
+      createAdmin: async (username, passwordHash) => sqliteDb.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(username, passwordHash),
+      updateAdminPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(passwordHash, id),
+      removeAdmin: async (id) => sqliteDb.prepare('DELETE FROM admins WHERE id = ?').run(id),
     };
   }
 }
@@ -236,4 +268,11 @@ module.exports = {
   getAllEvents: (...args) => impl.getAllEvents(...args),
   addEvent: (...args) => impl.addEvent(...args),
   removeEvent: (...args) => impl.removeEvent(...args),
+  getAdminByUsername: (...args) => impl.getAdminByUsername(...args),
+  getAdminById: (...args) => impl.getAdminById(...args),
+  getAllAdmins: (...args) => impl.getAllAdmins(...args),
+  countAdmins: (...args) => impl.countAdmins(...args),
+  createAdmin: (...args) => impl.createAdmin(...args),
+  updateAdminPassword: (...args) => impl.updateAdminPassword(...args),
+  removeAdmin: (...args) => impl.removeAdmin(...args),
 };

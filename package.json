@@ -8,9 +8,11 @@
     "dev": "node server.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "ejs": "^3.1.10",
     "express": "^4.21.0",
+    "express-session": "^1.19.0",
     "nodemailer": "^8.0.7",
     "pg": "^8.13.0"
   },
