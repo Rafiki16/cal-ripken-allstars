@@ -50,16 +50,17 @@
       </div>
     </div>
 
+    <!-- Calendar -->
     <% if (teamEvents.length > 0) { %>
-    <h2 class="section-title" style="margin-top:40px;">Schedule</h2>
+    <h2 class="section-title">Schedule</h2>
 
     <div class="calendar-section">
       <div class="calendar-header">
-        <button class="cal-nav" id="calPrev">&larr;</button>
-        <h3 class="cal-month-title" id="calMonth"></h3>
-        <button class="cal-nav" id="calNext">&rarr;</button>
+        <button type="button" class="cal-nav" id="cal-prev">&larr;</button>
+        <h3 class="cal-month-title" id="cal-title"></h3>
+        <button type="button" class="cal-nav" id="cal-next">&rarr;</button>
       </div>
-      <div class="cal-grid" id="calGrid">
+      <div class="cal-grid">
         <div class="cal-day-header">Sun</div>
         <div class="cal-day-header">Mon</div>
         <div class="cal-day-header">Tue</div>
@@ -67,156 +68,146 @@
         <div class="cal-day-header">Thu</div>
         <div class="cal-day-header">Fri</div>
         <div class="cal-day-header">Sat</div>
+        <% for (let i = 0; i < 42; i++) { %>
+          <div class="cal-cell" data-index="<%= i %>"></div>
+        <% } %>
       </div>
     </div>
 
-    <h2 class="section-title" style="margin-top:32px;">Upcoming Events</h2>
-    <div id="upcomingEvents" class="te-list"></div>
-    <% } %>
+    <div class="upcoming-events" id="upcoming-events">
+      <h3 class="upcoming-title" id="upcoming-title">Upcoming Events</h3>
+      <div id="events-list"></div>
+    </div>
 
     <script>
-    (function() {
-      var EVENTS = <%- JSON.stringify(teamEvents.map(e => ({
+      const EVENTS = <%- JSON.stringify(teamEvents.map(e => ({
         id: e.id,
         type: e.event_type,
         title: e.title,
         start_date: e.start_date,
-        start_time: e.start_time || null,
-        end_date: e.end_date || null,
-        end_time: e.end_time || null,
-        location_name: e.location_name || null,
-        address: e.address || null,
-        notes: e.notes || null,
-        hotel_info: e.hotel_info || null,
-        carpool_info: e.carpool_info || null
+        start_time: e.start_time,
+        end_date: e.end_date,
+        end_time: e.end_time,
+        location_name: e.location_name,
+        address: e.address,
+        notes: e.notes,
+        hotel_info: e.hotel_info,
+        carpool_info: e.carpool_info,
       }))) %>;
 
-      if (!EVENTS.length) return;
+      const TYPE_LABELS = { practice: 'Practice', game: 'Game', tournament: 'Tournament', other: 'Event' };
+      const TYPE_COLORS = { practice: '#16a34a', game: '#1a2744', tournament: '#c41e3a', other: '#6b7280' };
 
-      var now = new Date();
-      var calMonth = now.getMonth();
-      var calYear = now.getFullYear();
-
-      function renderCalendar() {
-        var monthEl = document.getElementById('calMonth');
-        var gridEl = document.getElementById('calGrid');
-        var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-        monthEl.textContent = months[calMonth] + ' ' + calYear;
-
-        var first = new Date(calYear, calMonth, 1);
-        var last = new Date(calYear, calMonth + 1, 0);
-        var startDay = first.getDay();
-        var totalDays = last.getDate();
-
-        var today = new Date();
-        var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
-
-        var eventDates = {};
-        EVENTS.forEach(function(e) {
-          var d = e.start_date;
-          if (!eventDates[d]) eventDates[d] = [];
-          eventDates[d].push(e);
-        });
-
-        // Remove old day cells, keep the 7 day headers
-        var oldCells = gridEl.querySelectorAll('.cal-cell');
-        oldCells.forEach(function(c) { c.remove(); });
-
-        var html = '';
-        for (var i = 0; i < startDay; i++) {
-          html += '<div class="cal-cell cal-empty"></div>';
-        }
-        for (var d = 1; d <= totalDays; d++) {
-          var dateStr = calYear + '-' + String(calMonth+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-          var isToday = dateStr === todayStr;
-          var hasEvent = eventDates[dateStr];
-          html += '<div class="cal-cell' + (isToday ? ' cal-today' : '') + (hasEvent ? ' cal-has-event' : '') + '"';
-          if (hasEvent) {
-            html += ' onclick="scrollToEvent(\'' + dateStr + '\')" style="cursor:pointer"';
-          }
-          html += '>';
-          html += '<span class="cal-day-num">' + d + '</span>';
-          if (hasEvent) {
-            hasEvent.forEach(function(ev) {
-              var color = ev.type === 'practice' ? '#2563eb' : ev.type === 'game' ? '#16a34a' : ev.type === 'tournament' ? '#9333ea' : '#6b7280';
-              html += '<div class="cal-event-dot" style="background:' + color + '" title="' + ev.title + '"></div>';
-            });
-          }
-          html += '</div>';
-        }
-        gridEl.insertAdjacentHTML('beforeend', html);
-      }
+      let currentMonth, currentYear;
+      const today = new Date();
+      currentMonth = today.getMonth();
+      currentYear = today.getFullYear();
 
       function formatTime(t) {
         if (!t) return '';
-        var parts = t.split(':');
-        var h = parseInt(parts[0]);
-        var m = parts[1];
-        return (h % 12 || 12) + ':' + m + ' ' + (h >= 12 ? 'PM' : 'AM');
+        const [h, m] = t.split(':');
+        const hr = parseInt(h);
+        const ampm = hr >= 12 ? 'PM' : 'AM';
+        return (hr % 12 || 12) + ':' + m + ' ' + ampm;
       }
 
-      function renderEvents() {
-        var container = document.getElementById('upcomingEvents');
-        if (!container) return;
-        var today = new Date();
-        today.setHours(0,0,0,0);
-        var upcoming = EVENTS.filter(function(e) {
-          return new Date(e.start_date + 'T23:59:59') >= today;
-        }).sort(function(a, b) {
-          return a.start_date.localeCompare(b.start_date);
-        });
+      function renderCalendar() {
+        const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const title = new Date(currentYear, currentMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        document.getElementById('cal-title').textContent = title;
 
-        if (!upcoming.length) {
-          container.innerHTML = '<p style="color:var(--gray-500);text-align:center;padding:20px;">No upcoming events</p>';
+        const cells = document.querySelectorAll('.cal-cell');
+        cells.forEach((cell, i) => {
+          cell.innerHTML = '';
+          cell.className = 'cal-cell';
+          const day = i - firstDay + 1;
+          if (day >= 1 && day <= daysInMonth) {
+            const dateStr = currentYear + '-' + String(currentMonth + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+            cell.innerHTML = '<span class="cal-day-num">' + day + '</span>';
+            if (dateStr === today.toISOString().slice(0, 10)) cell.classList.add('cal-today');
+
+            const dayEvents = EVENTS.filter(e => {
+              if (e.end_date) return dateStr >= e.start_date && dateStr <= e.end_date;
+              return e.start_date === dateStr;
+            });
+            dayEvents.forEach(ev => {
+              const dot = document.createElement('div');
+              dot.className = 'cal-event-dot';
+              dot.style.background = TYPE_COLORS[ev.type] || TYPE_COLORS.other;
+              dot.title = ev.title;
+              cell.appendChild(dot);
+            });
+            if (dayEvents.length > 0) {
+              cell.style.cursor = 'pointer';
+              cell.onclick = () => scrollToEvent(dayEvents[0].id);
+            }
+          } else {
+            cell.classList.add('cal-empty');
+          }
+        });
+      }
+
+      function scrollToEvent(id) {
+        const el = document.getElementById('event-' + id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      function renderEvents(filter) {
+        const now = new Date().toISOString().slice(0, 10);
+        let filtered = filter === 'all' ? EVENTS : EVENTS.filter(e => (e.end_date || e.start_date) >= now);
+        const list = document.getElementById('events-list');
+        const titleEl = document.getElementById('upcoming-title');
+        titleEl.textContent = filter === 'all' ? 'All Events' : 'Upcoming Events';
+
+        if (filtered.length === 0) {
+          list.innerHTML = '<p style="color:#6b7280;font-size:14px;">No upcoming events.</p>';
           return;
         }
 
-        var html = '';
-        upcoming.forEach(function(ev) {
-          var typeColors = { practice: '#2563eb', game: '#16a34a', tournament: '#9333ea' };
-          var color = typeColors[ev.type] || '#6b7280';
-          var typeLabel = ev.type.charAt(0).toUpperCase() + ev.type.slice(1);
-          var dateObj = new Date(ev.start_date + 'T12:00:00');
-          var dateStr = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          if (ev.end_date && ev.end_date !== ev.start_date) {
-            var endObj = new Date(ev.end_date + 'T12:00:00');
-            dateStr += ' – ' + endObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          }
+        list.innerHTML = filtered.map(ev => {
+          const startDate = new Date(ev.start_date + 'T12:00:00');
+          const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          const endStr = ev.end_date && ev.end_date !== ev.start_date ? ' &ndash; ' + new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+          const timeStr = ev.start_time ? formatTime(ev.start_time) + (ev.end_time ? ' &ndash; ' + formatTime(ev.end_time) : '') : '';
+          const color = TYPE_COLORS[ev.type] || TYPE_COLORS.other;
 
-          html += '<a href="/event/' + ev.id + '" class="te-card" data-date="' + ev.start_date + '">';
+          let html = '<a href="/event/' + ev.id + '" class="te-card" id="event-' + ev.id + '" style="border-left:4px solid ' + color + ';">';
           html += '<div class="te-header">';
-          html += '<span class="te-type-badge" style="background:' + color + '">' + typeLabel + '</span>';
-          html += '<span class="te-date">' + dateStr + '</span>';
+          html += '<span class="te-type-badge" style="background:' + color + ';">' + (TYPE_LABELS[ev.type] || 'Event') + '</span>';
+          html += '<span class="te-date">' + dateStr + endStr + '</span>';
           html += '</div>';
-          html += '<div class="te-title">' + ev.title + '</div>';
-          if (ev.start_time) html += '<div class="te-time">' + formatTime(ev.start_time) + '</div>';
-          if (ev.location_name) html += '<div class="te-location">' + ev.location_name + '</div>';
+          html += '<h4 class="te-title">' + ev.title + '</h4>';
+          if (timeStr) html += '<div class="te-time">' + timeStr + '</div>';
+          if (ev.location_name || ev.address) {
+            html += '<div class="te-location">';
+            if (ev.location_name) html += '<strong>' + ev.location_name + '</strong>';
+            if (ev.address) {
+              html += (ev.location_name ? ' &mdash; ' : '') + ev.address;
+              html += ' <a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(ev.address) + '" target="_blank" rel="noopener" class="te-map-link">View Map</a>';
+            }
+            html += '</div>';
+          }
+          if (ev.notes) html += '<div class="te-notes">' + ev.notes + '</div>';
+          if (ev.type === 'tournament') {
+            if (ev.hotel_info) html += '<div class="te-detail"><strong>Hotels:</strong> ' + ev.hotel_info.replace(/\n/g, '<br>') + '</div>';
+            if (ev.carpool_info) html += '<div class="te-detail"><strong>Carpool:</strong> ' + ev.carpool_info.replace(/\n/g, '<br>') + '</div>';
+          }
+          if (ev.address) {
+            html += '<div class="te-map-embed"><iframe src="https://www.google.com/maps?q=' + encodeURIComponent(ev.address) + '&output=embed" width="100%" height="200" style="border:0;border-radius:8px;" allowfullscreen loading="lazy"></iframe></div>';
+          }
           html += '</a>';
-        });
-
-        container.innerHTML = html;
+          return html;
+        }).join('');
       }
 
-      window.scrollToEvent = function(dateStr) {
-        var card = document.querySelector('.te-card[data-date="' + dateStr + '"]');
-        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      };
-
-      document.getElementById('calPrev').addEventListener('click', function() {
-        calMonth--;
-        if (calMonth < 0) { calMonth = 11; calYear--; }
-        renderCalendar();
-      });
-      document.getElementById('calNext').addEventListener('click', function() {
-        calMonth++;
-        if (calMonth > 11) { calMonth = 0; calYear++; }
-        renderCalendar();
-      });
+      document.getElementById('cal-prev').onclick = () => { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); };
+      document.getElementById('cal-next').onclick = () => { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } renderCalendar(); };
 
       renderCalendar();
-      renderEvents();
-    })();
+      renderEvents('upcoming');
     </script>
+    <% } %>
   </main>
 
   <footer>
