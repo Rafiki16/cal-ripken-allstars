@@ -43,7 +43,7 @@ body {
 
 /* Header */
 header {
-  background: linear-gradient(135deg, var(--navy), var(--navy-light));
+  background: linear-gradient(135deg, #e65100, #ff9800);
   color: var(--white);
   padding: 24px 0;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
