@@ -276,9 +276,14 @@ async function init() {
         current_at_bat_id INTEGER,
         total_innings INTEGER NOT NULL DEFAULT 6,
         started_at TIMESTAMPTZ,
-        ended_at TIMESTAMPTZ
+        ended_at TIMESTAMPTZ,
+        active_scorer_name TEXT,
+        active_scorer_at TIMESTAMPTZ
       )
     `);
+
+    await pool.query('ALTER TABLE live_games ADD COLUMN IF NOT EXISTS active_scorer_name TEXT').catch(() => {});
+    await pool.query('ALTER TABLE live_games ADD COLUMN IF NOT EXISTS active_scorer_at TIMESTAMPTZ').catch(() => {});
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS game_roster (
@@ -1032,9 +1037,14 @@ async function init() {
         current_at_bat_id INTEGER,
         total_innings INTEGER NOT NULL DEFAULT 6,
         started_at TEXT,
-        ended_at TEXT
+        ended_at TEXT,
+        active_scorer_name TEXT,
+        active_scorer_at TEXT
       )
     `);
+
+    try { sqliteDb.exec('ALTER TABLE live_games ADD COLUMN active_scorer_name TEXT'); } catch (e) {}
+    try { sqliteDb.exec('ALTER TABLE live_games ADD COLUMN active_scorer_at TEXT'); } catch (e) {}
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS game_roster (
