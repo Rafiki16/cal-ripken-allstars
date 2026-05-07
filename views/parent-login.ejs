@@ -3,19 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Parent Login &middot; <%= teamName %></title>
+  <title><%= teamName %></title>
   <link rel="stylesheet" href="/styles.css">
+  <style>
+    .login-hero { text-align: center; padding: 40px 0 20px; }
+    .login-hero .logo { font-size: 48px; margin-bottom: 8px; }
+    .login-hero h1 { font-size: 26px; color: var(--navy); margin: 0; }
+    .login-hero .sub { font-size: 14px; color: #6b7280; margin-top: 4px; }
+    .login-box { max-width: 380px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 28px 24px; }
+    .login-box h2 { font-size: 18px; color: var(--navy); margin: 0 0 16px; text-align: center; }
+    .login-box .form-group { margin-bottom: 14px; }
+    .login-box label { font-size: 13px; font-weight: 600; color: #374151; display: block; margin-bottom: 4px; }
+    .login-box .form-input { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 15px; box-sizing: border-box; }
+    .login-box .btn-primary { width: 100%; padding: 12px; font-size: 16px; font-weight: 700; }
+    .login-footer { text-align: center; margin-top: 20px; font-size: 13px; color: #6b7280; }
+    .login-footer a { color: var(--navy); font-weight: 600; }
+  </style>
 </head>
 <body>
   <header>
     <div class="container">
       <div class="header-content">
-        <a href="/" class="back-link">&larr; Back to Roster</a>
         <div class="header-text">
           <div class="logo">&#9918;</div>
           <div>
-            <h1>Parent Login</h1>
-            <p class="subtitle"><%= teamName %></p>
+            <h1><%= teamName %></h1>
+            <p class="subtitle">Summer 2026 &middot; Major Division</p>
           </div>
         </div>
       </div>
@@ -27,9 +40,12 @@
       <div class="alert alert-error"><%= error %></div>
     <% } %>
 
-    <div class="verify-box">
-      <h2>Log In</h2>
-      <p>Use your registered phone number and the password you created.</p>
+    <div class="login-hero">
+      <p class="sub">Sign in to view the schedule, RSVPs, lineups, and more.</p>
+    </div>
+
+    <div class="login-box">
+      <h2>Parent Login</h2>
       <form method="POST" action="/parent/login">
         <div class="form-group">
           <label>Phone Number</label>
@@ -39,11 +55,12 @@
           <label>Password</label>
           <input type="password" name="password" required class="form-input" placeholder="Your password">
         </div>
-        <button type="submit" class="btn btn-primary">Log In</button>
+        <button type="submit" class="btn btn-primary">Sign In</button>
       </form>
-      <p style="margin-top:16px;font-size:13px;color:#6b7280;text-align:center;">
-        Don't have an account? <a href="/verify" style="color:var(--navy);font-weight:600;">Verify with your phone number</a> first.
-      </p>
+    </div>
+
+    <div class="login-footer">
+      <p>Coach? <a href="/admin/login">Admin Login</a></p>
     </div>
   </main>
 

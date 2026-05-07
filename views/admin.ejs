@@ -819,6 +819,7 @@
           html += '<td style="padding:8px;color:#6b7280;font-size:12px;">' + created + '</td>';
           html += '<td style="padding:8px;text-align:right;white-space:nowrap;">';
           html += '<a href="/admin/impersonate/' + a.id + '" style="background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;text-decoration:none;margin-right:4px;" title="View site as this user">View As</a>';
+          html += '<button onclick="makeStaff(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#059669;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Add as staff member">Staff</button>';
           html += '<button onclick="showLinkPlayer(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#3b82f6;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Link a player">Link</button>';
           html += '<button onclick="showEditAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\',\'' + a.phone + '\')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Edit">Edit</button>';
           html += '<button onclick="showResetPassword(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#6b7280;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Reset password">PW</button>';
@@ -847,6 +848,7 @@
           document.getElementById('ua-password').value = '';
           sel.selectedIndex = -1;
           loadAccounts();
+          alert('Account created!' + (d.smsSent ? ' Login credentials sent via text.' : ' SMS not configured — share the credentials manually.'));
         } else { alert(d.error); }
       });
     }
@@ -918,6 +920,15 @@
           loadAccounts();
         } else { alert(d.error); }
       });
+    }
+
+    function makeStaff(id, name) {
+      if (!confirm('Add ' + name + ' as a staff member?')) return;
+      fetch('/admin/accounts/' + id + '/make-staff', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(r => r.json()).then(function(d) {
+          if (d.ok) { alert(name + ' added to staff.'); location.reload(); }
+          else alert(d.error);
+        });
     }
 
     function deleteAccount(id, name) {

@@ -320,7 +320,7 @@ async function sendConfirmationEmail(player, email, teamName) {
 
 // --- Public Routes ---
 
-app.get('/', async (req, res) => {
+app.get('/', requireLogin, async (req, res) => {
   const players = await db.getAllPlayers();
   const teamEvents = await db.getAllTeamEvents();
   let parentRsvps = {};
@@ -338,7 +338,7 @@ app.get('/', async (req, res) => {
   res.render('index', { players, teamEvents, parentUser: req.parentUser || null, parentRsvps });
 });
 
-app.get('/event/:id', async (req, res) => {
+app.get('/event/:id', requireLogin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
   const rsvps = await db.getRsvpsForEvent(event.id);
@@ -394,7 +394,7 @@ app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
   res.render('rsvp', { event, player, rsvp, token, success: `${player.player_name} is marked as ${status === 'yes' ? 'attending' : status === 'no' ? 'not attending' : 'maybe'}.` });
 });
 
-app.get('/event/:id/practice-timer', async (req, res) => {
+app.get('/event/:id/practice-timer', requireLogin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
   const drills = await db.getDrills(event.id);
@@ -446,7 +446,7 @@ app.get('/api/location-search', async (req, res) => {
   }
 });
 
-app.get('/verify', async (req, res) => {
+app.get('/verify', requireLogin, async (req, res) => {
   if (req.parentUser) {
     const players = await db.getPlayersByPhone(req.parentUser.phone);
     return res.render('verify', { players: players.length > 0 ? players : null, phone: req.parentUser.phone, error: null, success: null, parentUser: req.parentUser, hasAccount: true });
@@ -534,7 +534,7 @@ app.post('/parent/register', async (req, res) => {
 });
 
 app.get('/parent/login', (req, res) => {
-  if (req.parentUser) return res.redirect('/verify');
+  if (req.parentUser) return res.redirect('/');
   res.render('parent-login', { error: null });
 });
 
@@ -572,7 +572,7 @@ const RATING_FIELDS = [
   { key: 'baseball_iq',        label: 'Baseball IQ' },
 ];
 
-app.get('/profile/:id', async (req, res) => {
+app.get('/profile/:id', requireLogin, async (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
   const isAdmin = !!req.session.admin;
 
@@ -715,6 +715,11 @@ app.post('/profile/:id/event/delete', async (req, res) => {
 function requireAdmin(req, res, next) {
   if (req.session.admin) return next();
   res.redirect('/admin/login');
+}
+
+function requireLogin(req, res, next) {
+  if (req.session.admin || req.parentUser) return next();
+  res.redirect('/parent/login');
 }
 
 app.get('/admin/login', async (req, res) => {
@@ -1300,7 +1305,7 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
 
 // --- Team Messages ---
 
-app.get('/messages', async (req, res) => {
+app.get('/messages', requireLogin, async (req, res) => {
   const topics = await db.getAllMessages();
   const topicReplies = {};
   for (const t of topics) {
@@ -1433,7 +1438,14 @@ app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
       await db.updatePlayerParentPhone(Number(pid), normalized);
     }
   }
-  res.json({ ok: true });
+
+  const baseUrl = process.env.BASE_URL || 'https://cal-ripken-allstars.onrender.com';
+  const formattedPhone = normalized.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+  const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+  const smsBody = `${teamName}: Your parent account is ready!\n\nLogin: ${baseUrl}/parent/login\nPhone: ${formattedPhone}\nPassword: ${password}\n\nSign in to view the schedule, RSVPs, and lineups.`;
+  await sendSMS(normalized, smsBody);
+
+  res.json({ ok: true, smsSent: !!(twilioClient && twilioFrom) });
 });
 
 app.post('/admin/accounts/:id/update', requireAdmin, async (req, res) => {
@@ -1486,6 +1498,15 @@ app.post('/admin/accounts/:id/unlink-player', requireAdmin, async (req, res) => 
 
 app.post('/admin/accounts/:id/delete', requireAdmin, async (req, res) => {
   await db.deleteParentAccount(Number(req.params.id));
+  res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/make-staff', requireAdmin, async (req, res) => {
+  const account = await db.getParentAccountById(Number(req.params.id));
+  if (!account) return res.json({ ok: false, error: 'Account not found.' });
+  const existing = await db.getStaffByPhone(account.phone);
+  if (existing) return res.json({ ok: false, error: 'Already a staff member.' });
+  await db.addStaff({ name: account.display_name, role: 'Parent', phone: account.phone, email: null });
   res.json({ ok: true });
 });
 
@@ -1968,7 +1989,7 @@ app.post('/api/game/:id/chat', async (req, res) => {
   res.json(msg);
 });
 
-app.get('/stats', async (req, res) => {
+app.get('/stats', requireLogin, async (req, res) => {
   const isAdmin = req.session && req.session.adminId;
   const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
   const parentUser = req.parentUser;
