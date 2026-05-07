@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings &middot; Cal Ripken All-Stars</title>
+  <title>Settings &middot; <%= teamName %></title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -32,6 +32,19 @@
     <% if (error) { %>
       <div class="alert alert-error"><%= error %></div>
     <% } %>
+
+    <!-- Team Name -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Team Name</h2>
+      <p class="section-hint">This name appears across all pages, emails, and SMS messages.</p>
+      <form method="POST" action="/admin/settings/team-name" class="add-player-form">
+        <div class="form-group">
+          <label>Team Name</label>
+          <input type="text" name="team_name" value="<%= teamName %>" required class="form-input" maxlength="100">
+        </div>
+        <button type="submit" class="btn btn-confirm">Save Team Name</button>
+      </form>
+    </div>
 
     <!-- Change Password -->
     <div class="admin-section">
@@ -117,7 +130,7 @@
 
   <footer>
     <div class="container">
-      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
     </div>
   </footer>
 </body>

@@ -124,6 +124,11 @@ app.use(async (req, res, next) => {
   next();
 });
 
+app.use(async (req, res, next) => {
+  res.locals.teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+  next();
+});
+
 function calcEndTime(startTime, durationMinutes) {
   if (!startTime || !durationMinutes) return null;
   const [h, m] = startTime.split(':').map(Number);
@@ -155,21 +160,22 @@ async function sendSMS(to, body) {
   }
 }
 
-async function sendReminderEmail(to, player, event, link, reminderType) {
+async function sendReminderEmail(to, player, event, link, reminderType, teamName) {
   if (!smtpTransport || !to) return;
+  const tn = teamName || 'Cal Ripken All-Stars';
   const when = reminderType === '48h' ? 'in 2 days' : 'tomorrow';
   const startDate = new Date(event.start_date + 'T12:00:00');
   const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const timeStr = event.start_time ? (() => { const [h,m] = event.start_time.split(':'); const hr = parseInt(h); return (hr % 12 || 12) + ':' + m + ' ' + (hr >= 12 ? 'PM' : 'AM'); })() : '';
   try {
     await smtpTransport.sendMail({
-      from: `"Cal Ripken All-Stars" <${process.env.SMTP_USER}>`,
+      from: `"${tn}" <${process.env.SMTP_USER}>`,
       to,
       subject: `RSVP Needed: ${event.title} — ${dateStr}`,
       html: `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
           <div style="background:#1a2744;color:#fff;padding:24px;text-align:center;">
-            <h1 style="margin:0;font-size:22px;">⚾ Cal Ripken All-Stars</h1>
+            <h1 style="margin:0;font-size:22px;">⚾ ${tn}</h1>
             <p style="margin:4px 0 0;color:#d4a843;">Summer 2026 &middot; Major Division</p>
           </div>
           <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;">
@@ -209,6 +215,7 @@ function getPlayerContacts(player) {
 async function checkAndSendReminders() {
   try {
     const now = new Date();
+    const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
     const events = await db.getAllTeamEvents();
     const players = await db.getAllPlayers();
     const confirmed = players.filter(p => p.status === 'confirmed');
@@ -234,10 +241,10 @@ async function checkAndSendReminders() {
 
         for (const contact of contacts) {
           if (contact.type === 'email') {
-            await sendReminderEmail(contact.value, player, event, link, reminderType);
+            await sendReminderEmail(contact.value, player, event, link, reminderType, teamName);
           } else {
             const dateStr = new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            await sendSMS(contact.value, `Cal Ripken All-Stars: ${player.player_name} hasn't RSVP'd for ${event.title} on ${dateStr}. Tap to respond: ${link}`);
+            await sendSMS(contact.value, `${teamName}: ${player.player_name} hasn't RSVP'd for ${event.title} on ${dateStr}. Tap to respond: ${link}`);
           }
           await db.logReminder(event.id, player.id, reminderType, contact.type, contact.value);
         }
@@ -248,30 +255,31 @@ async function checkAndSendReminders() {
   }
 }
 
-async function sendConfirmationEmail(player, email) {
+async function sendConfirmationEmail(player, email, teamName) {
   if (!smtpTransport || !email) return;
+  const tn = teamName || 'Cal Ripken All-Stars';
   const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
   try {
     await smtpTransport.sendMail({
-      from: `"Cal Ripken All-Stars" <${process.env.SMTP_USER}>`,
+      from: `"${tn}" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: `${player.player_name} — All-Star Team Selection`,
+      subject: `${player.player_name} — Team Selection`,
       html: `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
           <div style="background:#1a2744;color:#fff;padding:24px;text-align:center;">
-            <h1 style="margin:0;font-size:22px;">⚾ Cal Ripken All-Stars</h1>
+            <h1 style="margin:0;font-size:22px;">⚾ ${tn}</h1>
             <p style="margin:4px 0 0;color:#d4a843;">Summer 2026 &middot; Major Division</p>
           </div>
           <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;">
             <p>Hi ${player.parent_name},</p>
-            <p><strong>${player.player_name}</strong> has been selected for the <strong>Summer 2026 Cal Ripken All-Star</strong> team!</p>
+            <p><strong>${player.player_name}</strong> has been selected for the <strong>Summer 2026 ${tn}</strong> team!</p>
             <p>Please confirm or decline participation using the link below:</p>
             <p style="text-align:center;margin:24px 0;">
               <a href="${baseUrl}/verify" style="background:#1a2744;color:#fff;padding:12px 32px;border-radius:6px;text-decoration:none;font-weight:bold;">Confirm Your Player</a>
             </p>
             <p style="font-size:14px;color:#6b7280;">Use your registered phone number <strong>${player.parent_phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3')}</strong> to look up your player and respond.</p>
             <p style="font-size:14px;color:#6b7280;">You can also fill out a player profile with positions, skills, and contact info for GameChanger.</p>
-            <p>Thank you!<br>Cal Ripken All-Stars Coaching Staff</p>
+            <p>Thank you!<br>${tn} Coaching Staff</p>
           </div>
         </div>`,
     });
@@ -454,7 +462,7 @@ app.post('/respond', async (req, res) => {
   res.render('verify', {
     players, phone: normalized,
     error: null,
-    success: `${player.player_name} has been ${action} for the All-Star team. You can change this anytime.`,
+    success: `${player.player_name} has been ${action} for the ${res.locals.teamName} team. You can change this anytime.`,
     parentUser: req.parentUser || null, hasAccount
   });
 });
@@ -781,7 +789,7 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
   const players = await db.getAllPlayers();
   const newPlayer = players.find(p => p.parent_phone === phone && p.player_name === player_name.trim());
   if (newPlayer && newPlayer.parent_email) {
-    sendConfirmationEmail(newPlayer, newPlayer.parent_email);
+    sendConfirmationEmail(newPlayer, newPlayer.parent_email, res.locals.teamName);
   }
 
   res.redirect('/admin?success=' + encodeURIComponent(`${player_name.trim()} added to roster` + (parent_email ? ' — confirmation email sent' : '')));
@@ -809,7 +817,7 @@ app.post('/admin/send-email', requireAdmin, async (req, res) => {
     return res.redirect('/admin?error=' + encodeURIComponent(`No email on file for ${player.player_name}`));
   }
 
-  await sendConfirmationEmail(player, email);
+  await sendConfirmationEmail(player, email, res.locals.teamName);
   res.redirect('/admin?success=' + encodeURIComponent(`Confirmation email sent to ${email} for ${player.player_name}`));
 });
 
@@ -1183,9 +1191,15 @@ app.get('/admin/settings', requireAdmin, async (req, res) => {
   res.render('admin-settings', {
     adminUser: req.session.admin,
     admins,
+    teamName: res.locals.teamName,
     success: req.query.success || null,
     error: req.query.error || null,
   });
+});
+
+app.post('/admin/settings/team-name', requireAdmin, async (req, res) => {
+  await db.setSetting('team_name', (req.body.team_name || '').trim());
+  res.redirect('/admin/settings?success=Team+name+updated.');
 });
 
 app.post('/admin/change-password', requireAdmin, async (req, res) => {
@@ -1341,7 +1355,7 @@ app.get('/api/stats', async (req, res) => {
 
 db.init().then(() => {
   app.listen(PORT, () => {
-    console.log(`All-Stars portal running at http://localhost:${PORT}`);
+    console.log(`Team portal running at http://localhost:${PORT}`);
   });
   setInterval(checkAndSendReminders, 15 * 60 * 1000);
   setTimeout(checkAndSendReminders, 15000);

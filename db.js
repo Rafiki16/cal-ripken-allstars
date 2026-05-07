@@ -131,6 +131,13 @@ async function init() {
     try { await pool.query('ALTER TABLE practice_drills ADD COLUMN coach_notes TEXT'); } catch (e) { /* exists */ }
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS site_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS tournament_sub_events (
         id SERIAL PRIMARY KEY,
         team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
@@ -371,6 +378,11 @@ async function init() {
       getAllSavedLocations: async () => (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
       addSavedLocation: async (name, address) => pool.query('INSERT INTO saved_locations (location_name, address) VALUES ($1, $2)', [name, address]),
       removeSavedLocation: async (id) => pool.query('DELETE FROM saved_locations WHERE id = $1', [id]),
+      getSetting: async (key) => {
+        const { rows } = await pool.query('SELECT value FROM site_settings WHERE key = $1', [key]);
+        return rows.length > 0 ? rows[0].value : null;
+      },
+      setSetting: async (key, value) => pool.query('INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -462,6 +474,13 @@ async function init() {
     `);
 
     try { sqliteDb.exec('ALTER TABLE practice_drills ADD COLUMN coach_notes TEXT'); } catch (e) { /* exists */ }
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS site_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    `);
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS tournament_sub_events (
@@ -706,6 +725,11 @@ async function init() {
       getAllSavedLocations: async () => sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
       addSavedLocation: async (name, address) => sqliteDb.prepare('INSERT INTO saved_locations (location_name, address) VALUES (?, ?)').run(name, address),
       removeSavedLocation: async (id) => sqliteDb.prepare('DELETE FROM saved_locations WHERE id = ?').run(id),
+      getSetting: async (key) => {
+        const row = sqliteDb.prepare('SELECT value FROM site_settings WHERE key = ?').get(key);
+        return row ? row.value : null;
+      },
+      setSetting: async (key, value) => sqliteDb.prepare('INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)').run(key, value),
     };
   }
 }
@@ -777,4 +801,6 @@ module.exports = {
   getAllSavedLocations: (...args) => impl.getAllSavedLocations(...args),
   addSavedLocation: (...args) => impl.addSavedLocation(...args),
   removeSavedLocation: (...args) => impl.removeSavedLocation(...args),
+  getSetting: (...args) => impl.getSetting(...args),
+  setSetting: (...args) => impl.setSetting(...args),
 };
