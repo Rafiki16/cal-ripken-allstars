@@ -764,7 +764,11 @@ async function init() {
       updateProgramActivity: async (id, a) => pool.query('UPDATE program_activities SET activity_name=$1, description=$2, instructions=$3, reps=$4, sort_order=$5 WHERE id=$6', [a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order, id]),
       removeProgramActivity: async (id) => pool.query('DELETE FROM program_activities WHERE id = $1', [id]),
       getProgramAssignments: async (programId) => (await pool.query('SELECT pa.*, p.player_name FROM program_assignments pa JOIN players p ON pa.player_id = p.id WHERE pa.program_id = $1 ORDER BY p.player_name', [programId])).rows,
-      getPlayerAssignments: async (playerId) => (await pool.query("SELECT pa.*, pr.title, pr.description, pr.schedule_type FROM program_assignments pa JOIN programs pr ON pa.program_id = pr.id WHERE pa.player_id = $1 AND pa.status = 'active' ORDER BY pr.title", [playerId])).rows,
+      getPlayerAssignments: async (playerId) => {
+        const r = await pool.query("SELECT pa.*, pr.title, pr.description, pr.schedule_type FROM program_assignments pa JOIN programs pr ON pa.program_id = pr.id WHERE pa.player_id = $1 ORDER BY pr.title", [playerId]);
+        console.log('getPlayerAssignments player:', playerId, 'found:', r.rows.length, 'rows:', JSON.stringify(r.rows.map(x => ({ id: x.id, program_id: x.program_id, status: x.status }))));
+        return r.rows;
+      },
       assignProgram: async (a) => pool.query("INSERT INTO program_assignments (program_id, player_id, assigned_by_staff_id, send_reminders) VALUES ($1,$2,$3,$4) ON CONFLICT (program_id, player_id) DO UPDATE SET status = 'active', assigned_by_staff_id = $3, send_reminders = $4, started_at = NOW()", [a.program_id, a.player_id, a.assigned_by_staff_id || null, a.send_reminders ?? 1]),
       unassignProgram: async (programId, playerId) => pool.query('DELETE FROM program_assignments WHERE program_id = $1 AND player_id = $2', [programId, playerId]),
       updateAssignmentStatus: async (programId, playerId, status) => pool.query('UPDATE program_assignments SET status = $1 WHERE program_id = $2 AND player_id = $3', [status, programId, playerId]),
