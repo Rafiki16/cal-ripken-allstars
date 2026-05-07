@@ -1302,6 +1302,11 @@ main { flex: 1; padding-bottom: 40px; }
   .lg-cell-name { font-size: 11px; }
   .lg-print-field { display: block !important; margin-top: 16px; text-align: center; page-break-inside: avoid; }
   @page { margin: 0.4in; size: landscape; }
+
+  /* Umpire print: show only the generated umpire table */
+  body.print-umpire .lineup-grid-section { display: none !important; }
+  #umpire-print { display: none; }
+  body.print-umpire #umpire-print { display: block !important; padding: 0; }
 }
 
 /* Multi-day picker */

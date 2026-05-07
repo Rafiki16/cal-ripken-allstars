@@ -373,6 +373,9 @@
                 </td>
                 <td>
                   <div class="admin-action-row">
+                    <% if (ev.event_type === 'game') { %>
+                    <a href="/event/<%= ev.id %>#lineup-grid-section" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 8px;text-decoration:none;">Lineup</a>
+                    <% } %>
                     <button type="button" class="btn-sm btn-sm-email" title="Edit" onclick='editTeamEvent(<%- JSON.stringify({id:ev.id,event_type:ev.event_type,title:ev.title,start_date:ev.start_date,start_time:ev.start_time||"",end_date:ev.end_date||"",end_time:ev.end_time||"",location_name:ev.location_name||"",address:ev.address||"",notes:ev.notes||"",hotel_info:ev.hotel_info||"",carpool_info:ev.carpool_info||"",opponent_name:ev.opponent_name||""}) %>)'>&#9998;</button>
                     <form method="POST" action="/admin/remove-team-event" onsubmit="return confirm('Remove this event?')" style="margin:0;">
                       <input type="hidden" name="event_id" value="<%= ev.id %>">

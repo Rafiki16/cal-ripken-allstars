@@ -435,7 +435,8 @@
         <% if (isAdmin) { %>
         <div class="lg-controls">
           <button type="button" class="btn btn-confirm" onclick="saveLineupGrid()">Save Lineup</button>
-          <button type="button" class="btn" onclick="printLineup()" style="margin-left:8px;">Print Lineup Card</button>
+          <button type="button" class="btn" onclick="printLineup('umpire')" style="margin-left:8px;">Print for Umpires</button>
+          <button type="button" class="btn" onclick="printLineup('full')" style="margin-left:8px;">Print Full Lineup</button>
           <button type="button" class="btn" onclick="clearEntireLineup()" style="margin-left:8px; background:#dc2626; color:white;">Clear All</button>
           <span class="lg-save-msg" id="lg-save-msg"></span>
         </div>
@@ -708,8 +709,39 @@
           setTimeout(() => msgEl.textContent = '', 3000);
         };
 
-        window.printLineup = function() {
-          window.print();
+        window.printLineup = function(mode) {
+          if (mode === 'umpire') {
+            var div = document.createElement('div');
+            div.id = 'umpire-print';
+            div.innerHTML = '<h2 style="margin:0 0 4px;font-size:18px;">Cal Ripken All-Stars &mdash; Starting Lineup</h2>'
+              + '<p style="margin:0 0 12px;font-size:14px;color:#555;"><%= event.title %>'
+              + '<% if (event.opponent_name) { %> vs <%= event.opponent_name %><% } %>'
+              + ' &mdash; <%= new Date(event.start_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %></p>'
+              + '<table style="border-collapse:collapse;width:100%;">'
+              + '<thead><tr><th style="border:1px solid #999;padding:6px 10px;text-align:left;background:#eee;">#</th>'
+              + '<th style="border:1px solid #999;padding:6px 10px;text-align:left;background:#eee;">Player</th>'
+              + '<th style="border:1px solid #999;padding:6px 10px;text-align:left;background:#eee;">Position</th></tr></thead><tbody>';
+            grid.forEach(function(row, ri) {
+              var cell = row.cells[0];
+              var pos = '';
+              if (cell && cell.status === 'field' && cell.pos) pos = POS_MAP[cell.pos] || cell.pos;
+              else if (cell && cell.status === 'sit') pos = 'Sit';
+              else if (cell && cell.status === 'sub_in') pos = 'Sub';
+              div.innerHTML += '<tr><td style="border:1px solid #999;padding:6px 10px;font-weight:700;width:36px;">' + (ri+1) + '</td>'
+                + '<td style="border:1px solid #999;padding:6px 10px;">' + (row.jersey ? row.jersey + ' &mdash; ' : '') + row.name + '</td>'
+                + '<td style="border:1px solid #999;padding:6px 10px;font-weight:700;">' + pos + '</td></tr>';
+            });
+            div.innerHTML += '</tbody></table>';
+            document.body.appendChild(div);
+            document.body.classList.add('print-umpire');
+            window.print();
+            document.body.classList.remove('print-umpire');
+            div.remove();
+          } else {
+            document.body.classList.add('print-full');
+            window.print();
+            document.body.classList.remove('print-full');
+          }
         };
 
         window.clearEntireLineup = function() {
