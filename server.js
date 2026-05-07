@@ -2357,6 +2357,7 @@ app.post('/admin/programs/:id/day/:dayId/activity', requireAdmin, async (req, re
     description: (req.body.description || '').trim() || null,
     instructions: (req.body.instructions || '').trim() || null,
     reps: (req.body.reps || '').trim() || null,
+    link_url: (req.body.link_url || '').trim() || null,
     sort_order: activities.length,
   });
   res.redirect('/admin/programs/' + req.params.id + '/edit#day-' + req.params.dayId);
@@ -2369,6 +2370,7 @@ app.post('/admin/programs/:id/activity/:actId/update', requireAdmin, async (req,
     description: (req.body.description || '').trim() || null,
     instructions: (req.body.instructions || '').trim() || null,
     reps: (req.body.reps || '').trim() || null,
+    link_url: (req.body.link_url || '').trim() || null,
     sort_order: parseInt(req.body.sort_order) || 0,
   });
   res.redirect('/admin/programs/' + req.params.id + '/edit#day-' + dayId);

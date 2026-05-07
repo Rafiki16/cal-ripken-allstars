@@ -140,6 +140,13 @@
           <% if (act.description) { %>
           <p style="font-size:13px; color:var(--gray-500); margin:4px 0 0 28px; line-height:1.4;"><%= act.description %></p>
           <% } %>
+          <% if (act.link_url) { %>
+          <div style="margin:8px 0 0 28px;">
+            <a href="<%= act.link_url %>" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:#2563eb; text-decoration:none; padding:6px 12px; background:#eff6ff; border-radius:8px;">
+              &#9654; Watch Video
+            </a>
+          </div>
+          <% } %>
           <% if (act.instructions) { %>
           <details style="margin:8px 0 0 28px;">
             <summary style="font-size:12px; font-weight:600; color:var(--navy); cursor:pointer;">Instructions</summary>

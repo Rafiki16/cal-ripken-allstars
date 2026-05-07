@@ -255,6 +255,9 @@
                 <% if (act.reps) { %>
                   <span class="activity-detail"><%= act.reps %></span>
                 <% } %>
+                <% if (act.link_url) { %>
+                  <a href="<%= act.link_url %>" target="_blank" rel="noopener" style="font-size:12px; color:#2563eb; text-decoration:none; margin-left:6px;">&#9654; Video</a>
+                <% } %>
               </li>
             <% }); %>
           </ul>

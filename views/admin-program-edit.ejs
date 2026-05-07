@@ -113,6 +113,9 @@
             <summary style="padding:8px 12px; cursor:pointer; font-size:13px; font-weight:600; background:#fff; display:flex; align-items:center; gap:8px;">
               <span style="color:var(--gray-400); font-size:11px; min-width:20px;"><%= actIdx + 1 %>.</span>
               <span style="flex:1;"><%= act.activity_name %></span>
+              <% if (act.link_url) { %>
+              <a href="<%= act.link_url %>" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="font-size:11px; color:#2563eb; font-weight:400; text-decoration:none;">&#9654; Video</a>
+              <% } %>
               <% if (act.reps) { %>
               <span style="font-size:11px; color:var(--gray-400); font-weight:400;"><%= act.reps %></span>
               <% } %>
@@ -139,6 +142,10 @@
                     <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Instructions</label>
                     <textarea name="instructions" class="form-input" rows="3" style="width:100%; font-size:12px; padding:6px 8px; resize:vertical;"><%= act.instructions || '' %></textarea>
                   </div>
+                  <div>
+                    <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Link (YouTube, video, etc.)</label>
+                    <input type="url" name="link_url" value="<%= act.link_url || '' %>" placeholder="https://youtube.com/watch?v=..." class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
+                  </div>
                   <input type="hidden" name="sort_order" value="<%= act.sort_order %>">
                   <div style="display:flex; gap:8px;">
                     <button type="submit" class="btn btn-confirm" style="font-size:11px; padding:4px 10px;">Update</button>
@@ -163,6 +170,10 @@
               <div style="width:90px;">
                 <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Reps</label>
                 <input type="text" name="reps" placeholder="e.g. 3x10" class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
+              </div>
+              <div style="flex:2; min-width:150px;">
+                <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Link</label>
+                <input type="url" name="link_url" placeholder="https://youtube.com/..." class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
               </div>
               <button type="submit" class="btn btn-secondary" style="font-size:11px; padding:6px 10px; white-space:nowrap;">+ Activity</button>
             </form>
