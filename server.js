@@ -2100,7 +2100,7 @@ app.post('/api/game/:id/chat', async (req, res) => {
 });
 
 app.get('/stats', requireLogin, async (req, res) => {
-  const isAdmin = req.session && req.session.adminId;
+  const isAdmin = req.session && req.session.admin;
   const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
   const parentUser = req.parentUser;
   const teamName = await db.getSetting('team_name') || 'Cal Ripken All-Stars';
@@ -2109,7 +2109,7 @@ app.get('/stats', requireLogin, async (req, res) => {
 
 app.get('/api/player-stats/:playerId', async (req, res) => {
   const playerId = Number(req.params.playerId);
-  const isAdmin = req.session && req.session.adminId;
+  const isAdmin = req.session && req.session.admin;
   const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
   const parentUser = req.parentUser;
 
@@ -2150,7 +2150,7 @@ app.get('/api/player-stats/:playerId', async (req, res) => {
 });
 
 app.get('/api/team-stats', async (req, res) => {
-  const isAdmin = req.session && req.session.adminId;
+  const isAdmin = req.session && req.session.admin;
   const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
   const parentUser = req.parentUser;
   const parentOnly = !isAdmin && !isStaff && parentUser;
