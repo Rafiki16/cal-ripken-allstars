@@ -14,6 +14,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
+});
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.set('trust proxy', 1);
@@ -112,33 +116,38 @@ function clearParentCookie(res) {
 }
 
 app.use(async (req, res, next) => {
-  if (req.session.admin && req.session.impersonatePhone) {
-    const phone = req.session.impersonatePhone;
-    const account = await db.getParentAccountByPhone(phone);
-    if (account) {
-      const linkedPlayers = await db.getLinkedPlayersByAccount(account.id);
-      req.parentUser = { ...account, player_ids: linkedPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
-      req.impersonating = true;
-    }
-  } else {
-    const token = getParentTokenFromReq(req);
-    const phone = verifyParentToken(token);
-    if (phone) {
+  try {
+    if (req.session.admin && req.session.impersonatePhone) {
+      const phone = req.session.impersonatePhone;
       const account = await db.getParentAccountByPhone(phone);
       if (account) {
-        if (account.role === 'fan' && !account.approved) {
-          req.pendingFan = true;
-        } else {
-          const linkedPlayers = await db.getLinkedPlayersByAccount(account.id);
-          req.parentUser = { ...account, player_ids: linkedPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
+        const linkedPlayers = await db.getLinkedPlayersByAccount(account.id);
+        req.parentUser = { ...account, player_ids: linkedPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
+        req.impersonating = true;
+      }
+    } else {
+      const token = getParentTokenFromReq(req);
+      const phone = verifyParentToken(token);
+      if (phone) {
+        const account = await db.getParentAccountByPhone(phone);
+        if (account) {
+          if (account.role === 'fan' && !account.approved) {
+            req.pendingFan = true;
+          } else {
+            const linkedPlayers = await db.getLinkedPlayersByAccount(account.id);
+            req.parentUser = { ...account, player_ids: linkedPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
+          }
         }
       }
     }
+    res.locals.impersonating = req.impersonating || false;
+    res.locals.impersonateName = req.parentUser && req.impersonating ? req.parentUser.display_name : null;
+    res.locals.isFan = req.parentUser && req.parentUser.role === 'fan';
+    next();
+  } catch (err) {
+    console.error('Auth middleware error:', err);
+    next();
   }
-  res.locals.impersonating = req.impersonating || false;
-  res.locals.impersonateName = req.parentUser && req.impersonating ? req.parentUser.display_name : null;
-  res.locals.isFan = req.parentUser && req.parentUser.role === 'fan';
-  next();
 });
 
 app.use(async (req, res, next) => {
@@ -2441,16 +2450,21 @@ app.post('/admin/programs', requireAdmin, async (req, res) => {
 });
 
 app.get('/admin/programs/:id/edit', requireAdmin, async (req, res) => {
-  const program = await db.getProgram(Number(req.params.id));
-  if (!program) return res.redirect('/admin/programs');
-  const days = await db.getProgramDays(program.id);
-  for (const day of days) {
-    day.activities = await db.getProgramActivities(day.id);
+  try {
+    const program = await db.getProgram(Number(req.params.id));
+    if (!program) return res.redirect('/admin/programs');
+    const days = await db.getProgramDays(program.id);
+    for (const day of days) {
+      day.activities = await db.getProgramActivities(day.id);
+    }
+    const assignments = await db.getProgramAssignments(program.id);
+    const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+    const equipment = await db.getProgramEquipment(program.id);
+    res.render('admin-program-edit', { program, days, assignments, players, equipment, success: req.query.success || null, error: req.query.error || null, POSITIONS });
+  } catch (err) {
+    console.error('Program edit page error:', err);
+    res.redirect('/admin/programs?error=' + encodeURIComponent(err.message));
   }
-  const assignments = await db.getProgramAssignments(program.id);
-  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
-  const equipment = await db.getProgramEquipment(program.id);
-  res.render('admin-program-edit', { program, days, assignments, players, equipment, success: req.query.success || null, error: req.query.error || null, POSITIONS });
 });
 
 app.post('/admin/programs/:id/update', requireAdmin, async (req, res) => {
@@ -2536,12 +2550,17 @@ app.post('/admin/programs/:id/equipment/:eqId/delete', requireAdmin, async (req,
 });
 
 app.post('/admin/programs/:id/assign', requireAdmin, async (req, res) => {
-  const playerIds = [].concat(req.body.player_ids || []).filter(Boolean).map(Number);
-  const { start_date, end_date } = req.body;
-  for (const pid of playerIds) {
-    await db.assignProgram({ program_id: Number(req.params.id), player_id: pid, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
+  try {
+    const playerIds = [].concat(req.body.player_ids || []).filter(Boolean).map(Number);
+    const { start_date, end_date } = req.body;
+    for (const pid of playerIds) {
+      await db.assignProgram({ program_id: Number(req.params.id), player_id: pid, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
+    }
+    res.redirect('/admin/programs/' + req.params.id + '/edit?success=' + playerIds.length + '+players+assigned');
+  } catch (err) {
+    console.error('Program assign error:', err);
+    res.redirect('/admin/programs/' + req.params.id + '/edit?error=' + encodeURIComponent(err.message));
   }
-  res.redirect('/admin/programs/' + req.params.id + '/edit?success=' + playerIds.length + '+players+assigned');
 });
 
 app.post('/admin/programs/:id/unassign/:playerId', requireAdmin, async (req, res) => {
@@ -2550,38 +2569,53 @@ app.post('/admin/programs/:id/unassign/:playerId', requireAdmin, async (req, res
 });
 
 app.post('/admin/programs/:id/set-all-dates', requireAdmin, async (req, res) => {
-  const programId = Number(req.params.id);
-  const { start_date, end_date } = req.body;
-  await db.updateAllAssignmentDates(programId, start_date || null, end_date || null);
-  res.redirect('/admin/programs/' + programId + '/edit?success=Dates+updated+for+all+assignments');
+  try {
+    const programId = Number(req.params.id);
+    const { start_date, end_date } = req.body;
+    await db.updateAllAssignmentDates(programId, start_date || null, end_date || null);
+    res.redirect('/admin/programs/' + programId + '/edit?success=Dates+updated+for+all+assignments');
+  } catch (err) {
+    console.error('Set all dates error:', err);
+    res.redirect('/admin/programs/' + req.params.id + '/edit?error=' + encodeURIComponent(err.message));
+  }
 });
 
 app.post('/admin/programs/:id/assign-positions', requireAdmin, async (req, res) => {
-  const programId = Number(req.params.id);
-  const positions = [].concat(req.body.positions || []).filter(p => POSITIONS.includes(p));
-  const { start_date, end_date } = req.body;
-  await db.updateProgramPositions(programId, positions.join(','));
-  const confirmedPlayers = await db.getConfirmedPlayers();
-  let count = 0;
-  for (const player of confirmedPlayers) {
-    if (!player.best_positions) continue;
-    const playerPositions = player.best_positions.split(',').map(p => p.trim()).filter(Boolean);
-    if (playerPositions.some(pp => positions.includes(pp))) {
-      await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
-      count++;
+  try {
+    const programId = Number(req.params.id);
+    const positions = [].concat(req.body.positions || []).filter(p => POSITIONS.includes(p));
+    const { start_date, end_date } = req.body;
+    await db.updateProgramPositions(programId, positions.join(','));
+    const confirmedPlayers = await db.getConfirmedPlayers();
+    let count = 0;
+    for (const player of confirmedPlayers) {
+      if (!player.best_positions) continue;
+      const playerPositions = player.best_positions.split(',').map(p => p.trim()).filter(Boolean);
+      if (playerPositions.some(pp => positions.includes(pp))) {
+        await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
+        count++;
+      }
     }
+    res.redirect('/admin/programs/' + programId + '/edit?success=Positions+saved,+' + count + '+players+matched');
+  } catch (err) {
+    console.error('Assign positions error:', err);
+    res.redirect('/admin/programs/' + req.params.id + '/edit?error=' + encodeURIComponent(err.message));
   }
-  res.redirect('/admin/programs/' + programId + '/edit?success=Positions+saved,+' + count + '+players+matched');
 });
 
 app.post('/admin/programs/:id/assign-all', requireAdmin, async (req, res) => {
-  const programId = Number(req.params.id);
-  const { start_date, end_date } = req.body;
-  const confirmedPlayers = await db.getConfirmedPlayers();
-  for (const player of confirmedPlayers) {
-    await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
+  try {
+    const programId = Number(req.params.id);
+    const { start_date, end_date } = req.body;
+    const confirmedPlayers = await db.getConfirmedPlayers();
+    for (const player of confirmedPlayers) {
+      await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
+    }
+    res.redirect('/admin/programs/' + programId + '/edit?success=All+' + confirmedPlayers.length + '+confirmed+players+assigned');
+  } catch (err) {
+    console.error('Assign all error:', err);
+    res.redirect('/admin/programs/' + req.params.id + '/edit?error=' + encodeURIComponent(err.message));
   }
-  res.redirect('/admin/programs/' + programId + '/edit?success=All+' + confirmedPlayers.length + '+confirmed+players+assigned');
 });
 
 app.post('/programs/:id/complete-day', async (req, res) => {
@@ -2814,6 +2848,12 @@ app.get('/api/stats', async (req, res) => {
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
   res.json({ total: players.length, confirmed, declined, pending, players });
+});
+
+app.use((err, req, res, next) => {
+  console.error('Express error:', err);
+  if (res.headersSent) return next(err);
+  res.status(500).send('Something went wrong. Please go back and try again.');
 });
 
 db.init().then(() => {
