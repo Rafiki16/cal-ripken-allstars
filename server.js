@@ -1181,8 +1181,10 @@ app.get('/admin/event/:id/rsvps', requireAdmin, async (req, res) => {
   });
 });
 
-app.get('/admin/blank-lineup', requireAdmin, (req, res) => {
-  res.render('blank-lineup');
+app.get('/admin/blank-lineup', requireAdmin, async (req, res) => {
+  const players = await db.getAllPlayers();
+  const rosterSize = players.filter(p => p.status === 'confirmed').length;
+  res.render('blank-lineup', { rosterSize });
 });
 
 app.post('/admin/jersey-number', requireAdmin, async (req, res) => {

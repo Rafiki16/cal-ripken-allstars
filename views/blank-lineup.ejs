@@ -51,7 +51,8 @@
       for (var i = 1; i <= 6; i++) html += '<th class="ump-inn-head">' + i + '</th>';
       html += '</tr></thead><tbody>';
 
-      for (var s = 1; s <= 9; s++) {
+      var slots = <%= rosterSize || 9 %>;
+      for (var s = 1; s <= slots; s++) {
         html += '<tr class="ump-empty">';
         html += '<td class="ump-num">' + s + '</td>';
         html += '<td class="ump-player"></td>';
@@ -60,11 +61,6 @@
         html += '</tr>';
       }
       html += '</tbody></table>';
-
-      html += '<div class="ump-eligible">';
-      html += '<div class="ump-eligible-title">Also Eligible</div>';
-      html += '<div style="min-height:40px;"></div>';
-      html += '</div>';
 
       html += '<div class="ump-footer">';
       html += '<div><span>Manager:</span> <span class="ump-sig-line">&nbsp;</span></div>';
