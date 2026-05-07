@@ -521,15 +521,16 @@ app.get('/api/location-search', async (req, res) => {
   }
 });
 
-app.get('/verify', requireLogin, async (req, res) => {
+app.get('/verify', async (req, res) => {
   if (req.parentUser) {
     const players = await db.getPlayersByPhone(req.parentUser.phone);
     for (const p of players) {
       p.assignments = await db.getPlayerAssignments(p.id);
     }
-    return res.render('verify', { players: players.length > 0 ? players : null, phone: req.parentUser.phone, error: null, success: null, parentUser: req.parentUser, hasAccount: true });
+    return res.render('verify', { players: players.length > 0 ? players : null, phone: req.parentUser.phone, error: null, success: null, parentUser: req.parentUser, hasAccount: true, teamName: await db.getSetting('team_name') || 'Cal Ripken All-Stars' });
   }
-  res.render('verify', { players: null, phone: '', error: null, success: null, parentUser: null, hasAccount: false });
+  const teamName = await db.getSetting('team_name') || 'Cal Ripken All-Stars';
+  res.render('verify', { players: null, phone: '', error: null, success: null, parentUser: null, hasAccount: false, teamName });
 });
 
 app.post('/verify', async (req, res) => {
@@ -826,7 +827,7 @@ function requireAdmin(req, res, next) {
 
 function requireLogin(req, res, next) {
   if (req.session.admin || req.parentUser) return next();
-  res.redirect('/parent/login');
+  res.redirect('/verify');
 }
 
 app.get('/admin/login', async (req, res) => {
