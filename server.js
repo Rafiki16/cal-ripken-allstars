@@ -1288,6 +1288,582 @@ app.post('/messages/pin', requireAdmin, async (req, res) => {
   res.redirect('/messages');
 });
 
+// --- Live Scoring System ---
+
+function requireScoreKeeper(req, res, next) {
+  const token = req.query.token || req.session.scoreToken;
+  if (!token) return res.status(401).send('Scoring access required. Use your scorekeeper link.');
+  req.scoreToken = token;
+  if (!req.session.scoreToken) req.session.scoreToken = token;
+  next();
+}
+
+app.get('/admin/scorekeepers', requireAdmin, async (req, res) => {
+  const keepers = await db.getAllScoreKeepers();
+  res.json(keepers);
+});
+
+app.post('/admin/scorekeepers', requireAdmin, async (req, res) => {
+  const { name, phone, email } = req.body;
+  const token = crypto.randomBytes(24).toString('hex');
+  await db.addScoreKeeper({ name, phone: phone || null, email: email || null, access_token: token });
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const link = `${baseUrl}/score/${token}`;
+  if (email && smtpTransport) {
+    try {
+      await smtpTransport.sendMail({
+        from: `"Cal Ripken All-Stars" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: 'Scorekeeper Access — Cal Ripken All-Stars',
+        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;"><div style="background:#1a2744;color:#fff;padding:24px;text-align:center;"><h1 style="margin:0;font-size:22px;">Cal Ripken All-Stars</h1><p style="margin:4px 0 0;color:#d4a843;">Live Scoring Access</p></div><div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;"><p>Hi ${name},</p><p>You've been added as a scorekeeper. Use this link to access the live scoring system whenever there's an active game:</p><p style="text-align:center;margin:24px 0;"><a href="${link}" style="background:#1a2744;color:#fff;padding:14px 36px;border-radius:6px;text-decoration:none;font-weight:bold;">Open Scoring</a></p><p style="font-size:13px;color:#6b7280;">Or copy: ${link}</p></div></div>`
+      });
+    } catch (e) { console.error('Scorekeeper email failed:', e.message); }
+  }
+  if (phone) {
+    await sendSMS(phone, `Cal Ripken All-Stars: You've been added as a scorekeeper. Access live scoring here: ${link}`);
+  }
+  res.json({ ok: true, token, link });
+});
+
+app.post('/admin/scorekeepers/:id/delete', requireAdmin, async (req, res) => {
+  await db.removeScoreKeeper(Number(req.params.id));
+  res.json({ ok: true });
+});
+
+app.get('/score/:token', async (req, res) => {
+  const keeper = await db.getScoreKeeperByToken(req.params.token);
+  if (!keeper) return res.status(403).send('Invalid scorekeeper link.');
+  req.session.scoreToken = req.params.token;
+  const games = await db.getAllActiveGames();
+  if (games.length === 1) return res.redirect('/game/' + games[0].id + '/score?token=' + req.params.token);
+  res.render('score-home', { keeper, games, token: req.params.token });
+});
+
+app.get('/game/setup/:eventId', requireAdmin, async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const subEventId = req.query.sub ? Number(req.query.sub) : null;
+  const event = subEventId ? await db.getSubEvent(subEventId) : await db.getTeamEvent(eventId);
+  if (!event) return res.redirect('/admin');
+  const parentEvent = subEventId ? await db.getTeamEvent(eventId) : null;
+  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  const grid = subEventId
+    ? await db.getLineupGrid(null, subEventId)
+    : await db.getLineupGrid(eventId, null);
+  const existingGame = await db.getLiveGameByEvent(eventId, subEventId);
+  res.render('game-setup', { event, parentEvent, eventId, subEventId, players, grid, existingGame });
+});
+
+app.post('/game/create', requireAdmin, async (req, res) => {
+  const { team_event_id, sub_event_id, home_away, opp_team_name, total_innings, roster, opponent } = req.body;
+  const game = await db.createLiveGame({
+    team_event_id: team_event_id ? Number(team_event_id) : null,
+    sub_event_id: sub_event_id ? Number(sub_event_id) : null,
+    home_away: home_away || 'home',
+    opp_team_name: opp_team_name || 'Opponent',
+    total_innings: total_innings ? Number(total_innings) : 6,
+  });
+  if (roster && Array.isArray(roster)) {
+    await db.setGameRoster(game.id, roster.map((r, i) => ({
+      player_id: Number(r.player_id),
+      batting_order: i + 1,
+      current_position: r.position ? Number(r.position) : null,
+    })));
+  }
+  if (opponent && Array.isArray(opponent)) {
+    await db.setOppRoster(game.id, opponent.map((o, i) => ({
+      player_name: o.name || `Player ${i + 1}`,
+      jersey_number: o.jersey || null,
+      batting_order: i + 1,
+      current_position: o.position ? Number(o.position) : null,
+    })));
+  }
+  res.json({ ok: true, gameId: game.id });
+});
+
+app.post('/game/:id/start', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const game = await db.getLiveGame(id);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  const half = game.home_away === 'home' ? 'top' : 'bot';
+  await db.updateGameState(id, { status: 'active', current_half: half, started_at: new Date().toISOString() });
+  res.json({ ok: true });
+});
+
+app.post('/game/:id/end', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const game = await db.getLiveGame(id);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  await db.updateGameState(id, { status: 'final', ended_at: new Date().toISOString() });
+  if (game.team_event_id) {
+    await db.updateGameScore(game.team_event_id, game.our_score, game.opp_score);
+  }
+  res.json({ ok: true });
+});
+
+app.get('/game/:id/score', requireScoreKeeper, async (req, res) => {
+  const game = await db.getLiveGame(Number(req.params.id));
+  if (!game) return res.status(404).send('Game not found');
+  const keeper = await db.getScoreKeeperByToken(req.scoreToken);
+  const roster = await db.getGameRoster(game.id);
+  const oppRoster = await db.getOppRoster(game.id);
+  res.render('game-score', { game, keeper, roster, oppRoster, token: req.scoreToken });
+});
+
+app.get('/api/game/:id/state', async (req, res) => {
+  const game = await db.getLiveGame(Number(req.params.id));
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  const roster = await db.getGameRoster(game.id);
+  const oppRoster = await db.getOppRoster(game.id);
+  const atBats = await db.getAtBatsForGame(game.id);
+  const currentAB = game.current_at_bat_id ? await db.getAtBat(game.current_at_bat_id) : null;
+  const currentPitches = currentAB ? await db.getPitchesForAtBat(currentAB.id) : [];
+  const undoCount = await db.getUndoCount(game.id);
+
+  const pitchCounts = {};
+  for (const r of roster) {
+    pitchCounts[r.player_id] = await db.getPitchCountForPitcher(game.id, r.player_id);
+  }
+
+  const inningScores = { us: {}, opp: {} };
+  for (const ab of atBats) {
+    if (ab.result) {
+      const key = ab.is_our_team ? 'us' : 'opp';
+      if (!inningScores[key][ab.inning]) inningScores[key][ab.inning] = 0;
+      inningScores[key][ab.inning] += ab.rbi_count || 0;
+    }
+  }
+
+  res.json({ game, roster, oppRoster, atBats, currentAB, currentPitches, undoCount, pitchCounts, inningScores });
+});
+
+app.post('/api/game/:id/pitch', requireScoreKeeper, async (req, res) => {
+  const gameId = Number(req.params.id);
+  const game = await db.getLiveGame(gameId);
+  if (!game || game.status !== 'active') return res.status(400).json({ error: 'Game not active' });
+
+  const { result } = req.body;
+  const prevState = JSON.stringify({ balls: game.balls, strikes: game.strikes, outs: game.outs, current_at_bat_id: game.current_at_bat_id });
+
+  let currentAB = game.current_at_bat_id ? await db.getAtBat(game.current_at_bat_id) : null;
+
+  if (!currentAB) {
+    const weAreBatting = (game.home_away === 'home' && game.current_half === 'bot') || (game.home_away === 'away' && game.current_half === 'top');
+    const roster = weAreBatting ? await db.getGameRoster(gameId) : await db.getOppRoster(gameId);
+    const batterIdx = weAreBatting ? game.current_batter_us : game.current_batter_opp;
+    const batter = roster[batterIdx % roster.length];
+
+    let pitcherName = null, pitcherId = null;
+    if (weAreBatting) {
+      pitcherName = game.opp_pitcher_name;
+    } else {
+      if (game.current_pitcher_us) {
+        const ourRoster = await db.getGameRoster(gameId);
+        const pitcher = ourRoster.find(r => r.player_id === game.current_pitcher_us);
+        if (pitcher) { pitcherName = pitcher.player_name; pitcherId = pitcher.player_id; }
+      }
+    }
+
+    currentAB = await db.createAtBat({
+      game_id: gameId, inning: game.current_inning, half: game.current_half,
+      is_our_team: weAreBatting ? 1 : 0,
+      batter_player_id: weAreBatting ? batter.player_id : null,
+      batter_name: weAreBatting ? batter.player_name : batter.player_name,
+      pitcher_player_id: pitcherId,
+      pitcher_name: pitcherName,
+      batting_order_pos: batterIdx % roster.length,
+      runners_on_base: JSON.stringify({ first: game.runner_first, second: game.runner_second, third: game.runner_third }),
+    });
+    await db.updateGameState(gameId, { current_at_bat_id: currentAB.id, balls: 0, strikes: 0 });
+    game.balls = 0;
+    game.strikes = 0;
+    game.current_at_bat_id = currentAB.id;
+  }
+
+  const weAreBatting = currentAB.is_our_team === 1;
+  const lastPitch = await db.getLastPitchInAB(currentAB.id);
+  const pitchNum = lastPitch ? lastPitch.pitch_number_in_ab + 1 : 1;
+
+  const pitcherId = weAreBatting ? null : (game.current_pitcher_us || null);
+  let pitcherName = null;
+  if (!weAreBatting && pitcherId) {
+    const ourRoster = await db.getGameRoster(gameId);
+    const p = ourRoster.find(r => r.player_id === pitcherId);
+    if (p) pitcherName = p.player_name;
+  } else if (weAreBatting) {
+    pitcherName = game.opp_pitcher_name;
+  }
+
+  await db.recordPitch({
+    game_id: gameId, at_bat_id: currentAB.id, inning: game.current_inning, half: game.current_half,
+    pitcher_player_id: weAreBatting ? null : pitcherId,
+    pitcher_name: pitcherName,
+    batter_player_id: currentAB.batter_player_id,
+    batter_name: currentAB.batter_name,
+    pitch_number_in_ab: pitchNum, result,
+    balls_before: game.balls, strikes_before: game.strikes,
+    runners_on: JSON.stringify({ first: game.runner_first, second: game.runner_second, third: game.runner_third }),
+  });
+
+  let newBalls = game.balls, newStrikes = game.strikes;
+  let abResult = null;
+
+  if (result === 'ball') {
+    newBalls++;
+    if (newBalls >= 4) abResult = 'BB';
+  } else if (result === 'called_strike' || result === 'swinging_strike') {
+    newStrikes++;
+    if (newStrikes >= 3) abResult = 'K';
+  } else if (result === 'foul' || result === 'foul_tip') {
+    if (newStrikes < 2) newStrikes++;
+  } else if (result === 'hbp') {
+    abResult = 'HBP';
+  } else if (result === 'in_play') {
+    abResult = 'in_play';
+  }
+
+  await db.pushUndo(gameId, 'pitch', JSON.stringify({ pitch_result: result, at_bat_id: currentAB.id }), prevState);
+
+  if (abResult && abResult !== 'in_play') {
+    await db.updateAtBat(currentAB.id, { result: abResult, total_pitches: pitchNum, balls_in_count: newBalls, strikes_in_count: newStrikes });
+    const outsOnPlay = abResult === 'K' ? 1 : 0;
+    if (outsOnPlay) await db.updateAtBat(currentAB.id, { outs_on_play: 1 });
+    const newOuts = game.outs + outsOnPlay;
+
+    const updates = { balls: 0, strikes: 0, current_at_bat_id: null };
+    const batterKey = weAreBatting ? 'current_batter_us' : 'current_batter_opp';
+    const roster = weAreBatting ? await db.getGameRoster(gameId) : await db.getOppRoster(gameId);
+    updates[batterKey] = ((weAreBatting ? game.current_batter_us : game.current_batter_opp) + 1) % roster.length;
+
+    if (abResult === 'BB' || abResult === 'HBP') {
+      let rf = game.runner_first, rs = game.runner_second, rt = game.runner_third;
+      if (rf) {
+        if (rs) {
+          if (rt) {
+            updates.our_score = weAreBatting ? game.our_score + 1 : game.our_score;
+            updates.opp_score = weAreBatting ? game.opp_score : game.opp_score + 1;
+            await db.updateAtBat(currentAB.id, { rbi_count: 1 });
+          }
+          rt = rs;
+        }
+        rs = rf;
+      }
+      rf = currentAB.batter_name;
+      updates.runner_first = rf;
+      updates.runner_second = rs;
+      updates.runner_third = rt;
+    }
+
+    if (newOuts >= 3) {
+      const nextHalf = game.current_half === 'top' ? 'bot' : 'top';
+      const nextInning = game.current_half === 'bot' ? game.current_inning + 1 : game.current_inning;
+      updates.outs = 0;
+      updates.current_half = nextHalf;
+      updates.current_inning = nextInning;
+      updates.runner_first = null;
+      updates.runner_second = null;
+      updates.runner_third = null;
+    } else {
+      updates.outs = newOuts;
+    }
+
+    await db.updateGameState(gameId, updates);
+  } else if (abResult === 'in_play') {
+    await db.updateGameState(gameId, { balls: newBalls, strikes: newStrikes });
+  } else {
+    await db.updateGameState(gameId, { balls: newBalls, strikes: newStrikes });
+  }
+
+  res.json({ ok: true, abResult });
+});
+
+app.post('/api/game/:id/at-bat-result', requireScoreKeeper, async (req, res) => {
+  const gameId = Number(req.params.id);
+  const game = await db.getLiveGame(gameId);
+  if (!game || game.status !== 'active') return res.status(400).json({ error: 'Game not active' });
+
+  const { result, hit_type, is_hard_contact, rbi_count, outs_on_play, error_position, error_player_id, fielders_involved } = req.body;
+  const currentAB = game.current_at_bat_id ? await db.getAtBat(game.current_at_bat_id) : null;
+  if (!currentAB) return res.status(400).json({ error: 'No active at-bat' });
+
+  const weAreBatting = currentAB.is_our_team === 1;
+  const prevState = JSON.stringify({ outs: game.outs, our_score: game.our_score, opp_score: game.opp_score, runner_first: game.runner_first, runner_second: game.runner_second, runner_third: game.runner_third, current_at_bat_id: game.current_at_bat_id });
+
+  const lastPitch = await db.getLastPitchInAB(currentAB.id);
+  const totalPitches = lastPitch ? lastPitch.pitch_number_in_ab : 0;
+
+  await db.updateAtBat(currentAB.id, {
+    result, hit_type: hit_type || null, is_hard_contact: is_hard_contact ? 1 : 0,
+    rbi_count: rbi_count || 0, outs_on_play: outs_on_play || 0,
+    error_position: error_position || null, error_player_id: error_player_id || null,
+    fielders_involved: fielders_involved || null,
+    total_pitches: totalPitches, balls_in_count: game.balls, strikes_in_count: game.strikes,
+  });
+
+  await db.pushUndo(gameId, 'at_bat_result', JSON.stringify({ at_bat_id: currentAB.id, result }), prevState);
+
+  const newOuts = game.outs + (outs_on_play || 0);
+  const rbi = rbi_count || 0;
+  const updates = { balls: 0, strikes: 0, current_at_bat_id: null };
+
+  if (rbi > 0) {
+    if (weAreBatting) updates.our_score = game.our_score + rbi;
+    else updates.opp_score = game.opp_score + rbi;
+  }
+
+  const batterKey = weAreBatting ? 'current_batter_us' : 'current_batter_opp';
+  const roster = weAreBatting ? await db.getGameRoster(gameId) : await db.getOppRoster(gameId);
+  updates[batterKey] = ((weAreBatting ? game.current_batter_us : game.current_batter_opp) + 1) % roster.length;
+
+  const runners = { first: null, second: null, third: null };
+  const runnersBody = req.body.runners;
+  if (runnersBody) {
+    runners.first = runnersBody.first || null;
+    runners.second = runnersBody.second || null;
+    runners.third = runnersBody.third || null;
+  }
+  updates.runner_first = runners.first;
+  updates.runner_second = runners.second;
+  updates.runner_third = runners.third;
+
+  if (newOuts >= 3) {
+    const nextHalf = game.current_half === 'top' ? 'bot' : 'top';
+    const nextInning = game.current_half === 'bot' ? game.current_inning + 1 : game.current_inning;
+    updates.outs = 0;
+    updates.current_half = nextHalf;
+    updates.current_inning = nextInning;
+    updates.runner_first = null;
+    updates.runner_second = null;
+    updates.runner_third = null;
+  } else {
+    updates.outs = newOuts;
+  }
+
+  await db.updateGameState(gameId, updates);
+  res.json({ ok: true });
+});
+
+app.post('/api/game/:id/update-state', requireScoreKeeper, async (req, res) => {
+  const gameId = Number(req.params.id);
+  const game = await db.getLiveGame(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+
+  const allowed = ['runner_first', 'runner_second', 'runner_third', 'outs', 'balls', 'strikes',
+    'our_score', 'opp_score', 'current_pitcher_us', 'opp_pitcher_name', 'current_inning', 'current_half'];
+  const updates = {};
+  for (const k of allowed) {
+    if (req.body[k] !== undefined) updates[k] = req.body[k];
+  }
+  if (Object.keys(updates).length > 0) {
+    await db.updateGameState(gameId, updates);
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/game/:id/undo', requireScoreKeeper, async (req, res) => {
+  const gameId = Number(req.params.id);
+  const entry = await db.popUndo(gameId);
+  if (!entry) return res.status(400).json({ error: 'Nothing to undo' });
+
+  if (entry.prev_game_state) {
+    const prev = JSON.parse(entry.prev_game_state);
+    await db.updateGameState(gameId, prev);
+  }
+
+  const data = entry.action_data ? JSON.parse(entry.action_data) : {};
+  if (entry.action_type === 'pitch' && data.at_bat_id) {
+    const lastPitch = await db.getLastPitchInAB(data.at_bat_id);
+    if (lastPitch) await db.deletePitch(lastPitch.id);
+    const ab = await db.getAtBat(data.at_bat_id);
+    if (ab && ab.result) {
+      await db.updateAtBat(data.at_bat_id, { result: null, total_pitches: 0, outs_on_play: 0, rbi_count: 0 });
+    }
+  } else if (entry.action_type === 'at_bat_result' && data.at_bat_id) {
+    await db.updateAtBat(data.at_bat_id, { result: null, hit_type: null, is_hard_contact: null, rbi_count: 0, outs_on_play: 0, error_position: null, error_player_id: null, fielders_involved: null });
+  }
+
+  res.json({ ok: true });
+});
+
+app.post('/api/game/:id/roster-update', requireScoreKeeper, async (req, res) => {
+  const gameId = Number(req.params.id);
+  const { roster_id, position } = req.body;
+  if (roster_id) {
+    await db.updateRosterEntry(Number(roster_id), { current_position: position ? Number(position) : null });
+  }
+  res.json({ ok: true });
+});
+
+app.get('/game/:id/coach', async (req, res) => {
+  const game = await db.getLiveGame(Number(req.params.id));
+  if (!game) return res.status(404).send('Game not found');
+  res.render('game-coach', { game });
+});
+
+app.get('/api/game/:id/dashboard', async (req, res) => {
+  const gameId = Number(req.params.id);
+  const game = await db.getLiveGame(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  const roster = await db.getGameRoster(gameId);
+  const oppRoster = await db.getOppRoster(gameId);
+  const atBats = await db.getAtBatsForGame(gameId);
+  const allPitches = await db.getPitchesForGame(gameId);
+
+  const pitchCounts = {};
+  const pitcherStats = {};
+  for (const r of roster) {
+    const cnt = await db.getPitchCountForPitcher(gameId, r.player_id);
+    pitchCounts[r.player_id] = cnt;
+    if (cnt > 0) {
+      const pp = allPitches.filter(p => p.pitcher_player_id === r.player_id);
+      const strikes = pp.filter(p => ['called_strike','swinging_strike','foul','foul_tip','in_play'].includes(p.result)).length;
+      const battersFaced = [...new Set(pp.map(p => p.at_bat_id))].length;
+      const firstPitchStrikes = pp.filter(p => p.pitch_number_in_ab === 1 && p.result !== 'ball').length;
+      const abIds = [...new Set(pp.map(p => p.at_bat_id))];
+      const relevantABs = atBats.filter(ab => abIds.includes(ab.id) && ab.result);
+      const walks = relevantABs.filter(ab => ab.result === 'BB' || ab.result === 'HBP').length;
+      const ks = relevantABs.filter(ab => ab.result === 'K').length;
+      const twoStrikeABs = relevantABs.filter(ab => ab.strikes_in_count >= 2 || ab.result === 'K').length;
+      const hitInPlay = relevantABs.filter(ab => ab.hit_type);
+      const groundBalls = hitInPlay.filter(ab => ab.hit_type === 'ground').length;
+      const flyBalls = hitInPlay.filter(ab => ab.hit_type === 'fly').length;
+      const hardContact = hitInPlay.filter(ab => ab.is_hard_contact).length;
+      const stressPitches = pp.filter(p => {
+        const ro = p.runners_on ? JSON.parse(p.runners_on) : {};
+        const rISP = ro.second || ro.third;
+        return rISP || p.pitch_number_in_ab >= 5;
+      }).length;
+
+      pitcherStats[r.player_id] = {
+        pitchCount: cnt,
+        strikePercent: cnt > 0 ? Math.round((strikes / cnt) * 100) : 0,
+        firstPitchStrikePercent: battersFaced > 0 ? Math.round((firstPitchStrikes / battersFaced) * 100) : 0,
+        bbHbp: walks,
+        twoStrikePutAway: twoStrikeABs > 0 ? Math.round((ks / twoStrikeABs) * 100) : 0,
+        gfRatio: flyBalls > 0 ? (groundBalls / flyBalls).toFixed(1) : groundBalls > 0 ? 'INF' : '-',
+        hardContactPercent: hitInPlay.length > 0 ? Math.round((hardContact / hitInPlay.length) * 100) : 0,
+        stressPitches,
+        battersFaced,
+      };
+    }
+  }
+
+  const batterStats = {};
+  for (const r of roster) {
+    const playerABs = atBats.filter(ab => ab.batter_player_id === r.player_id && ab.result);
+    const hits = playerABs.filter(ab => ['1B','2B','3B','HR'].includes(ab.result)).length;
+    const abs = playerABs.filter(ab => !['BB','HBP','SAC'].includes(ab.result)).length;
+    const rbis = playerABs.reduce((s, ab) => s + (ab.rbi_count || 0), 0);
+    const ks = playerABs.filter(ab => ab.result === 'K').length;
+    const bbs = playerABs.filter(ab => ab.result === 'BB' || ab.result === 'HBP').length;
+    batterStats[r.player_id] = { hits, abs, rbis, ks, bbs, avg: abs > 0 ? (hits / abs).toFixed(3) : '-' };
+  }
+
+  const errors = atBats.filter(ab => ab.error_player_id).map(ab => ({
+    player_id: ab.error_player_id,
+    position: ab.error_position,
+    inning: ab.inning,
+  }));
+
+  const inningScores = { us: {}, opp: {} };
+  for (const ab of atBats) {
+    if (ab.result && ab.rbi_count > 0) {
+      const key = ab.is_our_team ? 'us' : 'opp';
+      if (!inningScores[key][ab.inning]) inningScores[key][ab.inning] = 0;
+      inningScores[key][ab.inning] += ab.rbi_count;
+    }
+  }
+
+  res.json({ game, roster, oppRoster, batterStats, pitcherStats, pitchCounts, errors, inningScores });
+});
+
+app.get('/game/:id/stream', async (req, res) => {
+  const game = await db.getLiveGame(Number(req.params.id));
+  if (!game) return res.status(404).send('Game not found');
+  res.render('game-stream', { game });
+});
+
+app.get('/api/game/:id/chat', async (req, res) => {
+  const gameId = Number(req.params.id);
+  const afterId = req.query.after ? Number(req.query.after) : null;
+  const messages = await db.getGameChat(gameId, afterId);
+  res.json(messages);
+});
+
+app.post('/api/game/:id/chat', async (req, res) => {
+  const gameId = Number(req.params.id);
+  const { author_name, message } = req.body;
+  if (!author_name || !message) return res.status(400).json({ error: 'Name and message required' });
+  const msg = await db.addGameChat({ game_id: gameId, author_name, message });
+  res.json(msg);
+});
+
+app.get('/stats', async (req, res) => {
+  const isAdmin = req.session && req.session.adminId;
+  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
+  const parentUser = req.parentUser;
+  res.render('player-stats', { isAdmin: !!isAdmin, isStaff: !!isStaff, parentUser: parentUser || null });
+});
+
+app.get('/api/player-stats/:playerId', async (req, res) => {
+  const playerId = Number(req.params.playerId);
+  const isAdmin = req.session && req.session.adminId;
+  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
+  const parentUser = req.parentUser;
+
+  if (!isAdmin && !isStaff) {
+    if (!parentUser || !parentUser.player_ids.includes(playerId)) {
+      return res.status(403).json({ error: 'Not authorized to view this player' });
+    }
+  }
+
+  const player = await db.getPlayer(playerId);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  const atBats = await db.getAtBatsForPlayer(playerId);
+  const pitches = await db.getPitchesForPitcherSeason(playerId);
+
+  const completed = atBats.filter(ab => ab.result);
+  const hits = completed.filter(ab => ['1B','2B','3B','HR'].includes(ab.result)).length;
+  const abs = completed.filter(ab => !['BB','HBP','SAC'].includes(ab.result)).length;
+  const rbis = completed.reduce((s, ab) => s + (ab.rbi_count || 0), 0);
+  const bbs = completed.filter(ab => ab.result === 'BB' || ab.result === 'HBP').length;
+  const ks = completed.filter(ab => ab.result === 'K').length;
+  const doubles = completed.filter(ab => ab.result === '2B').length;
+  const triples = completed.filter(ab => ab.result === '3B').length;
+  const hrs = completed.filter(ab => ab.result === 'HR').length;
+
+  const batting = { hits, abs, avg: abs > 0 ? (hits / abs).toFixed(3) : '-', rbis, bbs, ks, doubles, triples, hrs, pa: completed.length };
+  const pitching = { totalPitches: pitches.length };
+
+  if (pitches.length > 0) {
+    const strikes = pitches.filter(p => ['called_strike','swinging_strike','foul','foul_tip','in_play'].includes(p.result)).length;
+    pitching.strikePercent = Math.round((strikes / pitches.length) * 100);
+    const gameGroups = {};
+    for (const p of pitches) { if (!gameGroups[p.game_id]) gameGroups[p.game_id] = []; gameGroups[p.game_id].push(p); }
+    pitching.games = Object.keys(gameGroups).length;
+  }
+
+  res.json({ player: { id: player.id, player_name: player.player_name, jersey_number: player.jersey_number }, batting, pitching });
+});
+
+app.get('/api/team-stats', async (req, res) => {
+  const isAdmin = req.session && req.session.adminId;
+  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
+  if (!isAdmin && !isStaff) return res.status(403).json({ error: 'Admin or staff only' });
+
+  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  const stats = [];
+  for (const p of players) {
+    const atBats = await db.getAtBatsForPlayer(p.id);
+    const completed = atBats.filter(ab => ab.result);
+    const hits = completed.filter(ab => ['1B','2B','3B','HR'].includes(ab.result)).length;
+    const abs = completed.filter(ab => !['BB','HBP','SAC'].includes(ab.result)).length;
+    const rbis = completed.reduce((s, ab) => s + (ab.rbi_count || 0), 0);
+    stats.push({ player_id: p.id, player_name: p.player_name, jersey_number: p.jersey_number, hits, abs, avg: abs > 0 ? (hits / abs).toFixed(3) : '-', rbis, pa: completed.length });
+  }
+  res.json(stats);
+});
+
 // --- Staff View (read-only) ---
 app.get('/staff', (req, res) => {
   res.render('staff-login', { error: null });

@@ -394,8 +394,9 @@
       <% } else { %>
         <p style="color:#6b7280; margin-top:16px; font-size:14px;">No events scheduled yet.</p>
       <% } %>
-      <div style="margin-top:12px;">
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
         <a href="/admin/blank-lineup" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:8px 16px;" target="_blank">Print Blank Lineup Cards</a>
+        <a href="/stats" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:8px 16px;">Player Stats</a>
       </div>
     </div>
 
@@ -707,6 +708,77 @@
       document.getElementById('edit-te-modal').addEventListener('click', function(e) {
         if (e.target === this) closeEditTE();
       });
+    </script>
+
+    <!-- Scorekeeper Management -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Scorekeepers</h2>
+      <p class="section-hint">Scorekeepers can access the live scoring interface via a unique link sent to their phone/email.</p>
+
+      <div id="sk-list" style="margin-bottom:16px;"></div>
+
+      <div class="add-player-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:1;min-width:120px;">
+          <label style="font-size:12px;color:#6b7280;">Name</label>
+          <input type="text" id="sk-name" placeholder="Name" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+        </div>
+        <div style="flex:1;min-width:120px;">
+          <label style="font-size:12px;color:#6b7280;">Phone</label>
+          <input type="text" id="sk-phone" placeholder="Phone" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+        </div>
+        <div style="flex:1;min-width:160px;">
+          <label style="font-size:12px;color:#6b7280;">Email</label>
+          <input type="text" id="sk-email" placeholder="Email" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+        </div>
+        <button type="button" class="btn btn-confirm" onclick="addScoreKeeper()" style="white-space:nowrap;">Add Scorekeeper</button>
+      </div>
+    </div>
+
+    <script>
+    function loadScoreKeepers() {
+      fetch('/admin/scorekeepers').then(r => r.json()).then(list => {
+        if (list.length === 0) {
+          document.getElementById('sk-list').innerHTML = '<p style="color:#6b7280;font-size:13px;">No scorekeepers added yet.</p>';
+          return;
+        }
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+        html += '<tr style="background:#f3f4f6;"><th style="padding:6px 8px;text-align:left;">Name</th><th>Phone</th><th>Email</th><th></th></tr>';
+        list.forEach(sk => {
+          html += '<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:6px 8px;"><strong>' + sk.name + '</strong></td>';
+          html += '<td style="padding:6px 8px;">' + (sk.phone || '-') + '</td>';
+          html += '<td style="padding:6px 8px;">' + (sk.email || '-') + '</td>';
+          html += '<td style="padding:6px 8px;"><button onclick="removeScoreKeeper(' + sk.id + ')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;">Remove</button></td></tr>';
+        });
+        html += '</table>';
+        document.getElementById('sk-list').innerHTML = html;
+      });
+    }
+    function addScoreKeeper() {
+      const name = document.getElementById('sk-name').value.trim();
+      if (!name) return alert('Name is required');
+      fetch('/admin/scorekeepers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          phone: document.getElementById('sk-phone').value.trim(),
+          email: document.getElementById('sk-email').value.trim()
+        })
+      }).then(r => r.json()).then(data => {
+        if (data.ok) {
+          document.getElementById('sk-name').value = '';
+          document.getElementById('sk-phone').value = '';
+          document.getElementById('sk-email').value = '';
+          loadScoreKeepers();
+          alert('Scorekeeper added! Link: ' + data.link);
+        }
+      });
+    }
+    function removeScoreKeeper(id) {
+      if (!confirm('Remove this scorekeeper?')) return;
+      fetch('/admin/scorekeepers/' + id + '/delete', { method: 'POST' }).then(() => loadScoreKeepers());
+    }
+    loadScoreKeepers();
     </script>
 
     <!-- Staff Management -->

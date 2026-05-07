@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scorekeeper &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>Cal Ripken All-Stars</h1>
+    <p class="subtitle">Live Scoring</p>
+  </header>
+  <main class="container" style="max-width:600px;">
+    <div class="card" style="text-align:center;">
+      <h2>Welcome, <%= keeper.name %></h2>
+      <p>Select an active game to score:</p>
+    </div>
+    <% if (games.length === 0) { %>
+      <div class="card" style="text-align:center;color:#6b7280;">
+        <p>No active games right now. An admin needs to set up a game first.</p>
+      </div>
+    <% } else { %>
+      <% games.forEach(function(g) { %>
+        <a href="/game/<%= g.id %>/score?token=<%= token %>" class="card" style="display:block;text-decoration:none;color:inherit;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <strong>vs <%= g.opp_team_name %></strong>
+              <div style="font-size:13px;color:#6b7280;">
+                <%= g.status === 'setup' ? 'Setting up' : 'In progress' %>
+                <% if (g.status === 'active') { %>
+                  &mdash; <%= g.current_half === 'top' ? 'Top' : 'Bot' %> <%= g.current_inning %>
+                <% } %>
+              </div>
+            </div>
+            <div style="font-size:24px;font-weight:bold;">
+              <%= g.our_score %> - <%= g.opp_score %>
+            </div>
+          </div>
+        </a>
+      <% }); %>
+    <% } %>
+  </main>
+</body>
+</html>

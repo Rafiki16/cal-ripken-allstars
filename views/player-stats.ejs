@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Player Stats &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#f9fafb; }
+    .stats-header { background:#1a2744; color:#fff; padding:20px; text-align:center; }
+    .stats-header h1 { margin:0; font-size:22px; }
+    .stats-header p { margin:4px 0 0; color:#d4a843; }
+    .stats-wrap { max-width:800px; margin:0 auto; padding:16px; }
+    .stats-card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:16px; }
+    .stats-card h2 { margin:0 0 16px; color:#1a2744; font-size:18px; }
+    .team-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .team-table th { background:#f3f4f6; padding:8px 6px; text-align:left; font-size:11px; text-transform:uppercase; color:#6b7280; border-bottom:2px solid #e5e7eb; }
+    .team-table td { padding:7px 6px; border-bottom:1px solid #f3f4f6; }
+    .team-table tr:hover { background:#f0fdf4; cursor:pointer; }
+    .player-detail { display:none; }
+    .player-detail.visible { display:block; }
+    .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:12px; }
+    .stat-box { text-align:center; padding:12px; background:#f9fafb; border-radius:6px; }
+    .stat-box .num { font-size:24px; font-weight:bold; color:#1a2744; }
+    .stat-box .lbl { font-size:11px; color:#6b7280; text-transform:uppercase; }
+    .back-link { display:inline-block; margin-bottom:12px; color:#1a2744; text-decoration:none; }
+    .select-prompt { text-align:center; color:#6b7280; padding:40px 20px; }
+  </style>
+</head>
+<body>
+  <div class="stats-header">
+    <h1>Player Stats</h1>
+    <p>Cal Ripken All-Stars &middot; Summer 2026</p>
+  </div>
+
+  <div class="stats-wrap">
+    <a href="/" class="back-link">&larr; Home</a>
+
+    <% if (isAdmin || isStaff) { %>
+      <div class="stats-card" id="team-stats-card">
+        <h2>Team Batting</h2>
+        <table class="team-table">
+          <thead><tr><th>Player</th><th>PA</th><th>AB</th><th>H</th><th>AVG</th><th>RBI</th></tr></thead>
+          <tbody id="team-body"><tr><td colspan="6" style="text-align:center;color:#6b7280;">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <div class="stats-card">
+      <h2 id="player-stats-title">
+        <% if (parentUser && parentUser.player_ids && parentUser.player_ids.length > 0) { %>
+          Your Player Stats
+        <% } else if (isAdmin || isStaff) { %>
+          Click a player above for details
+        <% } else { %>
+          Log in to see your stats
+        <% } %>
+      </h2>
+      <div id="player-detail">
+        <% if (parentUser && parentUser.player_ids && parentUser.player_ids.length > 0) { %>
+          <div id="auto-load-players" data-ids="<%= JSON.stringify(parentUser.player_ids) %>"></div>
+        <% } else if (!isAdmin && !isStaff) { %>
+          <p class="select-prompt">
+            <a href="/parent/login" style="color:#1a2744;font-weight:bold;">Log in as a parent</a> to view your child's stats.
+          </p>
+        <% } else { %>
+          <p class="select-prompt">Select a player from the team table above.</p>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  var isAdmin = <%= isAdmin ? 'true' : 'false' %>;
+  var isStaff = <%= isStaff ? 'true' : 'false' %>;
+
+  function loadTeamStats() {
+    if (!isAdmin && !isStaff) return;
+    fetch('/api/team-stats' + (isStaff ? '?phone=' + new URLSearchParams(window.location.search).get('phone') : '')).then(function(r) { return r.json(); }).then(function(stats) {
+      var html = '';
+      stats.sort(function(a, b) { return parseFloat(b.avg === '-' ? 0 : b.avg) - parseFloat(a.avg === '-' ? 0 : a.avg); });
+      stats.forEach(function(s) {
+        html += '<tr onclick="loadPlayer(' + s.player_id + ')" style="cursor:pointer;">';
+        html += '<td><strong>' + s.player_name + '</strong>' + (s.jersey_number ? ' #' + s.jersey_number : '') + '</td>';
+        html += '<td>' + s.pa + '</td><td>' + s.abs + '</td><td>' + s.hits + '</td>';
+        html += '<td>' + s.avg + '</td><td>' + s.rbis + '</td></tr>';
+      });
+      document.getElementById('team-body').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#6b7280;">No stats yet</td></tr>';
+    });
+  }
+
+  function loadPlayer(id) {
+    var url = '/api/player-stats/' + id;
+    if (isStaff) url += '?phone=' + new URLSearchParams(window.location.search).get('phone');
+    fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.error) return;
+      document.getElementById('player-stats-title').textContent = d.player.player_name + (d.player.jersey_number ? ' #' + d.player.jersey_number : '');
+      var html = '<h3 style="margin:16px 0 8px;color:#1a2744;">Batting</h3>';
+      html += '<div class="stat-grid">';
+      html += '<div class="stat-box"><div class="num">' + d.batting.avg + '</div><div class="lbl">AVG</div></div>';
+      html += '<div class="stat-box"><div class="num">' + d.batting.hits + '</div><div class="lbl">Hits</div></div>';
+      html += '<div class="stat-box"><div class="num">' + d.batting.abs + '</div><div class="lbl">AB</div></div>';
+      html += '<div class="stat-box"><div class="num">' + d.batting.rbis + '</div><div class="lbl">RBI</div></div>';
+      html += '<div class="stat-box"><div class="num">' + d.batting.bbs + '</div><div class="lbl">BB</div></div>';
+      html += '<div class="stat-box"><div class="num">' + d.batting.ks + '</div><div class="lbl">K</div></div>';
+      html += '<div class="stat-box"><div class="num">' + d.batting.doubles + '</div><div class="lbl">2B</div></div>';
+      html += '<div class="stat-box"><div class="num">' + d.batting.triples + '</div><div class="lbl">3B</div></div>';
+      html += '<div class="stat-box"><div class="num">' + d.batting.hrs + '</div><div class="lbl">HR</div></div>';
+      html += '</div>';
+      if (d.pitching.totalPitches > 0) {
+        html += '<h3 style="margin:16px 0 8px;color:#1a2744;">Pitching</h3>';
+        html += '<div class="stat-grid">';
+        html += '<div class="stat-box"><div class="num">' + d.pitching.totalPitches + '</div><div class="lbl">Total Pitches</div></div>';
+        if (d.pitching.strikePercent !== undefined) html += '<div class="stat-box"><div class="num">' + d.pitching.strikePercent + '%</div><div class="lbl">Strike %</div></div>';
+        if (d.pitching.games !== undefined) html += '<div class="stat-box"><div class="num">' + d.pitching.games + '</div><div class="lbl">Games</div></div>';
+        html += '</div>';
+      }
+      document.getElementById('player-detail').innerHTML = html;
+    });
+  }
+
+  loadTeamStats();
+
+  var autoLoad = document.getElementById('auto-load-players');
+  if (autoLoad) {
+    var ids = JSON.parse(autoLoad.dataset.ids);
+    if (ids.length > 0) loadPlayer(ids[0]);
+  }
+  </script>
+</body>
+</html>

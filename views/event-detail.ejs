@@ -597,6 +597,7 @@
           <button type="button" class="btn" onclick="printLineup('umpire')" style="margin-left:8px;">Print for Umpires</button>
           <button type="button" class="btn" onclick="printLineup('full')" style="margin-left:8px;">Print Full Lineup</button>
           <button type="button" class="btn" onclick="clearEntireLineup()" style="margin-left:8px; background:#dc2626; color:white;">Clear All</button>
+          <a href="/game/setup/<%= event.id %><%= typeof subEventId !== 'undefined' && subEventId ? '?sub=' + subEventId : '' %>" class="btn" style="margin-left:8px; background:#16a34a; color:white; text-decoration:none;">Start Live Game</a>
           <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer; margin-left:12px;">
             <input type="checkbox" id="batting-nine-cb" <%= (event.batting_all || 0) === 0 ? 'checked' : '' %>> Batting 9
           </label>

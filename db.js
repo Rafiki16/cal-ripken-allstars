@@ -228,6 +228,142 @@ async function init() {
     try { await pool.query('ALTER TABLE team_events ADD COLUMN opponent_score INTEGER'); } catch (e) { /* exists */ }
     try { await pool.query('ALTER TABLE team_messages ADD COLUMN parent_id INTEGER REFERENCES team_messages(id) ON DELETE CASCADE'); } catch (e) { /* exists */ }
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS score_keepers (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        phone TEXT,
+        email TEXT,
+        access_token TEXT NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS live_games (
+        id SERIAL PRIMARY KEY,
+        team_event_id INTEGER REFERENCES team_events(id) ON DELETE SET NULL,
+        sub_event_id INTEGER REFERENCES tournament_sub_events(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'setup',
+        home_away TEXT NOT NULL DEFAULT 'home',
+        current_inning INTEGER NOT NULL DEFAULT 1,
+        current_half TEXT NOT NULL DEFAULT 'top',
+        outs INTEGER NOT NULL DEFAULT 0,
+        our_score INTEGER NOT NULL DEFAULT 0,
+        opp_score INTEGER NOT NULL DEFAULT 0,
+        balls INTEGER NOT NULL DEFAULT 0,
+        strikes INTEGER NOT NULL DEFAULT 0,
+        runner_first TEXT,
+        runner_second TEXT,
+        runner_third TEXT,
+        current_batter_us INTEGER NOT NULL DEFAULT 0,
+        current_batter_opp INTEGER NOT NULL DEFAULT 0,
+        current_pitcher_us INTEGER,
+        opp_pitcher_name TEXT,
+        opp_team_name TEXT NOT NULL DEFAULT 'Opponent',
+        current_at_bat_id INTEGER,
+        total_innings INTEGER NOT NULL DEFAULT 6,
+        started_at TIMESTAMPTZ,
+        ended_at TIMESTAMPTZ
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS game_roster (
+        id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        batting_order INTEGER NOT NULL,
+        current_position INTEGER,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        entered_inning INTEGER NOT NULL DEFAULT 1,
+        exited_inning INTEGER
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS opponent_roster (
+        id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        player_name TEXT NOT NULL,
+        jersey_number TEXT,
+        batting_order INTEGER NOT NULL,
+        current_position INTEGER,
+        is_active INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS at_bats (
+        id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        inning INTEGER NOT NULL,
+        half TEXT NOT NULL,
+        is_our_team INTEGER NOT NULL,
+        batter_player_id INTEGER,
+        batter_name TEXT NOT NULL,
+        pitcher_player_id INTEGER,
+        pitcher_name TEXT,
+        batting_order_pos INTEGER NOT NULL,
+        result TEXT,
+        hit_type TEXT,
+        is_hard_contact INTEGER,
+        rbi_count INTEGER NOT NULL DEFAULT 0,
+        outs_on_play INTEGER NOT NULL DEFAULT 0,
+        fielders_involved TEXT,
+        error_position INTEGER,
+        error_player_id INTEGER,
+        total_pitches INTEGER NOT NULL DEFAULT 0,
+        balls_in_count INTEGER NOT NULL DEFAULT 0,
+        strikes_in_count INTEGER NOT NULL DEFAULT 0,
+        runners_on_base TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pitches (
+        id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        at_bat_id INTEGER NOT NULL REFERENCES at_bats(id) ON DELETE CASCADE,
+        inning INTEGER NOT NULL,
+        half TEXT NOT NULL,
+        pitcher_player_id INTEGER,
+        pitcher_name TEXT,
+        batter_player_id INTEGER,
+        batter_name TEXT,
+        pitch_number_in_ab INTEGER NOT NULL,
+        pitch_number_game INTEGER NOT NULL DEFAULT 0,
+        result TEXT NOT NULL,
+        balls_before INTEGER NOT NULL DEFAULT 0,
+        strikes_before INTEGER NOT NULL DEFAULT 0,
+        runners_on TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS game_chat (
+        id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        author_name TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS game_undo_log (
+        id SERIAL PRIMARY KEY,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        action_type TEXT NOT NULL,
+        action_data TEXT,
+        prev_game_state TEXT,
+        sequence_num INTEGER NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -369,6 +505,138 @@ async function init() {
       getAllSavedLocations: async () => (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
       addSavedLocation: async (name, address) => pool.query('INSERT INTO saved_locations (location_name, address) VALUES ($1, $2)', [name, address]),
       removeSavedLocation: async (id) => pool.query('DELETE FROM saved_locations WHERE id = $1', [id]),
+
+      getAllScoreKeepers: async () => (await pool.query('SELECT * FROM score_keepers ORDER BY name')).rows,
+      addScoreKeeper: async (sk) => {
+        const r = await pool.query('INSERT INTO score_keepers (name, phone, email, access_token) VALUES ($1,$2,$3,$4) RETURNING id', [sk.name, sk.phone || null, sk.email || null, sk.access_token]);
+        return r.rows[0];
+      },
+      removeScoreKeeper: async (id) => pool.query('DELETE FROM score_keepers WHERE id = $1', [id]),
+      getScoreKeeperByToken: async (token) => (await pool.query('SELECT * FROM score_keepers WHERE access_token = $1', [token])).rows[0] || null,
+
+      createLiveGame: async (g) => {
+        const r = await pool.query(
+          'INSERT INTO live_games (team_event_id, sub_event_id, home_away, opp_team_name, total_innings, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+          [g.team_event_id || null, g.sub_event_id || null, g.home_away, g.opp_team_name, g.total_innings || 6, 'setup']
+        );
+        return r.rows[0];
+      },
+      getLiveGame: async (id) => (await pool.query('SELECT * FROM live_games WHERE id = $1', [id])).rows[0] || null,
+      getLiveGameByEvent: async (eventId, subEventId) => {
+        if (subEventId) return (await pool.query('SELECT * FROM live_games WHERE sub_event_id = $1 ORDER BY id DESC LIMIT 1', [subEventId])).rows[0] || null;
+        return (await pool.query('SELECT * FROM live_games WHERE team_event_id = $1 AND sub_event_id IS NULL ORDER BY id DESC LIMIT 1', [eventId])).rows[0] || null;
+      },
+      updateGameState: async (id, state) => {
+        const fields = [];
+        const vals = [];
+        let idx = 1;
+        for (const [k, v] of Object.entries(state)) {
+          fields.push(`${k} = $${idx}`);
+          vals.push(v);
+          idx++;
+        }
+        vals.push(id);
+        await pool.query(`UPDATE live_games SET ${fields.join(', ')} WHERE id = $${idx}`, vals);
+      },
+      getAllActiveGames: async () => (await pool.query("SELECT * FROM live_games WHERE status IN ('setup','active') ORDER BY id DESC")).rows,
+
+      setGameRoster: async (gameId, entries) => {
+        await pool.query('DELETE FROM game_roster WHERE game_id = $1', [gameId]);
+        for (const e of entries) {
+          await pool.query('INSERT INTO game_roster (game_id, player_id, batting_order, current_position, is_active, entered_inning) VALUES ($1,$2,$3,$4,$5,$6)',
+            [gameId, e.player_id, e.batting_order, e.current_position || null, e.is_active !== undefined ? e.is_active : 1, e.entered_inning || 1]);
+        }
+      },
+      getGameRoster: async (gameId) => (await pool.query('SELECT gr.*, p.player_name, p.jersey_number FROM game_roster gr JOIN players p ON gr.player_id = p.id WHERE gr.game_id = $1 ORDER BY gr.batting_order', [gameId])).rows,
+      updateRosterEntry: async (id, data) => {
+        const fields = [];
+        const vals = [];
+        let idx = 1;
+        for (const [k, v] of Object.entries(data)) {
+          fields.push(`${k} = $${idx}`);
+          vals.push(v);
+          idx++;
+        }
+        vals.push(id);
+        await pool.query(`UPDATE game_roster SET ${fields.join(', ')} WHERE id = $${idx}`, vals);
+      },
+
+      setOppRoster: async (gameId, entries) => {
+        await pool.query('DELETE FROM opponent_roster WHERE game_id = $1', [gameId]);
+        for (const e of entries) {
+          await pool.query('INSERT INTO opponent_roster (game_id, player_name, jersey_number, batting_order, current_position, is_active) VALUES ($1,$2,$3,$4,$5,$6)',
+            [gameId, e.player_name, e.jersey_number || null, e.batting_order, e.current_position || null, e.is_active !== undefined ? e.is_active : 1]);
+        }
+      },
+      getOppRoster: async (gameId) => (await pool.query('SELECT * FROM opponent_roster WHERE game_id = $1 ORDER BY batting_order', [gameId])).rows,
+
+      createAtBat: async (ab) => {
+        const r = await pool.query(
+          `INSERT INTO at_bats (game_id, inning, half, is_our_team, batter_player_id, batter_name, pitcher_player_id, pitcher_name, batting_order_pos, runners_on_base)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+          [ab.game_id, ab.inning, ab.half, ab.is_our_team, ab.batter_player_id || null, ab.batter_name, ab.pitcher_player_id || null, ab.pitcher_name || null, ab.batting_order_pos, ab.runners_on_base || null]
+        );
+        return r.rows[0];
+      },
+      updateAtBat: async (id, data) => {
+        const fields = [];
+        const vals = [];
+        let idx = 1;
+        for (const [k, v] of Object.entries(data)) {
+          fields.push(`${k} = $${idx}`);
+          vals.push(v);
+          idx++;
+        }
+        vals.push(id);
+        await pool.query(`UPDATE at_bats SET ${fields.join(', ')} WHERE id = $${idx}`, vals);
+      },
+      getAtBat: async (id) => (await pool.query('SELECT * FROM at_bats WHERE id = $1', [id])).rows[0] || null,
+      getAtBatsForGame: async (gameId) => (await pool.query('SELECT * FROM at_bats WHERE game_id = $1 ORDER BY id', [gameId])).rows,
+      getAtBatsForPlayer: async (playerId) => (await pool.query('SELECT ab.*, lg.opp_team_name, lg.started_at FROM at_bats ab JOIN live_games lg ON ab.game_id = lg.id WHERE ab.batter_player_id = $1 AND ab.result IS NOT NULL ORDER BY ab.id', [playerId])).rows,
+      deleteAtBat: async (id) => pool.query('DELETE FROM at_bats WHERE id = $1', [id]),
+
+      recordPitch: async (p) => {
+        const r = await pool.query(
+          `INSERT INTO pitches (game_id, at_bat_id, inning, half, pitcher_player_id, pitcher_name, batter_player_id, batter_name, pitch_number_in_ab, pitch_number_game, result, balls_before, strikes_before, runners_on)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+          [p.game_id, p.at_bat_id, p.inning, p.half, p.pitcher_player_id || null, p.pitcher_name || null, p.batter_player_id || null, p.batter_name || null, p.pitch_number_in_ab, p.pitch_number_game || 0, p.result, p.balls_before || 0, p.strikes_before || 0, p.runners_on || null]
+        );
+        return r.rows[0];
+      },
+      getPitchesForAtBat: async (atBatId) => (await pool.query('SELECT * FROM pitches WHERE at_bat_id = $1 ORDER BY pitch_number_in_ab', [atBatId])).rows,
+      getPitchesForGame: async (gameId) => (await pool.query('SELECT * FROM pitches WHERE game_id = $1 ORDER BY id', [gameId])).rows,
+      getPitchCountForPitcher: async (gameId, playerId) => {
+        const r = await pool.query('SELECT COUNT(*)::int as cnt FROM pitches WHERE game_id = $1 AND pitcher_player_id = $2', [gameId, playerId]);
+        return r.rows[0].cnt;
+      },
+      getLastPitchInAB: async (atBatId) => (await pool.query('SELECT * FROM pitches WHERE at_bat_id = $1 ORDER BY pitch_number_in_ab DESC LIMIT 1', [atBatId])).rows[0] || null,
+      deletePitch: async (id) => pool.query('DELETE FROM pitches WHERE id = $1', [id]),
+      getPitchesForPitcherSeason: async (playerId) => (await pool.query('SELECT p.*, lg.started_at FROM pitches p JOIN live_games lg ON p.game_id = lg.id WHERE p.pitcher_player_id = $1 ORDER BY p.id', [playerId])).rows,
+
+      addGameChat: async (msg) => {
+        const r = await pool.query('INSERT INTO game_chat (game_id, author_name, message) VALUES ($1,$2,$3) RETURNING *', [msg.game_id, msg.author_name, msg.message]);
+        return r.rows[0];
+      },
+      getGameChat: async (gameId, afterId) => {
+        if (afterId) return (await pool.query('SELECT * FROM game_chat WHERE game_id = $1 AND id > $2 ORDER BY id', [gameId, afterId])).rows;
+        return (await pool.query('SELECT * FROM game_chat WHERE game_id = $1 ORDER BY id DESC LIMIT 50', [gameId])).rows.reverse();
+      },
+
+      pushUndo: async (gameId, actionType, actionData, prevState) => {
+        const seq = await pool.query('SELECT COALESCE(MAX(sequence_num), 0) + 1 as next FROM game_undo_log WHERE game_id = $1', [gameId]);
+        await pool.query('INSERT INTO game_undo_log (game_id, action_type, action_data, prev_game_state, sequence_num) VALUES ($1,$2,$3,$4,$5)',
+          [gameId, actionType, actionData || null, prevState || null, seq.rows[0].next]);
+      },
+      popUndo: async (gameId) => {
+        const r = await pool.query('SELECT * FROM game_undo_log WHERE game_id = $1 ORDER BY sequence_num DESC LIMIT 1', [gameId]);
+        if (r.rows.length === 0) return null;
+        await pool.query('DELETE FROM game_undo_log WHERE id = $1', [r.rows[0].id]);
+        return r.rows[0];
+      },
+      getUndoCount: async (gameId) => {
+        const r = await pool.query('SELECT COUNT(*)::int as cnt FROM game_undo_log WHERE game_id = $1', [gameId]);
+        return r.rows[0].cnt;
+      },
     };
   } else {
     const Database = require('better-sqlite3');
@@ -559,6 +827,142 @@ async function init() {
     try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN opponent_score INTEGER'); } catch (e) { /* exists */ }
     try { sqliteDb.exec('ALTER TABLE team_messages ADD COLUMN parent_id INTEGER REFERENCES team_messages(id) ON DELETE CASCADE'); } catch (e) { /* exists */ }
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS score_keepers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT,
+        email TEXT,
+        access_token TEXT NOT NULL UNIQUE,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS live_games (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_event_id INTEGER REFERENCES team_events(id) ON DELETE SET NULL,
+        sub_event_id INTEGER REFERENCES tournament_sub_events(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'setup',
+        home_away TEXT NOT NULL DEFAULT 'home',
+        current_inning INTEGER NOT NULL DEFAULT 1,
+        current_half TEXT NOT NULL DEFAULT 'top',
+        outs INTEGER NOT NULL DEFAULT 0,
+        our_score INTEGER NOT NULL DEFAULT 0,
+        opp_score INTEGER NOT NULL DEFAULT 0,
+        balls INTEGER NOT NULL DEFAULT 0,
+        strikes INTEGER NOT NULL DEFAULT 0,
+        runner_first TEXT,
+        runner_second TEXT,
+        runner_third TEXT,
+        current_batter_us INTEGER NOT NULL DEFAULT 0,
+        current_batter_opp INTEGER NOT NULL DEFAULT 0,
+        current_pitcher_us INTEGER,
+        opp_pitcher_name TEXT,
+        opp_team_name TEXT NOT NULL DEFAULT 'Opponent',
+        current_at_bat_id INTEGER,
+        total_innings INTEGER NOT NULL DEFAULT 6,
+        started_at TEXT,
+        ended_at TEXT
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS game_roster (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        batting_order INTEGER NOT NULL,
+        current_position INTEGER,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        entered_inning INTEGER NOT NULL DEFAULT 1,
+        exited_inning INTEGER
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS opponent_roster (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        player_name TEXT NOT NULL,
+        jersey_number TEXT,
+        batting_order INTEGER NOT NULL,
+        current_position INTEGER,
+        is_active INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS at_bats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        inning INTEGER NOT NULL,
+        half TEXT NOT NULL,
+        is_our_team INTEGER NOT NULL,
+        batter_player_id INTEGER,
+        batter_name TEXT NOT NULL,
+        pitcher_player_id INTEGER,
+        pitcher_name TEXT,
+        batting_order_pos INTEGER NOT NULL,
+        result TEXT,
+        hit_type TEXT,
+        is_hard_contact INTEGER,
+        rbi_count INTEGER NOT NULL DEFAULT 0,
+        outs_on_play INTEGER NOT NULL DEFAULT 0,
+        fielders_involved TEXT,
+        error_position INTEGER,
+        error_player_id INTEGER,
+        total_pitches INTEGER NOT NULL DEFAULT 0,
+        balls_in_count INTEGER NOT NULL DEFAULT 0,
+        strikes_in_count INTEGER NOT NULL DEFAULT 0,
+        runners_on_base TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS pitches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        at_bat_id INTEGER NOT NULL REFERENCES at_bats(id) ON DELETE CASCADE,
+        inning INTEGER NOT NULL,
+        half TEXT NOT NULL,
+        pitcher_player_id INTEGER,
+        pitcher_name TEXT,
+        batter_player_id INTEGER,
+        batter_name TEXT,
+        pitch_number_in_ab INTEGER NOT NULL,
+        pitch_number_game INTEGER NOT NULL DEFAULT 0,
+        result TEXT NOT NULL,
+        balls_before INTEGER NOT NULL DEFAULT 0,
+        strikes_before INTEGER NOT NULL DEFAULT 0,
+        runners_on TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS game_chat (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        author_name TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS game_undo_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id INTEGER NOT NULL REFERENCES live_games(id) ON DELETE CASCADE,
+        action_type TEXT NOT NULL,
+        action_data TEXT,
+        prev_game_state TEXT,
+        sequence_num INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -702,6 +1106,124 @@ async function init() {
       getAllSavedLocations: async () => sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
       addSavedLocation: async (name, address) => sqliteDb.prepare('INSERT INTO saved_locations (location_name, address) VALUES (?, ?)').run(name, address),
       removeSavedLocation: async (id) => sqliteDb.prepare('DELETE FROM saved_locations WHERE id = ?').run(id),
+
+      getAllScoreKeepers: async () => sqliteDb.prepare('SELECT * FROM score_keepers ORDER BY name').all(),
+      addScoreKeeper: async (sk) => {
+        const r = sqliteDb.prepare('INSERT INTO score_keepers (name, phone, email, access_token) VALUES (?,?,?,?)').run(sk.name, sk.phone || null, sk.email || null, sk.access_token);
+        return { id: r.lastInsertRowid };
+      },
+      removeScoreKeeper: async (id) => sqliteDb.prepare('DELETE FROM score_keepers WHERE id = ?').run(id),
+      getScoreKeeperByToken: async (token) => sqliteDb.prepare('SELECT * FROM score_keepers WHERE access_token = ?').get(token) || null,
+
+      createLiveGame: async (g) => {
+        const r = sqliteDb.prepare('INSERT INTO live_games (team_event_id, sub_event_id, home_away, opp_team_name, total_innings, status) VALUES (?,?,?,?,?,?)').run(g.team_event_id || null, g.sub_event_id || null, g.home_away, g.opp_team_name, g.total_innings || 6, 'setup');
+        return { id: r.lastInsertRowid };
+      },
+      getLiveGame: async (id) => sqliteDb.prepare('SELECT * FROM live_games WHERE id = ?').get(id) || null,
+      getLiveGameByEvent: async (eventId, subEventId) => {
+        if (subEventId) return sqliteDb.prepare('SELECT * FROM live_games WHERE sub_event_id = ? ORDER BY id DESC LIMIT 1').get(subEventId) || null;
+        return sqliteDb.prepare('SELECT * FROM live_games WHERE team_event_id = ? AND sub_event_id IS NULL ORDER BY id DESC LIMIT 1').get(eventId) || null;
+      },
+      updateGameState: async (id, state) => {
+        const fields = [];
+        const vals = [];
+        for (const [k, v] of Object.entries(state)) {
+          fields.push(`${k} = ?`);
+          vals.push(v);
+        }
+        vals.push(id);
+        sqliteDb.prepare(`UPDATE live_games SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+      },
+      getAllActiveGames: async () => sqliteDb.prepare("SELECT * FROM live_games WHERE status IN ('setup','active') ORDER BY id DESC").all(),
+
+      setGameRoster: async (gameId, entries) => {
+        sqliteDb.prepare('DELETE FROM game_roster WHERE game_id = ?').run(gameId);
+        const ins = sqliteDb.prepare('INSERT INTO game_roster (game_id, player_id, batting_order, current_position, is_active, entered_inning) VALUES (?,?,?,?,?,?)');
+        for (const e of entries) {
+          ins.run(gameId, e.player_id, e.batting_order, e.current_position || null, e.is_active !== undefined ? e.is_active : 1, e.entered_inning || 1);
+        }
+      },
+      getGameRoster: async (gameId) => sqliteDb.prepare('SELECT gr.*, p.player_name, p.jersey_number FROM game_roster gr JOIN players p ON gr.player_id = p.id WHERE gr.game_id = ? ORDER BY gr.batting_order').all(gameId),
+      updateRosterEntry: async (id, data) => {
+        const fields = [];
+        const vals = [];
+        for (const [k, v] of Object.entries(data)) {
+          fields.push(`${k} = ?`);
+          vals.push(v);
+        }
+        vals.push(id);
+        sqliteDb.prepare(`UPDATE game_roster SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+      },
+
+      setOppRoster: async (gameId, entries) => {
+        sqliteDb.prepare('DELETE FROM opponent_roster WHERE game_id = ?').run(gameId);
+        const ins = sqliteDb.prepare('INSERT INTO opponent_roster (game_id, player_name, jersey_number, batting_order, current_position, is_active) VALUES (?,?,?,?,?,?)');
+        for (const e of entries) {
+          ins.run(gameId, e.player_name, e.jersey_number || null, e.batting_order, e.current_position || null, e.is_active !== undefined ? e.is_active : 1);
+        }
+      },
+      getOppRoster: async (gameId) => sqliteDb.prepare('SELECT * FROM opponent_roster WHERE game_id = ? ORDER BY batting_order').all(gameId),
+
+      createAtBat: async (ab) => {
+        const r = sqliteDb.prepare(
+          'INSERT INTO at_bats (game_id, inning, half, is_our_team, batter_player_id, batter_name, pitcher_player_id, pitcher_name, batting_order_pos, runners_on_base) VALUES (?,?,?,?,?,?,?,?,?,?)'
+        ).run(ab.game_id, ab.inning, ab.half, ab.is_our_team, ab.batter_player_id || null, ab.batter_name, ab.pitcher_player_id || null, ab.pitcher_name || null, ab.batting_order_pos, ab.runners_on_base || null);
+        return { id: r.lastInsertRowid };
+      },
+      updateAtBat: async (id, data) => {
+        const fields = [];
+        const vals = [];
+        for (const [k, v] of Object.entries(data)) {
+          fields.push(`${k} = ?`);
+          vals.push(v);
+        }
+        vals.push(id);
+        sqliteDb.prepare(`UPDATE at_bats SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+      },
+      getAtBat: async (id) => sqliteDb.prepare('SELECT * FROM at_bats WHERE id = ?').get(id) || null,
+      getAtBatsForGame: async (gameId) => sqliteDb.prepare('SELECT * FROM at_bats WHERE game_id = ? ORDER BY id').all(gameId),
+      getAtBatsForPlayer: async (playerId) => sqliteDb.prepare('SELECT ab.*, lg.opp_team_name, lg.started_at FROM at_bats ab JOIN live_games lg ON ab.game_id = lg.id WHERE ab.batter_player_id = ? AND ab.result IS NOT NULL ORDER BY ab.id').all(playerId),
+      deleteAtBat: async (id) => sqliteDb.prepare('DELETE FROM at_bats WHERE id = ?').run(id),
+
+      recordPitch: async (p) => {
+        const r = sqliteDb.prepare(
+          'INSERT INTO pitches (game_id, at_bat_id, inning, half, pitcher_player_id, pitcher_name, batter_player_id, batter_name, pitch_number_in_ab, pitch_number_game, result, balls_before, strikes_before, runners_on) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        ).run(p.game_id, p.at_bat_id, p.inning, p.half, p.pitcher_player_id || null, p.pitcher_name || null, p.batter_player_id || null, p.batter_name || null, p.pitch_number_in_ab, p.pitch_number_game || 0, p.result, p.balls_before || 0, p.strikes_before || 0, p.runners_on || null);
+        return { id: r.lastInsertRowid };
+      },
+      getPitchesForAtBat: async (atBatId) => sqliteDb.prepare('SELECT * FROM pitches WHERE at_bat_id = ? ORDER BY pitch_number_in_ab').all(atBatId),
+      getPitchesForGame: async (gameId) => sqliteDb.prepare('SELECT * FROM pitches WHERE game_id = ? ORDER BY id').all(gameId),
+      getPitchCountForPitcher: async (gameId, playerId) => {
+        const r = sqliteDb.prepare('SELECT COUNT(*) as cnt FROM pitches WHERE game_id = ? AND pitcher_player_id = ?').get(gameId, playerId);
+        return r.cnt;
+      },
+      getLastPitchInAB: async (atBatId) => sqliteDb.prepare('SELECT * FROM pitches WHERE at_bat_id = ? ORDER BY pitch_number_in_ab DESC LIMIT 1').get(atBatId) || null,
+      deletePitch: async (id) => sqliteDb.prepare('DELETE FROM pitches WHERE id = ?').run(id),
+      getPitchesForPitcherSeason: async (playerId) => sqliteDb.prepare('SELECT p.*, lg.started_at FROM pitches p JOIN live_games lg ON p.game_id = lg.id WHERE p.pitcher_player_id = ? ORDER BY p.id').all(playerId),
+
+      addGameChat: async (msg) => {
+        const r = sqliteDb.prepare('INSERT INTO game_chat (game_id, author_name, message) VALUES (?,?,?)').run(msg.game_id, msg.author_name, msg.message);
+        return { id: r.lastInsertRowid, game_id: msg.game_id, author_name: msg.author_name, message: msg.message, created_at: new Date().toISOString() };
+      },
+      getGameChat: async (gameId, afterId) => {
+        if (afterId) return sqliteDb.prepare('SELECT * FROM game_chat WHERE game_id = ? AND id > ? ORDER BY id').all(gameId, afterId);
+        return sqliteDb.prepare('SELECT * FROM game_chat WHERE game_id = ? ORDER BY id DESC LIMIT 50').all(gameId).reverse();
+      },
+
+      pushUndo: async (gameId, actionType, actionData, prevState) => {
+        const seq = sqliteDb.prepare('SELECT COALESCE(MAX(sequence_num), 0) + 1 as next FROM game_undo_log WHERE game_id = ?').get(gameId);
+        sqliteDb.prepare('INSERT INTO game_undo_log (game_id, action_type, action_data, prev_game_state, sequence_num) VALUES (?,?,?,?,?)').run(gameId, actionType, actionData || null, prevState || null, seq.next);
+      },
+      popUndo: async (gameId) => {
+        const row = sqliteDb.prepare('SELECT * FROM game_undo_log WHERE game_id = ? ORDER BY sequence_num DESC LIMIT 1').get(gameId);
+        if (!row) return null;
+        sqliteDb.prepare('DELETE FROM game_undo_log WHERE id = ?').run(row.id);
+        return row;
+      },
+      getUndoCount: async (gameId) => {
+        const r = sqliteDb.prepare('SELECT COUNT(*) as cnt FROM game_undo_log WHERE game_id = ?').get(gameId);
+        return r.cnt;
+      },
     };
   }
 }
@@ -773,4 +1295,36 @@ module.exports = {
   getAllSavedLocations: (...args) => impl.getAllSavedLocations(...args),
   addSavedLocation: (...args) => impl.addSavedLocation(...args),
   removeSavedLocation: (...args) => impl.removeSavedLocation(...args),
+  getAllScoreKeepers: (...args) => impl.getAllScoreKeepers(...args),
+  addScoreKeeper: (...args) => impl.addScoreKeeper(...args),
+  removeScoreKeeper: (...args) => impl.removeScoreKeeper(...args),
+  getScoreKeeperByToken: (...args) => impl.getScoreKeeperByToken(...args),
+  createLiveGame: (...args) => impl.createLiveGame(...args),
+  getLiveGame: (...args) => impl.getLiveGame(...args),
+  getLiveGameByEvent: (...args) => impl.getLiveGameByEvent(...args),
+  updateGameState: (...args) => impl.updateGameState(...args),
+  getAllActiveGames: (...args) => impl.getAllActiveGames(...args),
+  setGameRoster: (...args) => impl.setGameRoster(...args),
+  getGameRoster: (...args) => impl.getGameRoster(...args),
+  updateRosterEntry: (...args) => impl.updateRosterEntry(...args),
+  setOppRoster: (...args) => impl.setOppRoster(...args),
+  getOppRoster: (...args) => impl.getOppRoster(...args),
+  createAtBat: (...args) => impl.createAtBat(...args),
+  updateAtBat: (...args) => impl.updateAtBat(...args),
+  getAtBat: (...args) => impl.getAtBat(...args),
+  getAtBatsForGame: (...args) => impl.getAtBatsForGame(...args),
+  getAtBatsForPlayer: (...args) => impl.getAtBatsForPlayer(...args),
+  deleteAtBat: (...args) => impl.deleteAtBat(...args),
+  recordPitch: (...args) => impl.recordPitch(...args),
+  getPitchesForAtBat: (...args) => impl.getPitchesForAtBat(...args),
+  getPitchesForGame: (...args) => impl.getPitchesForGame(...args),
+  getPitchCountForPitcher: (...args) => impl.getPitchCountForPitcher(...args),
+  getLastPitchInAB: (...args) => impl.getLastPitchInAB(...args),
+  deletePitch: (...args) => impl.deletePitch(...args),
+  getPitchesForPitcherSeason: (...args) => impl.getPitchesForPitcherSeason(...args),
+  addGameChat: (...args) => impl.addGameChat(...args),
+  getGameChat: (...args) => impl.getGameChat(...args),
+  pushUndo: (...args) => impl.pushUndo(...args),
+  popUndo: (...args) => impl.popUndo(...args),
+  getUndoCount: (...args) => impl.getUndoCount(...args),
 };

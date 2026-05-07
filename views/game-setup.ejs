@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Setup &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .setup-wrap { max-width:700px; margin:0 auto; }
+    .setup-section { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:16px; }
+    .setup-section h3 { margin:0 0 12px; color:#1a2744; }
+    .roster-list { list-style:none; padding:0; margin:0; }
+    .roster-list li { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f3f4f6; }
+    .roster-list li:last-child { border-bottom:none; }
+    .roster-list .jersey { width:30px; text-align:center; font-weight:bold; color:#1a2744; }
+    .roster-list .name { flex:1; }
+    .roster-list select { width:60px; }
+    .opp-row { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+    .opp-row input { flex:1; }
+    .opp-row .opp-num { width:50px; text-align:center; }
+    .radio-group { display:flex; gap:16px; margin:8px 0; }
+    .radio-group label { cursor:pointer; padding:8px 16px; border:2px solid #e5e7eb; border-radius:6px; font-weight:600; }
+    .radio-group input:checked + span { color:#1a2744; }
+    .radio-group input { margin-right:4px; }
+    .btn-start { background:#16a34a; color:#fff; font-size:18px; padding:14px 40px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; width:100%; margin-top:8px; }
+    .btn-start:hover { background:#15803d; }
+    .pos-select { padding:4px; font-size:13px; border:1px solid #d1d5db; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <h1>Cal Ripken All-Stars</h1>
+    <p class="subtitle">Game Setup</p>
+  </header>
+  <main class="container setup-wrap">
+    <a href="/event/<%= eventId %><%= subEventId ? '#sub-' + subEventId : '' %>" style="display:inline-block;margin-bottom:12px;color:#1a2744;">&larr; Back to Event</a>
+
+    <% if (existingGame && existingGame.status !== 'final') { %>
+      <div class="card" style="background:#fef3c7;border-color:#f59e0b;">
+        <p><strong>A game is already in progress.</strong></p>
+        <a href="/game/<%= existingGame.id %>/score" class="btn btn-confirm">Resume Scoring</a>
+        <a href="/game/<%= existingGame.id %>/coach" class="btn btn-secondary" style="margin-left:8px;">Coach Dashboard</a>
+      </div>
+    <% } %>
+
+    <div class="setup-section">
+      <h3>Game Info</h3>
+      <div style="margin-bottom:12px;">
+        <label><strong>Opponent:</strong></label>
+        <input type="text" id="opp-name" value="<%= event.opponent || event.opponent_name || '' %>" placeholder="Opponent team name" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;margin-top:4px;">
+      </div>
+      <div style="margin-bottom:12px;">
+        <label><strong>Home / Away:</strong></label>
+        <div class="radio-group">
+          <label><input type="radio" name="home_away" value="home" checked> <span>Home</span></label>
+          <label><input type="radio" name="home_away" value="away"> <span>Away</span></label>
+        </div>
+      </div>
+      <div>
+        <label><strong>Total Innings:</strong></label>
+        <input type="number" id="total-innings" value="6" min="1" max="9" style="width:60px;padding:6px;border:1px solid #d1d5db;border-radius:4px;text-align:center;">
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Our Lineup</h3>
+      <p style="font-size:13px;color:#6b7280;margin:0 0 8px;">Drag to reorder. Set starting positions.</p>
+      <ul class="roster-list" id="our-roster">
+        <% var POS = {1:'P',2:'C',3:'1B',4:'2B',5:'3B',6:'SS',7:'LF',8:'CF',9:'RF',10:'EH'}; %>
+        <% var sorted = []; %>
+        <% if (grid.length > 0) {
+             var byOrder = {};
+             grid.forEach(function(g) { if (!byOrder[g.batting_order]) byOrder[g.batting_order] = g; });
+             var orders = Object.keys(byOrder).map(Number).sort(function(a,b){return a-b;});
+             orders.forEach(function(o) { sorted.push(byOrder[o]); });
+             var usedIds = sorted.map(function(s){return s.player_id;});
+             players.forEach(function(p) { if (usedIds.indexOf(p.id) === -1) sorted.push(p); });
+           } else {
+             sorted = players;
+           } %>
+        <% sorted.forEach(function(p, i) { %>
+          <li draggable="true" data-player-id="<%= p.player_id || p.id %>">
+            <span class="jersey"><%= p.jersey_number || '' %></span>
+            <span class="name"><%= p.player_name %></span>
+            <select class="pos-select" data-field="position">
+              <option value="">Pos</option>
+              <% for (var pn = 1; pn <= 10; pn++) { %>
+                <option value="<%= pn %>" <%= (p.position_number || 0) == pn ? 'selected' : '' %>><%= POS[pn] %></option>
+              <% } %>
+            </select>
+            <label style="font-size:12px;"><input type="checkbox" class="roster-check" checked> In</label>
+          </li>
+        <% }); %>
+      </ul>
+    </div>
+
+    <div class="setup-section">
+      <h3>Opponent Lineup</h3>
+      <p style="font-size:13px;color:#6b7280;margin:0 0 8px;">Enter opponent batters in order. Leave blank for unknown.</p>
+      <div id="opp-roster">
+        <% for (var oi = 0; oi < 9; oi++) { %>
+          <div class="opp-row">
+            <span class="opp-num"><%= oi + 1 %></span>
+            <input type="text" placeholder="Player name" class="opp-name-input">
+            <input type="text" placeholder="#" class="opp-jersey-input" style="width:40px;text-align:center;">
+          </div>
+        <% } %>
+      </div>
+      <button type="button" onclick="addOppRow()" class="btn btn-secondary" style="margin-top:8px;font-size:13px;">+ Add Player</button>
+    </div>
+
+    <div class="setup-section">
+      <h3>Our Pitcher</h3>
+      <select id="our-pitcher" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+        <option value="">Select starting pitcher</option>
+        <% players.forEach(function(p) { %>
+          <option value="<%= p.id %>"><%= p.player_name %></option>
+        <% }); %>
+      </select>
+    </div>
+
+    <div class="setup-section">
+      <h3>Opponent Pitcher</h3>
+      <input type="text" id="opp-pitcher" placeholder="Opponent pitcher name" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+    </div>
+
+    <button class="btn-start" onclick="createGame()">Create Game</button>
+  </main>
+
+  <script>
+  var eventId = <%= eventId %>;
+  var subEventId = <%= subEventId || 'null' %>;
+
+  function addOppRow() {
+    var container = document.getElementById('opp-roster');
+    var count = container.children.length + 1;
+    var div = document.createElement('div');
+    div.className = 'opp-row';
+    div.innerHTML = '<span class="opp-num">' + count + '</span><input type="text" placeholder="Player name" class="opp-name-input"><input type="text" placeholder="#" class="opp-jersey-input" style="width:40px;text-align:center;">';
+    container.appendChild(div);
+  }
+
+  var rosterList = document.getElementById('our-roster');
+  var dragItem = null;
+  rosterList.addEventListener('dragstart', function(e) {
+    dragItem = e.target.closest('li');
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(function() { dragItem.style.opacity = '0.4'; }, 0);
+  });
+  rosterList.addEventListener('dragend', function() { if (dragItem) dragItem.style.opacity = '1'; dragItem = null; });
+  rosterList.addEventListener('dragover', function(e) { e.preventDefault(); });
+  rosterList.addEventListener('drop', function(e) {
+    e.preventDefault();
+    var target = e.target.closest('li');
+    if (target && dragItem && target !== dragItem) {
+      var items = Array.from(rosterList.children);
+      var dragIdx = items.indexOf(dragItem);
+      var targetIdx = items.indexOf(target);
+      if (dragIdx < targetIdx) rosterList.insertBefore(dragItem, target.nextSibling);
+      else rosterList.insertBefore(dragItem, target);
+    }
+  });
+
+  function createGame() {
+    var roster = [];
+    var items = document.querySelectorAll('#our-roster li');
+    items.forEach(function(li) {
+      var checked = li.querySelector('.roster-check').checked;
+      if (!checked) return;
+      roster.push({
+        player_id: li.dataset.playerId,
+        position: li.querySelector('.pos-select').value || null
+      });
+    });
+
+    var opponent = [];
+    document.querySelectorAll('#opp-roster .opp-row').forEach(function(row) {
+      var name = row.querySelector('.opp-name-input').value.trim();
+      if (name) opponent.push({ name: name, jersey: row.querySelector('.opp-jersey-input').value.trim() });
+    });
+
+    var body = {
+      team_event_id: eventId,
+      sub_event_id: subEventId,
+      home_away: document.querySelector('input[name="home_away"]:checked').value,
+      opp_team_name: document.getElementById('opp-name').value.trim() || 'Opponent',
+      total_innings: parseInt(document.getElementById('total-innings').value) || 6,
+      roster: roster,
+      opponent: opponent
+    };
+
+    fetch('/game/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.ok) {
+        var pitcher = document.getElementById('our-pitcher').value;
+        var oppPitcher = document.getElementById('opp-pitcher').value.trim();
+        var updates = {};
+        if (pitcher) updates.current_pitcher_us = parseInt(pitcher);
+        if (oppPitcher) updates.opp_pitcher_name = oppPitcher;
+        if (Object.keys(updates).length > 0) {
+          fetch('/api/game/' + data.gameId + '/update-state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+          }).then(function() {
+            return fetch('/game/' + data.gameId + '/start', { method: 'POST' });
+          }).then(function() {
+            window.location.href = '/game/' + data.gameId + '/coach';
+          });
+        } else {
+          fetch('/game/' + data.gameId + '/start', { method: 'POST' }).then(function() {
+            window.location.href = '/game/' + data.gameId + '/coach';
+          });
+        }
+      }
+    });
+  }
+  </script>
+</body>
+</html>

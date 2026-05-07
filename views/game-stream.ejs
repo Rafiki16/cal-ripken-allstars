@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Game &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#0f172a; color:#e2e8f0; }
+    .stream-header { background:#1a2744; padding:16px 20px; text-align:center; }
+    .stream-header h1 { margin:0; font-size:18px; color:#d4a843; }
+    .stream-header .matchup { font-size:14px; color:#94a3b8; margin-top:4px; }
+    .stream-score { font-size:48px; font-weight:bold; color:#fff; margin:8px 0; }
+    .stream-score .separator { color:#475569; margin:0 12px; }
+    .stream-inning { font-size:14px; color:#94a3b8; }
+    .stream-status { background:#1e293b; padding:12px 20px; display:flex; justify-content:space-around; text-align:center; }
+    .stream-status .item { }
+    .stream-status .label { font-size:11px; color:#94a3b8; text-transform:uppercase; }
+    .stream-status .value { font-size:18px; font-weight:bold; margin-top:2px; }
+    .bases-wrap { display:flex; justify-content:center; padding:16px 0; background:#0f172a; }
+    .base-diamond { position:relative; width:80px; height:80px; }
+    .base-box { position:absolute; width:16px; height:16px; transform:rotate(45deg); border:2px solid #475569; }
+    .base-box.occupied { background:#d4a843; border-color:#d4a843; }
+    .base-box.b1 { right:0; top:50%; margin-top:-8px; }
+    .base-box.b2 { left:50%; top:0; margin-left:-8px; }
+    .base-box.b3 { left:0; top:50%; margin-top:-8px; }
+    .play-feed { max-width:600px; margin:0 auto; padding:0 16px; }
+    .play-feed h3 { color:#94a3b8; font-size:13px; text-transform:uppercase; margin:16px 0 8px; }
+    .play-item { padding:8px 12px; background:#1e293b; border-radius:6px; margin-bottom:6px; font-size:13px; }
+    .play-item .play-inning { color:#d4a843; font-weight:bold; }
+    .chat-section { max-width:600px; margin:16px auto; padding:0 16px; }
+    .chat-section h3 { color:#94a3b8; font-size:13px; text-transform:uppercase; margin:0 0 8px; }
+    .chat-messages { max-height:300px; overflow-y:auto; background:#1e293b; border-radius:8px; padding:12px; margin-bottom:8px; }
+    .chat-msg { margin-bottom:8px; font-size:13px; }
+    .chat-msg .author { color:#d4a843; font-weight:bold; }
+    .chat-msg .time { color:#475569; font-size:11px; margin-left:6px; }
+    .chat-input-row { display:flex; gap:8px; }
+    .chat-input-row input { flex:1; background:#1e293b; border:1px solid #334155; color:#e2e8f0; padding:10px; border-radius:6px; font-size:14px; }
+    .chat-input-row button { background:#d4a843; color:#1a2744; border:none; padding:10px 20px; border-radius:6px; font-weight:bold; cursor:pointer; }
+    .chat-name-row { margin-bottom:8px; }
+    .chat-name-row input { background:#1e293b; border:1px solid #334155; color:#e2e8f0; padding:8px; border-radius:6px; font-size:13px; width:200px; }
+    .final-banner { background:#16a34a; color:#fff; text-align:center; padding:12px; font-size:18px; font-weight:bold; }
+    .linescore-stream { width:100%; max-width:600px; margin:0 auto 16px; border-collapse:collapse; text-align:center; font-size:12px; }
+    .linescore-stream th, .linescore-stream td { padding:5px 6px; border:1px solid #334155; }
+    .linescore-stream th { background:#1a2744; color:#d4a843; }
+    .linescore-stream .total { font-weight:bold; background:#1e293b; }
+  </style>
+</head>
+<body>
+  <div class="stream-header">
+    <h1>Cal Ripken All-Stars</h1>
+    <div class="matchup">vs <span id="opp-name"><%= game.opp_team_name %></span></div>
+    <div class="stream-score">
+      <span id="us-score">0</span><span class="separator">-</span><span id="opp-score">0</span>
+    </div>
+    <div class="stream-inning" id="inning-line"></div>
+  </div>
+
+  <div id="final-banner" class="final-banner" style="display:none;">FINAL</div>
+
+  <div class="stream-status">
+    <div class="item"><div class="label">Count</div><div class="value"><span id="count-text">0-0</span></div></div>
+    <div class="item"><div class="label">Outs</div><div class="value"><span id="outs-text">0</span></div></div>
+    <div class="item"><div class="label">Batter</div><div class="value" style="font-size:14px;"><span id="batter-text">--</span></div></div>
+  </div>
+
+  <div class="bases-wrap">
+    <div class="base-diamond">
+      <div class="base-box b1" id="b1"></div>
+      <div class="base-box b2" id="b2"></div>
+      <div class="base-box b3" id="b3"></div>
+    </div>
+  </div>
+
+  <div style="padding:0 16px;">
+    <table class="linescore-stream" id="linescore"></table>
+  </div>
+
+  <div class="play-feed">
+    <h3>Play-by-Play</h3>
+    <div id="plays"></div>
+  </div>
+
+  <div class="chat-section">
+    <h3>Game Chat</h3>
+    <div class="chat-name-row">
+      <input type="text" id="chat-name" placeholder="Your name" value="">
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" placeholder="Say something..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button onclick="sendChat()">Send</button>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:20px;">
+    <a href="/" style="color:#94a3b8;font-size:13px;">Cal Ripken All-Stars Home</a>
+  </div>
+
+  <script>
+  var GAME_ID = <%= game.id %>;
+  var lastChatId = 0;
+  var RESULT_LABELS = { '1B':'Single','2B':'Double','3B':'Triple','HR':'Home Run','K':'Strikeout','BB':'Walk','HBP':'Hit by Pitch','out':'Out','FC':'Fielder\'s Choice','SAC':'Sacrifice','DP':'Double Play','error':'Error' };
+
+  function update() {
+    fetch('/api/game/' + GAME_ID + '/state').then(function(r) { return r.json(); }).then(function(d) {
+      var g = d.game;
+      document.getElementById('us-score').textContent = g.our_score;
+      document.getElementById('opp-score').textContent = g.opp_score;
+      document.getElementById('opp-name').textContent = g.opp_team_name;
+      document.getElementById('inning-line').textContent = g.status === 'final' ? 'FINAL' : (g.current_half === 'top' ? 'Top ' : 'Bot ') + g.current_inning;
+      document.getElementById('count-text').textContent = g.balls + '-' + g.strikes;
+      document.getElementById('outs-text').textContent = g.outs;
+      document.getElementById('final-banner').style.display = g.status === 'final' ? 'block' : 'none';
+
+      document.getElementById('b1').classList.toggle('occupied', !!g.runner_first);
+      document.getElementById('b2').classList.toggle('occupied', !!g.runner_second);
+      document.getElementById('b3').classList.toggle('occupied', !!g.runner_third);
+
+      if (d.currentAB) {
+        document.getElementById('batter-text').textContent = d.currentAB.batter_name;
+      } else {
+        var weAreBatting = (g.home_away === 'home' && g.current_half === 'bot') || (g.home_away === 'away' && g.current_half === 'top');
+        var roster = weAreBatting ? d.roster : d.oppRoster;
+        var idx = weAreBatting ? g.current_batter_us : g.current_batter_opp;
+        var batter = roster[idx % roster.length];
+        document.getElementById('batter-text').textContent = batter ? batter.player_name : '--';
+      }
+
+      var completed = d.atBats.filter(function(ab) { return ab.result; });
+      var playsHtml = '';
+      completed.reverse().slice(0, 20).forEach(function(ab) {
+        playsHtml += '<div class="play-item"><span class="play-inning">' + (ab.half === 'top' ? 'T' : 'B') + ab.inning + '</span> ';
+        playsHtml += ab.batter_name + ': <strong>' + (RESULT_LABELS[ab.result] || ab.result) + '</strong>';
+        if (ab.rbi_count > 0) playsHtml += ' (' + ab.rbi_count + ' RBI)';
+        playsHtml += '</div>';
+      });
+      document.getElementById('plays').innerHTML = playsHtml || '<div class="play-item" style="color:#475569;">No plays yet</div>';
+
+      var totalInnings = g.total_innings || 6;
+      var inningScores = d.inningScores || { us: {}, opp: {} };
+      var ls = '<tr><th></th>';
+      for (var i = 1; i <= totalInnings; i++) ls += '<th>' + i + '</th>';
+      ls += '<th class="total">R</th></tr>';
+      ls += '<tr><td style="text-align:left;font-weight:bold;">Us</td>';
+      for (var i = 1; i <= totalInnings; i++) ls += '<td>' + (inningScores.us[i] !== undefined ? inningScores.us[i] : '-') + '</td>';
+      ls += '<td class="total">' + g.our_score + '</td></tr>';
+      ls += '<tr><td style="text-align:left;font-weight:bold;">' + g.opp_team_name + '</td>';
+      for (var i = 1; i <= totalInnings; i++) ls += '<td>' + (inningScores.opp[i] !== undefined ? inningScores.opp[i] : '-') + '</td>';
+      ls += '<td class="total">' + g.opp_score + '</td></tr>';
+      document.getElementById('linescore').innerHTML = ls;
+    });
+  }
+
+  function loadChat() {
+    fetch('/api/game/' + GAME_ID + '/chat?after=' + lastChatId).then(function(r) { return r.json(); }).then(function(msgs) {
+      if (msgs.length === 0) return;
+      var container = document.getElementById('chat-messages');
+      msgs.forEach(function(m) {
+        var div = document.createElement('div');
+        div.className = 'chat-msg';
+        var t = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+        div.innerHTML = '<span class="author">' + m.author_name + '</span><span class="time">' + t + '</span><br>' + m.message;
+        container.appendChild(div);
+        lastChatId = m.id;
+      });
+      container.scrollTop = container.scrollHeight;
+    });
+  }
+
+  function sendChat() {
+    var name = document.getElementById('chat-name').value.trim();
+    var msg = document.getElementById('chat-input').value.trim();
+    if (!name) return alert('Enter your name first');
+    if (!msg) return;
+    fetch('/api/game/' + GAME_ID + '/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ author_name: name, message: msg })
+    }).then(function() {
+      document.getElementById('chat-input').value = '';
+      loadChat();
+    });
+  }
+
+  update();
+  loadChat();
+  setInterval(update, 5000);
+  setInterval(loadChat, 3000);
+  </script>
+</body>
+</html>

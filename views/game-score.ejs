@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Live Scoring &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; padding:0; background:#0f172a; color:#e2e8f0; font-family:Arial,sans-serif; }
+    .score-header { background:#1a2744; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; }
+    .score-header .teams { font-size:14px; }
+    .score-header .score-big { font-size:32px; font-weight:bold; color:#d4a843; }
+    .score-header .inning-info { font-size:13px; color:#94a3b8; }
+    .count-bar { display:flex; justify-content:center; gap:24px; padding:10px; background:#1e293b; }
+    .count-item { text-align:center; }
+    .count-label { font-size:11px; color:#94a3b8; text-transform:uppercase; }
+    .count-dots { display:flex; gap:4px; justify-content:center; margin-top:2px; }
+    .count-dot { width:14px; height:14px; border-radius:50%; border:2px solid #475569; }
+    .count-dot.active-ball { background:#22c55e; border-color:#22c55e; }
+    .count-dot.active-strike { background:#ef4444; border-color:#ef4444; }
+    .count-dot.active-out { background:#f59e0b; border-color:#f59e0b; }
+    .batter-info { padding:12px 16px; background:#1e293b; border-bottom:1px solid #334155; text-align:center; }
+    .batter-info .batter-name { font-size:18px; font-weight:bold; }
+    .batter-info .batter-detail { font-size:12px; color:#94a3b8; }
+    .bases-diamond { display:flex; justify-content:center; padding:16px 0; }
+    .diamond-svg { width:120px; height:120px; }
+    .base { fill:none; stroke:#475569; stroke-width:2; }
+    .base.occupied { fill:#d4a843; stroke:#d4a843; }
+    .pitch-buttons { padding:12px 16px; }
+    .pitch-row { display:flex; gap:8px; margin-bottom:8px; }
+    .pitch-btn { flex:1; padding:14px 8px; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; color:#fff; }
+    .pitch-btn.ball { background:#16a34a; }
+    .pitch-btn.strike-c { background:#dc2626; }
+    .pitch-btn.strike-s { background:#b91c1c; }
+    .pitch-btn.foul { background:#d97706; }
+    .pitch-btn.in-play { background:#2563eb; }
+    .pitch-btn.hbp { background:#7c3aed; }
+    .pitch-btn.undo-btn { background:#475569; }
+    .pitch-btn:active { opacity:0.8; transform:scale(0.97); }
+    .result-panel { display:none; padding:16px; background:#1e293b; border-top:1px solid #334155; }
+    .result-panel.visible { display:block; }
+    .result-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .result-btn { padding:12px 8px; border:2px solid #475569; background:transparent; color:#e2e8f0; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; text-align:center; }
+    .result-btn:active, .result-btn.selected { border-color:#d4a843; background:#d4a843; color:#1a2744; }
+    .result-section { margin-top:12px; }
+    .result-section h4 { margin:0 0 8px; color:#94a3b8; font-size:12px; text-transform:uppercase; }
+    .hit-type-row { display:flex; gap:8px; margin-bottom:8px; }
+    .hit-type-btn { flex:1; padding:10px; border:2px solid #475569; background:transparent; color:#e2e8f0; border-radius:6px; font-size:12px; cursor:pointer; text-align:center; }
+    .hit-type-btn.selected { border-color:#3b82f6; background:#3b82f6; color:#fff; }
+    .runner-controls { padding:12px 16px; background:#0f172a; }
+    .runner-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; }
+    .submit-result { width:100%; padding:14px; background:#16a34a; color:#fff; border:none; border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer; margin-top:12px; }
+    .submit-result:hover { background:#15803d; }
+    .score-footer { position:fixed; bottom:0; left:0; right:0; background:#1a2744; padding:8px 16px; display:flex; justify-content:space-between; align-items:center; font-size:12px; }
+    .score-footer a { color:#d4a843; text-decoration:none; }
+    .pitcher-info { text-align:center; padding:4px; font-size:12px; color:#94a3b8; background:#0f172a; }
+    .num-input { width:50px; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:4px; border-radius:4px; text-align:center; }
+    .rbi-row { display:flex; align-items:center; gap:12px; margin-top:8px; }
+    .outs-row { display:flex; align-items:center; gap:12px; margin-top:8px; }
+    .fielder-input { width:100%; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:8px; border-radius:4px; margin-top:4px; }
+    .hard-contact-toggle { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="score-header">
+    <div>
+      <div class="teams">Cal Ripken All-Stars vs <span id="opp-name"><%= game.opp_team_name %></span></div>
+      <div class="inning-info"><span id="half-display"></span> <span id="inning-display"></span></div>
+    </div>
+    <div class="score-big"><span id="our-score">0</span> - <span id="opp-score">0</span></div>
+  </div>
+
+  <div class="count-bar">
+    <div class="count-item">
+      <div class="count-label">Balls</div>
+      <div class="count-dots" id="balls-dots"></div>
+    </div>
+    <div class="count-item">
+      <div class="count-label">Strikes</div>
+      <div class="count-dots" id="strikes-dots"></div>
+    </div>
+    <div class="count-item">
+      <div class="count-label">Outs</div>
+      <div class="count-dots" id="outs-dots"></div>
+    </div>
+  </div>
+
+  <div class="batter-info">
+    <div class="batter-name" id="batter-name">--</div>
+    <div class="batter-detail" id="batter-detail"></div>
+  </div>
+
+  <div class="pitcher-info">
+    Pitching: <span id="pitcher-name">--</span> | Pitch count: <span id="pitch-count">0</span>
+  </div>
+
+  <div class="bases-diamond">
+    <svg class="diamond-svg" viewBox="0 0 120 120">
+      <polygon id="base-home" class="base" points="60,110 50,100 60,90 70,100" />
+      <polygon id="base-first" class="base" points="100,60 90,50 80,60 90,70" />
+      <polygon id="base-second" class="base" points="60,20 50,10 60,0 70,10" />
+      <polygon id="base-third" class="base" points="20,60 30,50 40,60 30,70" />
+      <line x1="60" y1="90" x2="90" y2="60" stroke="#475569" stroke-width="1" />
+      <line x1="90" y1="60" x2="60" y2="10" stroke="#475569" stroke-width="1" />
+      <line x1="60" y1="10" x2="30" y2="60" stroke="#475569" stroke-width="1" />
+      <line x1="30" y1="60" x2="60" y2="90" stroke="#475569" stroke-width="1" />
+    </svg>
+  </div>
+
+  <div class="pitch-buttons" id="pitch-panel">
+    <div class="pitch-row">
+      <button class="pitch-btn ball" onclick="recordPitch('ball')">Ball</button>
+      <button class="pitch-btn strike-c" onclick="recordPitch('called_strike')">Called Strike</button>
+      <button class="pitch-btn strike-s" onclick="recordPitch('swinging_strike')">Swing & Miss</button>
+    </div>
+    <div class="pitch-row">
+      <button class="pitch-btn foul" onclick="recordPitch('foul')">Foul</button>
+      <button class="pitch-btn in-play" onclick="recordPitch('in_play')">In Play</button>
+      <button class="pitch-btn hbp" onclick="recordPitch('hbp')">HBP</button>
+    </div>
+    <div class="pitch-row">
+      <button class="pitch-btn undo-btn" onclick="undoLast()">Undo (<span id="undo-count">0</span>)</button>
+    </div>
+  </div>
+
+  <div class="result-panel" id="result-panel">
+    <h3 style="margin:0 0 12px;color:#d4a843;">Ball In Play Result</h3>
+    <div class="result-grid">
+      <button class="result-btn" onclick="selectResult('1B')">1B</button>
+      <button class="result-btn" onclick="selectResult('2B')">2B</button>
+      <button class="result-btn" onclick="selectResult('3B')">3B</button>
+      <button class="result-btn" onclick="selectResult('HR')">HR</button>
+      <button class="result-btn" onclick="selectResult('out')">Out</button>
+      <button class="result-btn" onclick="selectResult('FC')">FC</button>
+      <button class="result-btn" onclick="selectResult('SAC')">SAC</button>
+      <button class="result-btn" onclick="selectResult('error')">Error</button>
+      <button class="result-btn" onclick="selectResult('DP')">DP</button>
+    </div>
+
+    <div class="result-section" id="hit-type-section" style="display:none;">
+      <h4>Hit Type</h4>
+      <div class="hit-type-row">
+        <button class="hit-type-btn" onclick="selectHitType('ground')">Ground</button>
+        <button class="hit-type-btn" onclick="selectHitType('line')">Line</button>
+        <button class="hit-type-btn" onclick="selectHitType('fly')">Fly</button>
+        <button class="hit-type-btn" onclick="selectHitType('popup')">Popup</button>
+      </div>
+      <div class="hard-contact-toggle">
+        <label style="color:#94a3b8;font-size:13px;"><input type="checkbox" id="hard-contact"> Hard contact</label>
+      </div>
+    </div>
+
+    <div class="result-section" id="error-section" style="display:none;">
+      <h4>Error By (Position #)</h4>
+      <input type="number" id="error-pos" class="fielder-input" placeholder="Position number (1-9)" min="1" max="9" style="width:120px;">
+    </div>
+
+    <div class="rbi-row">
+      <label style="color:#94a3b8;font-size:13px;">RBIs:</label>
+      <input type="number" id="rbi-count" class="num-input" value="0" min="0" max="4">
+    </div>
+
+    <div class="outs-row">
+      <label style="color:#94a3b8;font-size:13px;">Outs on play:</label>
+      <input type="number" id="outs-on-play" class="num-input" value="0" min="0" max="3">
+    </div>
+
+    <div class="result-section">
+      <h4>Runners After Play</h4>
+      <div class="runner-row">
+        <span style="color:#94a3b8;">1B:</span>
+        <input type="text" id="runner-1b" class="fielder-input" placeholder="Runner name (empty = no one)" style="width:200px;">
+      </div>
+      <div class="runner-row">
+        <span style="color:#94a3b8;">2B:</span>
+        <input type="text" id="runner-2b" class="fielder-input" placeholder="Runner name" style="width:200px;">
+      </div>
+      <div class="runner-row">
+        <span style="color:#94a3b8;">3B:</span>
+        <input type="text" id="runner-3b" class="fielder-input" placeholder="Runner name" style="width:200px;">
+      </div>
+    </div>
+
+    <button class="submit-result" onclick="submitResult()">Record Play</button>
+    <button style="width:100%;padding:10px;background:#475569;color:#fff;border:none;border-radius:8px;margin-top:8px;cursor:pointer;" onclick="cancelResult()">Cancel</button>
+  </div>
+
+  <div class="score-footer">
+    <a href="/game/<%= game.id %>/coach" target="_blank">Coach Dashboard</a>
+    <span>Scoring: <%= keeper.name %></span>
+    <a href="/game/<%= game.id %>/stream" target="_blank">Live Stream</a>
+  </div>
+
+  <script>
+  var GAME_ID = <%= game.id %>;
+  var TOKEN = '<%= token %>';
+  var state = null;
+  var selectedResult = null;
+  var selectedHitType = null;
+
+  function api(url, opts) {
+    opts = opts || {};
+    if (!opts.headers) opts.headers = {};
+    opts.headers['Content-Type'] = 'application/json';
+    if (url.indexOf('?') === -1) url += '?token=' + TOKEN;
+    else url += '&token=' + TOKEN;
+    return fetch(url, opts).then(function(r) { return r.json(); });
+  }
+
+  function renderDots(containerId, count, max, cls) {
+    var el = document.getElementById(containerId);
+    var html = '';
+    for (var i = 0; i < max; i++) {
+      html += '<div class="count-dot' + (i < count ? ' ' + cls : '') + '"></div>';
+    }
+    el.innerHTML = html;
+  }
+
+  function updateDisplay() {
+    if (!state) return;
+    var g = state.game;
+    document.getElementById('our-score').textContent = g.our_score;
+    document.getElementById('opp-score').textContent = g.opp_score;
+    document.getElementById('half-display').textContent = g.current_half === 'top' ? 'Top' : 'Bot';
+    document.getElementById('inning-display').textContent = g.current_inning;
+    document.getElementById('opp-name').textContent = g.opp_team_name;
+
+    renderDots('balls-dots', g.balls, 4, 'active-ball');
+    renderDots('strikes-dots', g.strikes, 3, 'active-strike');
+    renderDots('outs-dots', g.outs, 3, 'active-out');
+
+    var weAreBatting = (g.home_away === 'home' && g.current_half === 'bot') || (g.home_away === 'away' && g.current_half === 'top');
+    var roster = weAreBatting ? state.roster : state.oppRoster;
+    var batterIdx = weAreBatting ? g.current_batter_us : g.current_batter_opp;
+    var batter = roster[batterIdx % roster.length];
+    if (state.currentAB) {
+      document.getElementById('batter-name').textContent = state.currentAB.batter_name;
+    } else if (batter) {
+      document.getElementById('batter-name').textContent = batter.player_name;
+    }
+    document.getElementById('batter-detail').textContent = weAreBatting ? 'Batting' : 'Opponent batting';
+
+    var pitcherName = weAreBatting ? g.opp_pitcher_name : '';
+    var pitchCount = 0;
+    if (!weAreBatting && g.current_pitcher_us) {
+      var p = state.roster.find(function(r) { return r.player_id === g.current_pitcher_us; });
+      if (p) { pitcherName = p.player_name; pitchCount = state.pitchCounts[p.player_id] || 0; }
+    }
+    document.getElementById('pitcher-name').textContent = pitcherName || '--';
+    document.getElementById('pitch-count').textContent = pitchCount;
+
+    document.getElementById('base-first').classList.toggle('occupied', !!g.runner_first);
+    document.getElementById('base-second').classList.toggle('occupied', !!g.runner_second);
+    document.getElementById('base-third').classList.toggle('occupied', !!g.runner_third);
+
+    document.getElementById('undo-count').textContent = state.undoCount || 0;
+
+    if (g.runner_first) document.getElementById('runner-1b').value = g.runner_first;
+    if (g.runner_second) document.getElementById('runner-2b').value = g.runner_second;
+    if (g.runner_third) document.getElementById('runner-3b').value = g.runner_third;
+  }
+
+  function pollState() {
+    api('/api/game/' + GAME_ID + '/state').then(function(data) {
+      state = data;
+      updateDisplay();
+    });
+  }
+
+  function recordPitch(result) {
+    api('/api/game/' + GAME_ID + '/pitch', {
+      method: 'POST',
+      body: JSON.stringify({ result: result })
+    }).then(function(data) {
+      if (data.abResult === 'in_play') {
+        document.getElementById('pitch-panel').style.display = 'none';
+        document.getElementById('result-panel').classList.add('visible');
+        pollState();
+      } else {
+        pollState();
+      }
+    });
+  }
+
+  function selectResult(r) {
+    selectedResult = r;
+    document.querySelectorAll('.result-btn').forEach(function(b) { b.classList.remove('selected'); });
+    event.target.classList.add('selected');
+
+    document.getElementById('hit-type-section').style.display = ['1B','2B','3B','HR','out','FC','error'].includes(r) ? 'block' : 'none';
+    document.getElementById('error-section').style.display = r === 'error' ? 'block' : 'none';
+
+    if (r === 'HR') {
+      document.getElementById('rbi-count').value = 1;
+      document.getElementById('outs-on-play').value = 0;
+      document.getElementById('runner-1b').value = '';
+      document.getElementById('runner-2b').value = '';
+      document.getElementById('runner-3b').value = '';
+    } else if (r === 'out' || r === 'SAC') {
+      document.getElementById('outs-on-play').value = 1;
+    } else if (r === 'DP') {
+      document.getElementById('outs-on-play').value = 2;
+    } else {
+      document.getElementById('outs-on-play').value = 0;
+    }
+
+    if (r === '1B' && state) {
+      var g = state.game;
+      var batter = state.currentAB ? state.currentAB.batter_name : 'Batter';
+      document.getElementById('runner-1b').value = batter;
+      if (g.runner_first) document.getElementById('runner-2b').value = g.runner_first;
+      if (g.runner_second) document.getElementById('runner-3b').value = g.runner_second;
+    }
+  }
+
+  function selectHitType(ht) {
+    selectedHitType = ht;
+    document.querySelectorAll('.hit-type-btn').forEach(function(b) { b.classList.remove('selected'); });
+    event.target.classList.add('selected');
+  }
+
+  function submitResult() {
+    if (!selectedResult) return alert('Select a result first');
+    var body = {
+      result: selectedResult,
+      hit_type: selectedHitType || null,
+      is_hard_contact: document.getElementById('hard-contact').checked,
+      rbi_count: parseInt(document.getElementById('rbi-count').value) || 0,
+      outs_on_play: parseInt(document.getElementById('outs-on-play').value) || 0,
+      error_position: document.getElementById('error-pos').value ? parseInt(document.getElementById('error-pos').value) : null,
+      runners: {
+        first: document.getElementById('runner-1b').value.trim() || null,
+        second: document.getElementById('runner-2b').value.trim() || null,
+        third: document.getElementById('runner-3b').value.trim() || null
+      }
+    };
+    api('/api/game/' + GAME_ID + '/at-bat-result', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }).then(function() {
+      cancelResult();
+      pollState();
+    });
+  }
+
+  function cancelResult() {
+    selectedResult = null;
+    selectedHitType = null;
+    document.getElementById('result-panel').classList.remove('visible');
+    document.getElementById('pitch-panel').style.display = 'block';
+    document.querySelectorAll('.result-btn').forEach(function(b) { b.classList.remove('selected'); });
+    document.querySelectorAll('.hit-type-btn').forEach(function(b) { b.classList.remove('selected'); });
+    document.getElementById('hard-contact').checked = false;
+    document.getElementById('rbi-count').value = 0;
+    document.getElementById('outs-on-play').value = 0;
+    document.getElementById('error-pos').value = '';
+    document.getElementById('runner-1b').value = '';
+    document.getElementById('runner-2b').value = '';
+    document.getElementById('runner-3b').value = '';
+  }
+
+  function undoLast() {
+    api('/api/game/' + GAME_ID + '/undo', { method: 'POST' }).then(function() { pollState(); });
+  }
+
+  pollState();
+  setInterval(pollState, 5000);
+  </script>
+</body>
+</html>
