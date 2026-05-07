@@ -3,69 +3,128 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Player Stats &middot; Cal Ripken All-Stars</title>
+  <title>Player Stats &middot; <%= teamName %></title>
   <link rel="stylesheet" href="/styles.css">
   <style>
     body { margin:0; font-family:Arial,sans-serif; background:#f9fafb; }
     .stats-header { background:#1a2744; color:#fff; padding:20px; text-align:center; }
     .stats-header h1 { margin:0; font-size:22px; }
     .stats-header p { margin:4px 0 0; color:#d4a843; }
-    .stats-wrap { max-width:800px; margin:0 auto; padding:16px; }
-    .stats-card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:16px; }
-    .stats-card h2 { margin:0 0 16px; color:#1a2744; font-size:18px; }
-    .team-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .team-table th { background:#f3f4f6; padding:8px 6px; text-align:left; font-size:11px; text-transform:uppercase; color:#6b7280; border-bottom:2px solid #e5e7eb; }
-    .team-table td { padding:7px 6px; border-bottom:1px solid #f3f4f6; }
-    .team-table tr:hover { background:#f0fdf4; cursor:pointer; }
-    .player-detail { display:none; }
-    .player-detail.visible { display:block; }
-    .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:12px; }
-    .stat-box { text-align:center; padding:12px; background:#f9fafb; border-radius:6px; }
-    .stat-box .num { font-size:24px; font-weight:bold; color:#1a2744; }
-    .stat-box .lbl { font-size:11px; color:#6b7280; text-transform:uppercase; }
-    .back-link { display:inline-block; margin-bottom:12px; color:#1a2744; text-decoration:none; }
-    .select-prompt { text-align:center; color:#6b7280; padding:40px 20px; }
+    .stats-wrap { max-width:960px; margin:0 auto; padding:16px; }
+    .stats-card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; margin-bottom:20px; }
+    .stats-card h2 { margin:0 0 16px; color:#1a2744; font-size:18px; font-weight:800; }
+    .stats-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .stats-table { width:100%; border-collapse:collapse; font-size:13px; white-space:nowrap; }
+    .stats-table th { background:#f3f4f6; padding:8px 8px; text-align:right; font-size:11px; text-transform:uppercase; color:#6b7280; border-bottom:2px solid #e5e7eb; position:sticky; top:0; }
+    .stats-table th:first-child, .stats-table th:nth-child(2) { text-align:left; }
+    .stats-table td { padding:7px 8px; border-bottom:1px solid #f3f4f6; text-align:right; }
+    .stats-table td:first-child, .stats-table td:nth-child(2) { text-align:left; }
+    .stats-table tr:hover { background:#f0fdf4; }
+    .stats-table .player-name { font-weight:700; color:#1a2744; cursor:pointer; }
+    .stats-table .player-name:hover { text-decoration:underline; }
+    .stats-table .highlight { background:#fffbeb; font-weight:700; }
+    .tab-bar { display:flex; gap:0; margin-bottom:20px; border-bottom:2px solid #e5e7eb; }
+    .tab-btn { padding:10px 24px; font-size:14px; font-weight:700; color:#6b7280; background:none; border:none; border-bottom:3px solid transparent; margin-bottom:-2px; cursor:pointer; transition:all 0.15s; }
+    .tab-btn.active { color:#1a2744; border-bottom-color:#2563eb; }
+    .tab-btn:hover { color:#1a2744; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    .player-detail-card { background:#f0f9ff; border:1px solid #bfdbfe; border-radius:10px; padding:20px; margin-bottom:20px; display:none; }
+    .player-detail-card.visible { display:block; }
+    .player-detail-card h3 { margin:0 0 12px; color:#1a2744; font-size:16px; }
+    .detail-close { float:right; background:none; border:none; font-size:18px; cursor:pointer; color:#6b7280; }
+    .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(85px,1fr)); gap:10px; }
+    .stat-box { text-align:center; padding:10px 6px; background:#fff; border-radius:8px; border:1px solid #e5e7eb; }
+    .stat-box .num { font-size:22px; font-weight:bold; color:#1a2744; }
+    .stat-box .lbl { font-size:10px; color:#6b7280; text-transform:uppercase; margin-top:2px; }
+    .back-link { display:inline-block; margin-bottom:12px; color:#1a2744; text-decoration:none; font-size:14px; }
+    .empty-msg { text-align:center; color:#6b7280; padding:30px 20px; font-size:14px; }
+    .section-label { font-size:13px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.5px; margin:16px 0 8px; }
+    @media (max-width: 600px) {
+      .tab-btn { padding:8px 14px; font-size:13px; }
+      .stats-table { font-size:12px; }
+      .stats-table th, .stats-table td { padding:6px 5px; }
+      .stat-grid { grid-template-columns:repeat(3,1fr); }
+    }
   </style>
 </head>
 <body>
   <div class="stats-header">
-    <h1>Player Stats</h1>
-    <p>Cal Ripken All-Stars &middot; Summer 2026</p>
+    <h1>&#9918; Player Stats</h1>
+    <p><%= teamName %> &middot; Summer 2026</p>
   </div>
 
   <div class="stats-wrap">
-    <a href="/" class="back-link">&larr; Home</a>
+    <a href="<%= isAdmin ? '/admin' : '/' %>" class="back-link">&larr; Back</a>
 
-    <% if (isAdmin || isStaff) { %>
-      <div class="stats-card" id="team-stats-card">
-        <h2>Team Batting</h2>
-        <table class="team-table">
-          <thead><tr><th>Player</th><th>PA</th><th>AB</th><th>H</th><th>AVG</th><th>RBI</th></tr></thead>
-          <tbody id="team-body"><tr><td colspan="6" style="text-align:center;color:#6b7280;">Loading...</td></tr></tbody>
-        </table>
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('batting')">Batting</button>
+      <button class="tab-btn" onclick="switchTab('pitching')">Pitching</button>
+    </div>
+
+    <div id="player-detail-card" class="player-detail-card">
+      <button class="detail-close" onclick="closeDetail()">&times;</button>
+      <h3 id="detail-name"></h3>
+      <div id="detail-batting">
+        <div class="section-label">Batting</div>
+        <div class="stat-grid" id="detail-batting-grid"></div>
       </div>
-    <% } %>
+      <div id="detail-pitching" style="display:none;">
+        <div class="section-label" style="margin-top:16px;">Pitching</div>
+        <div class="stat-grid" id="detail-pitching-grid"></div>
+      </div>
+    </div>
 
-    <div class="stats-card">
-      <h2 id="player-stats-title">
-        <% if (parentUser && parentUser.player_ids && parentUser.player_ids.length > 0) { %>
-          Your Player Stats
-        <% } else if (isAdmin || isStaff) { %>
-          Click a player above for details
-        <% } else { %>
-          Log in to see your stats
-        <% } %>
-      </h2>
-      <div id="player-detail">
-        <% if (parentUser && parentUser.player_ids && parentUser.player_ids.length > 0) { %>
-          <div id="auto-load-players" data-ids="<%= JSON.stringify(parentUser.player_ids) %>"></div>
-        <% } else if (!isAdmin && !isStaff) { %>
-          <p class="select-prompt">
-            <a href="/parent/login" style="color:#1a2744;font-weight:bold;">Log in as a parent</a> to view your child's stats.
-          </p>
-        <% } else { %>
-          <p class="select-prompt">Select a player from the team table above.</p>
-        <% } %>
+    <div id="tab-batting" class="tab-content active">
+      <div class="stats-card">
+        <h2>Team Batting</h2>
+        <div class="stats-table-wrap">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Player</th>
+                <th>PA</th>
+                <th>AB</th>
+                <th>H</th>
+                <th>AVG</th>
+                <th>2B</th>
+                <th>3B</th>
+                <th>HR</th>
+                <th>RBI</th>
+                <th>BB</th>
+                <th>K</th>
+              </tr>
+            </thead>
+            <tbody id="batting-body">
+              <tr><td colspan="12" class="empty-msg">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-pitching" class="tab-content">
+      <div class="stats-card">
+        <h2>Team Pitching</h2>
+        <div class="stats-table-wrap">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Player</th>
+                <th>G</th>
+                <th>Pitches</th>
+                <th>Strikes</th>
+                <th>Balls</th>
+                <th>Strike %</th>
+              </tr>
+            </thead>
+            <tbody id="pitching-body">
+              <tr><td colspan="7" class="empty-msg">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -74,58 +133,84 @@
   var isAdmin = <%= isAdmin ? 'true' : 'false' %>;
   var isStaff = <%= isStaff ? 'true' : 'false' %>;
 
-  function loadTeamStats() {
-    if (!isAdmin && !isStaff) return;
-    fetch('/api/team-stats' + (isStaff ? '?phone=' + new URLSearchParams(window.location.search).get('phone') : '')).then(function(r) { return r.json(); }).then(function(stats) {
-      var html = '';
-      stats.sort(function(a, b) { return parseFloat(b.avg === '-' ? 0 : b.avg) - parseFloat(a.avg === '-' ? 0 : a.avg); });
-      stats.forEach(function(s) {
-        html += '<tr onclick="loadPlayer(' + s.player_id + ')" style="cursor:pointer;">';
-        html += '<td><strong>' + s.player_name + '</strong>' + (s.jersey_number ? ' #' + s.jersey_number : '') + '</td>';
-        html += '<td>' + s.pa + '</td><td>' + s.abs + '</td><td>' + s.hits + '</td>';
-        html += '<td>' + s.avg + '</td><td>' + s.rbis + '</td></tr>';
-      });
-      document.getElementById('team-body').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#6b7280;">No stats yet</td></tr>';
-    });
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+    document.getElementById('tab-' + tab).classList.add('active');
+    event.target.classList.add('active');
   }
 
-  function loadPlayer(id) {
+  function closeDetail() {
+    document.getElementById('player-detail-card').classList.remove('visible');
+  }
+
+  function showDetail(id) {
     var url = '/api/player-stats/' + id;
     if (isStaff) url += '?phone=' + new URLSearchParams(window.location.search).get('phone');
     fetch(url).then(function(r) { return r.json(); }).then(function(d) {
       if (d.error) return;
-      document.getElementById('player-stats-title').textContent = d.player.player_name + (d.player.jersey_number ? ' #' + d.player.jersey_number : '');
-      var html = '<h3 style="margin:16px 0 8px;color:#1a2744;">Batting</h3>';
-      html += '<div class="stat-grid">';
-      html += '<div class="stat-box"><div class="num">' + d.batting.avg + '</div><div class="lbl">AVG</div></div>';
-      html += '<div class="stat-box"><div class="num">' + d.batting.hits + '</div><div class="lbl">Hits</div></div>';
-      html += '<div class="stat-box"><div class="num">' + d.batting.abs + '</div><div class="lbl">AB</div></div>';
-      html += '<div class="stat-box"><div class="num">' + d.batting.rbis + '</div><div class="lbl">RBI</div></div>';
-      html += '<div class="stat-box"><div class="num">' + d.batting.bbs + '</div><div class="lbl">BB</div></div>';
-      html += '<div class="stat-box"><div class="num">' + d.batting.ks + '</div><div class="lbl">K</div></div>';
-      html += '<div class="stat-box"><div class="num">' + d.batting.doubles + '</div><div class="lbl">2B</div></div>';
-      html += '<div class="stat-box"><div class="num">' + d.batting.triples + '</div><div class="lbl">3B</div></div>';
-      html += '<div class="stat-box"><div class="num">' + d.batting.hrs + '</div><div class="lbl">HR</div></div>';
-      html += '</div>';
+      var card = document.getElementById('player-detail-card');
+      document.getElementById('detail-name').textContent = d.player.player_name + (d.player.jersey_number ? ' #' + d.player.jersey_number : '');
+
+      var bg = document.getElementById('detail-batting-grid');
+      bg.innerHTML = box(d.batting.avg, 'AVG') + box(d.batting.hits, 'H') + box(d.batting.abs, 'AB')
+        + box(d.batting.doubles, '2B') + box(d.batting.triples, '3B') + box(d.batting.hrs, 'HR')
+        + box(d.batting.rbis, 'RBI') + box(d.batting.bbs, 'BB') + box(d.batting.ks, 'K');
+
+      var pg = document.getElementById('detail-pitching-grid');
+      var ps = document.getElementById('detail-pitching');
       if (d.pitching.totalPitches > 0) {
-        html += '<h3 style="margin:16px 0 8px;color:#1a2744;">Pitching</h3>';
-        html += '<div class="stat-grid">';
-        html += '<div class="stat-box"><div class="num">' + d.pitching.totalPitches + '</div><div class="lbl">Total Pitches</div></div>';
-        if (d.pitching.strikePercent !== undefined) html += '<div class="stat-box"><div class="num">' + d.pitching.strikePercent + '%</div><div class="lbl">Strike %</div></div>';
-        if (d.pitching.games !== undefined) html += '<div class="stat-box"><div class="num">' + d.pitching.games + '</div><div class="lbl">Games</div></div>';
-        html += '</div>';
+        ps.style.display = '';
+        pg.innerHTML = box(d.pitching.totalPitches, 'Pitches') + box((d.pitching.strikePercent || 0) + '%', 'Strike %') + box(d.pitching.games || 0, 'Games');
+      } else {
+        ps.style.display = 'none';
       }
-      document.getElementById('player-detail').innerHTML = html;
+      card.classList.add('visible');
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
 
-  loadTeamStats();
-
-  var autoLoad = document.getElementById('auto-load-players');
-  if (autoLoad) {
-    var ids = JSON.parse(autoLoad.dataset.ids);
-    if (ids.length > 0) loadPlayer(ids[0]);
+  function box(val, label) {
+    return '<div class="stat-box"><div class="num">' + val + '</div><div class="lbl">' + label + '</div></div>';
   }
+
+  function loadStats() {
+    var url = '/api/team-stats';
+    if (isStaff) url += '?phone=' + new URLSearchParams(window.location.search).get('phone');
+    fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+      var batting = data.batting || [];
+      var pitching = data.pitching || [];
+
+      batting.sort(function(a, b) { return parseFloat(b.avg === '-' ? 0 : b.avg) - parseFloat(a.avg === '-' ? 0 : a.avg); });
+      var bhtml = '';
+      batting.forEach(function(s) {
+        bhtml += '<tr onclick="showDetail(' + s.player_id + ')">';
+        bhtml += '<td>' + (s.jersey_number || '-') + '</td>';
+        bhtml += '<td class="player-name">' + s.player_name + '</td>';
+        bhtml += '<td>' + s.pa + '</td><td>' + s.abs + '</td><td>' + s.hits + '</td>';
+        bhtml += '<td><strong>' + s.avg + '</strong></td>';
+        bhtml += '<td>' + s.doubles + '</td><td>' + s.triples + '</td><td>' + s.hrs + '</td>';
+        bhtml += '<td>' + s.rbis + '</td><td>' + s.bbs + '</td><td>' + s.ks + '</td>';
+        bhtml += '</tr>';
+      });
+      document.getElementById('batting-body').innerHTML = bhtml || '<tr><td colspan="12" class="empty-msg">No batting stats yet</td></tr>';
+
+      pitching.sort(function(a, b) { return b.totalPitches - a.totalPitches; });
+      var phtml = '';
+      pitching.forEach(function(s) {
+        phtml += '<tr onclick="showDetail(' + s.player_id + ')">';
+        phtml += '<td>' + (s.jersey_number || '-') + '</td>';
+        phtml += '<td class="player-name">' + s.player_name + '</td>';
+        phtml += '<td>' + s.games + '</td><td>' + s.totalPitches + '</td>';
+        phtml += '<td>' + s.strikes + '</td><td>' + s.balls + '</td>';
+        phtml += '<td><strong>' + s.strikePercent + '%</strong></td>';
+        phtml += '</tr>';
+      });
+      document.getElementById('pitching-body').innerHTML = phtml || '<tr><td colspan="7" class="empty-msg">No pitching stats yet</td></tr>';
+    });
+  }
+
+  loadStats();
   </script>
 </body>
 </html>
