@@ -149,7 +149,6 @@
 
         <% if (drills.length > 0) { %>
         <a href="/event/<%= event.id %>/practice-timer" class="btn btn-confirm" style="display:inline-block;margin-bottom:16px;text-decoration:none;font-size:15px;padding:10px 24px;">Start Practice</a>
-        <% } %>
         <div id="drill-list" class="drill-list">
           <% drills.forEach((drill, i) => { %>
           <div class="drill-card<%= isAdmin ? ' drill-draggable' : '' %>" data-duration="<%= drill.duration_minutes %>" data-name="<%= drill.drill_name %>" data-id="<%= drill.id %>" id="drill-<%= drill.id %>" <% if (isAdmin) { %>draggable="true"<% } %>>
@@ -158,7 +157,7 @@
             <div class="drill-body">
               <div class="drill-name"><%= drill.drill_name %></div>
               <% if (drill.description) { %><div class="drill-desc"><%= drill.description %></div><% } %>
-              <% if (isStaff && drill.coach_notes) { %><div class="drill-coach-notes"><span class="coach-notes-badge">Coach Notes</span> <%= drill.coach_notes %></div><% } %>
+              <% if (isAdmin && drill.coach_notes) { %><div class="drill-coach-notes"><span class="coach-notes-badge">Coach Notes</span> <%= drill.coach_notes %></div><% } %>
             </div>
             <div class="drill-dur"><%= drill.duration_minutes %> min</div>
           </div>
