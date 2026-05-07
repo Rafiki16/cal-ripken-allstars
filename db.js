@@ -213,6 +213,8 @@ async function init() {
       )
     `);
 
+    try { await pool.query('ALTER TABLE parent_accounts ADD COLUMN last_login_at TIMESTAMPTZ'); } catch (e) { /* exists */ }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS team_messages (
         id SERIAL PRIMARY KEY,
@@ -546,6 +548,7 @@ async function init() {
       updateParentAccountPassword: async (id, passwordHash) => pool.query('UPDATE parent_accounts SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
       updateParentAccountName: async (id, displayName) => pool.query('UPDATE parent_accounts SET display_name = $1 WHERE id = $2', [displayName, id]),
       updateParentAccountPhone: async (id, phone) => pool.query('UPDATE parent_accounts SET phone = $1 WHERE id = $2', [phone, id]),
+      updateParentLoginTime: async (phone) => pool.query('UPDATE parent_accounts SET last_login_at = NOW() WHERE phone = $1', [phone]),
       deleteParentAccount: async (id) => pool.query('DELETE FROM parent_accounts WHERE id = $1', [id]),
       updatePlayerParentPhone: async (playerId, phone) => pool.query('UPDATE players SET parent_phone = $1 WHERE id = $2', [phone, playerId]),
       updateGameScore: async (id, ourScore, opponentScore) => pool.query('UPDATE team_events SET our_score = $1, opponent_score = $2 WHERE id = $3', [ourScore, opponentScore, id]),
@@ -901,6 +904,8 @@ async function init() {
       )
     `);
 
+    try { sqliteDb.exec('ALTER TABLE parent_accounts ADD COLUMN last_login_at TEXT'); } catch (e) { /* exists */ }
+
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS team_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1236,6 +1241,7 @@ async function init() {
       updateParentAccountPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE parent_accounts SET password_hash = ? WHERE id = ?').run(passwordHash, id),
       updateParentAccountName: async (id, displayName) => sqliteDb.prepare('UPDATE parent_accounts SET display_name = ? WHERE id = ?').run(displayName, id),
       updateParentAccountPhone: async (id, phone) => sqliteDb.prepare('UPDATE parent_accounts SET phone = ? WHERE id = ?').run(phone, id),
+      updateParentLoginTime: async (phone) => sqliteDb.prepare("UPDATE parent_accounts SET last_login_at = datetime('now') WHERE phone = ?").run(phone),
       deleteParentAccount: async (id) => sqliteDb.prepare('DELETE FROM parent_accounts WHERE id = ?').run(id),
       updatePlayerParentPhone: async (playerId, phone) => sqliteDb.prepare('UPDATE players SET parent_phone = ? WHERE id = ?').run(phone, playerId),
       updateGameScore: async (id, ourScore, opponentScore) => sqliteDb.prepare('UPDATE team_events SET our_score = ?, opponent_score = ? WHERE id = ?').run(ourScore, opponentScore, id),
@@ -1479,6 +1485,7 @@ module.exports = {
   updateParentAccountPassword: (...args) => impl.updateParentAccountPassword(...args),
   updateParentAccountName: (...args) => impl.updateParentAccountName(...args),
   updateParentAccountPhone: (...args) => impl.updateParentAccountPhone(...args),
+  updateParentLoginTime: (...args) => impl.updateParentLoginTime(...args),
   deleteParentAccount: (...args) => impl.deleteParentAccount(...args),
   updatePlayerParentPhone: (...args) => impl.updatePlayerParentPhone(...args),
   updateGameScore: (...args) => impl.updateGameScore(...args),

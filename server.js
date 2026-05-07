@@ -548,6 +548,7 @@ app.post('/parent/login', async (req, res) => {
   if (!account || !bcrypt.compareSync(password || '', account.password_hash)) {
     return res.render('parent-login', { error: 'Invalid phone number or password.' });
   }
+  await db.updateParentLoginTime(phone);
   setParentCookie(res, phone);
   res.redirect('/');
 });
@@ -784,6 +785,7 @@ app.get('/admin', requireAdmin, async (req, res) => {
   const allEvents = await db.getAllEvents();
   const teamEvents = await db.getAllTeamEvents();
   const savedLocations = await db.getAllSavedLocations();
+  const parentAccounts = await db.getAllParentAccounts();
   const rsvpRows = await db.getRsvpCountsAll();
   const rsvpCounts = {};
   rsvpRows.forEach(r => {
@@ -792,8 +794,10 @@ app.get('/admin', requireAdmin, async (req, res) => {
     else if (r.status === 'no') rsvpCounts[r.team_event_id].no = r.cnt;
     else if (r.status === 'maybe') rsvpCounts[r.team_event_id].maybe = r.cnt;
   });
+  const accountsByPhone = {};
+  parentAccounts.forEach(a => { accountsByPhone[a.phone] = a; });
   res.render('admin', {
-    players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents, savedLocations, rsvpCounts,
+    players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents, savedLocations, rsvpCounts, accountsByPhone,
     adminUser: req.session.admin,
     success: req.query.success || null,
     error: req.query.error || null,

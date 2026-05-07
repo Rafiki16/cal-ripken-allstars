@@ -70,6 +70,7 @@
               <th>Age</th>
               <th>Team</th>
               <th>Parent</th>
+              <th>Account</th>
               <th>Phone</th>
               <th>Status</th>
               <th>Profile</th>
@@ -85,6 +86,16 @@
                 <td><%= player.age %></td>
                 <td><%= player.team %></td>
                 <td><%= player.parent_name %></td>
+                <td style="text-align:center;">
+                  <% const acct = accountsByPhone[player.parent_phone]; %>
+                  <% if (acct && acct.last_login_at) { %>
+                    <span style="display:inline-block;background:#dcfce7;color:#166534;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;" title="Logged in <%= new Date(acct.last_login_at).toLocaleDateString() %>">Verified</span>
+                  <% } else if (acct) { %>
+                    <span style="display:inline-block;background:#fef9c3;color:#854d0e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;" title="Account created, awaiting first login">Pending</span>
+                  <% } else { %>
+                    <button type="button" class="btn-sm" style="background:#7c3aed;color:#fff;font-size:10px;padding:2px 6px;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;" onclick="quickCreateAccount(<%= player.id %>, '<%= player.parent_name.replace(/'/g, "\\'") %>', '<%= player.parent_phone %>')" title="Create parent account">+ Account</button>
+                  <% } %>
+                </td>
                 <td class="td-mono"><%= player.parent_phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %></td>
                 <td>
                   <span class="player-status-badge badge-<%= player.status %>" style="position:static;">
@@ -795,6 +806,62 @@
         </div>
       </div>
     </div>
+
+    <!-- Quick Create Account Modal (from roster) -->
+    <div id="qa-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:100;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:16px;padding:28px;max-width:420px;width:90%;margin:auto;position:relative;top:50%;transform:translateY(-50%);">
+        <h3 style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:4px;">Create Parent Account</h3>
+        <p id="qa-player-label" style="font-size:13px;color:#6b7280;margin-bottom:16px;"></p>
+        <input type="hidden" id="qa-player-id">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;color:#6b7280;font-weight:600;">Parent Name</label>
+          <input type="text" id="qa-name" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;color:#6b7280;font-weight:600;">Phone Number</label>
+          <input type="tel" id="qa-phone" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-size:12px;color:#6b7280;font-weight:600;">Password</label>
+          <input type="text" id="qa-password" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="display:flex;gap:12px;">
+          <button class="btn btn-confirm" style="flex:1;" onclick="submitQuickCreate()">Create & Send Text</button>
+          <button class="btn btn-secondary" style="flex:1;" onclick="document.getElementById('qa-modal').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    function quickCreateAccount(playerId, parentName, parentPhone) {
+      document.getElementById('qa-player-id').value = playerId;
+      document.getElementById('qa-player-label').textContent = 'Linked player will be auto-selected';
+      document.getElementById('qa-name').value = parentName;
+      var ph = parentPhone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+      document.getElementById('qa-phone').value = ph;
+      var pw = Math.random().toString(36).slice(-8);
+      document.getElementById('qa-password').value = pw;
+      document.getElementById('qa-modal').style.display = 'flex';
+    }
+    function submitQuickCreate() {
+      var name = document.getElementById('qa-name').value.trim();
+      var phone = document.getElementById('qa-phone').value.trim();
+      var password = document.getElementById('qa-password').value.trim();
+      var playerId = Number(document.getElementById('qa-player-id').value);
+      if (!name || !phone || !password) return alert('All fields are required.');
+      fetch('/admin/accounts/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: name, phone: phone, password: password, player_ids: [playerId] })
+      }).then(r => r.json()).then(function(d) {
+        if (d.ok) {
+          document.getElementById('qa-modal').style.display = 'none';
+          alert('Account created!' + (d.smsSent ? ' Login credentials sent via text.' : ' SMS not configured — share credentials manually.'));
+          location.reload();
+        } else { alert(d.error); }
+      });
+    }
+    document.getElementById('qa-modal').addEventListener('click', function(e) { if (e.target === this) this.style.display = 'none'; });
+    </script>
 
     <script>
     function loadAccounts() {
