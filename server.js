@@ -2053,6 +2053,112 @@ app.post('/admin/programs/:id/unassign/:playerId', requireAdmin, async (req, res
   res.redirect('/admin/programs/' + req.params.id + '/edit');
 });
 
+app.post('/admin/seed-arm-care', requireAdmin, async (req, res) => {
+  try {
+    const existing = (await db.getAllPrograms()).find(p => p.title === "Pitcher's Arm Care Program");
+    if (existing) return res.redirect('/admin/programs?error=Arm+Care+program+already+exists');
+
+    const program = await db.addProgram({
+      title: "Pitcher's Arm Care Program",
+      description: "How to bulletproof young pitcher's arms preventing injury while building velocity and control. A comprehensive weekly program covering arm care exercises, flexibility, throwing drills, and weighted ball velocity work.",
+      author: "Coach Matt Thompson",
+      program_type: 'at_home',
+      schedule_type: 'weekly',
+      published: 1
+    });
+
+    const days = [
+      { label: 'Monday', activities: [
+        { name: 'T-Flex: Stationary', reps: '30 sec', description: 'Arm Care', instructions: 'Stand tall, arms extended out in a "T," swing forward/backward for 30 seconds.' },
+        { name: 'T-Flex: Walking', reps: '30 sec', description: 'Arm Care', instructions: 'Walk while maintaining "T" position, 30 seconds.' },
+        { name: 'T-Flex: Carioca', reps: '30 sec', description: 'Arm Care', instructions: 'Perform a carioca while in "T" position, 30 seconds.' },
+        { name: 'Arm Circles: Walking', reps: '30 sec', description: 'Arm Care', instructions: 'Arms out, circles forward/backward/mixed, 30 seconds.' },
+        { name: 'Speed Towels', reps: '24-26 reps', description: 'Arm Care', instructions: 'Hold a hand towel and perform the pitching motion at full speed, aiming for a target ("stride plus five" steps away). Do 24-26 reps in 30 seconds. Use a regular towel or add a weighted baseball for added resistance.' },
+        { name: 'Band Station', reps: '10 reps', description: 'Arm Care', instructions: 'Band mounted shoulder height, keep elbows shoulder height, grab the handles and walk back in a zombie pose with elbows at shoulder level until the slack is removed from the bands, drive the elbows straight back squeezing between the shoulder blades keeping the elbows at shoulder height. Maintain the elbow position and rotate up into a "field goal" pose. Then from there extend the arms into a "Y" pose, lower slowly back into zombie pose and repeat.' },
+        { name: 'Weighted Ball Holds', reps: '3-5 per hand position', description: 'Build strength without throwing stress', instructions: 'Choose weighted ball (7-21 oz, never throw heavier ball during season—just hold). Grip, go through pitching motion, STOP at release (do not throw). 3-5 holds per hand position, focus on solid grip and smooth deceleration.\n\nNote: for 12U, stick to 11oz or less, only go above 11oz after puberty.' },
+        { name: 'In and Outs', reps: '15', description: 'Flexibility', instructions: 'Swing arms across body and back (Hugs).' },
+        { name: 'Arm Saws', reps: '15 each', description: 'Flexibility', instructions: 'Start with your arms extended out at shoulder height to the side (airplane wings) with your palms forward (thumbs up) and flap your arms forward and back like a bird horizontal to the ground, then do them with your palms to the sky for palms up, then switch for the last 15 to thumbs down, palms behind you.' },
+        { name: 'Wrist Stretches', reps: '30 sec each position', description: 'Flexibility', instructions: 'Get down on all fours (knees and hands flat on the ground) with your fingers pointing straight up, rock forward until you feel the stretch, hold for 30. Rotate fingers so they are pointing to the sides, away from each other and rock side to side for 30 seconds. Then rotate once more until your fingers point to your knees and sit back towards your feet (deep stretch) hold for 30 seconds.' },
+      ]},
+      { label: 'Tuesday', activities: [
+        { name: 'T-Flex: Stationary', reps: '30 sec', description: 'Arm Care', instructions: 'Stand tall, arms extended out in a "T," swing forward/backward for 30 seconds.' },
+        { name: 'T-Flex: Walking', reps: '30 sec', description: 'Arm Care', instructions: 'Walk while maintaining "T" position, 30 seconds.' },
+        { name: 'T-Flex: Carioca', reps: '30 sec', description: 'Arm Care', instructions: 'Perform a carioca while in "T" position, 30 seconds.' },
+        { name: 'Arm Circles: Walking', reps: '30 sec', description: 'Arm Care', instructions: 'Arms out, circles forward/backward/mixed, 30 seconds.' },
+        { name: 'Speed Towels', reps: '24-26 reps', description: 'Arm Care + Drill', instructions: 'Hold a hand towel and perform the pitching motion at full speed, aiming for a target ("stride plus five" steps away). Do 24-26 reps in 30 seconds. Use a regular towel or add a weighted baseball for added resistance.' },
+        { name: 'Band Station', reps: '10 reps', description: 'Arm Care', instructions: 'Band mounted shoulder height, keep elbows shoulder height, grab the handles and walk back in a zombie pose with elbows at shoulder level until the slack is removed from the bands, drive the elbows straight back squeezing between the shoulder blades keeping the elbows at shoulder height. Maintain the elbow position and rotate up into a "field goal" pose. Then from there extend the arms into a "Y" pose, lower slowly back into zombie pose and repeat.' },
+      ]},
+      { label: 'Wednesday', activities: [
+        { name: 'Jog Forwards and Backwards', reps: '30 sec each', description: 'Warm Up', instructions: 'Jog forwards for 30 seconds, then backwards for 30 seconds.' },
+        { name: 'High Knee Skips', reps: '30 sec each direction', description: 'Warm Up', instructions: 'High knee skips, 30 seconds each direction.' },
+        { name: 'Bounds with High Knees', reps: '30 sec each leg', description: 'Warm Up', instructions: 'Large strides with high knees, 30 seconds each leg.' },
+        { name: 'Carioca (Grapevine)', reps: '30 sec each direction', description: 'Warm Up', instructions: 'Sideways shuffle/grapevine, 30 seconds each direction.' },
+        { name: 'Tap & Go', reps: '30 sec', description: 'Warm Up', instructions: 'Lateral steps touching the ground with the opposite hand, 30 seconds.' },
+        { name: 'Knee Drill', reps: '3-5 per hand position', description: 'Throwing Drill', instructions: '1. Kneel facing target, hips and knees aligned, glove in front.\n2. Twist your upper body as far as possible while keeping glove in front.\n3. Throw with max torque, finishing with glove out front.\n4. Repeat 3-5 reps per hand position for each ball type (regular or weighted).' },
+        { name: 'Flat Ground Throws', reps: '10-15 per distance', description: 'Throwing Drill', instructions: '1. Play catch starting at 40-60 ft.\n2. Gradually extend distance: 90 ft, 120 ft, up to 130 ft. 90ft is plenty for 12U.\n3. Focus on flat trajectory, mechanics consistent with mound delivery.\n4. Stop increasing distance if mechanics break down—one-hop throws if needed.\n5. 10-15 throws per distance.' },
+        { name: 'Long Toss', reps: '10 throws per phase', description: 'Throwing Drill', instructions: 'Medium Distance: Move back to 90 feet, increase intent but maintain smooth mechanics, make 10 throws focusing on accuracy and posture.\n\nMaximum Distance: Progress out to 120-130 feet, deliver firm throws keeping a flat trajectory ("throw on a line," not an arc), complete up to 10 throws. If form breaks down, reduce distance or switch to one-hop throws.\n\nReturn-In: Gradually move closer after reaching max distance, maintain effort and consistency of mechanics, finish with 10 throws decreasing back to short toss.\n\nCoaching Keys: Emphasize repeating mound mechanics for every throw—do not sacrifice form for distance. Stop increasing distance once mechanics falter.' },
+      ]},
+      { label: 'Thursday', activities: [
+        { name: 'T-Flex: Stationary', reps: '30 sec', description: 'Arm Care', instructions: 'Stand tall, arms extended out in a "T," swing forward/backward for 30 seconds.' },
+        { name: 'T-Flex: Walking', reps: '30 sec', description: 'Arm Care', instructions: 'Walk while maintaining "T" position, 30 seconds.' },
+        { name: 'T-Flex: Carioca', reps: '30 sec', description: 'Arm Care', instructions: 'Perform a carioca while in "T" position, 30 seconds.' },
+        { name: 'Arm Circles: Walking', reps: '30 sec', description: 'Arm Care', instructions: 'Arms out, circles forward/backward/mixed, 30 seconds.' },
+        { name: 'Speed Towels', reps: '24-26 reps', description: 'Arm Care', instructions: 'Hold a hand towel and perform the pitching motion at full speed, aiming for a target ("stride plus five" steps away). Do 24-26 reps in 30 seconds.' },
+        { name: 'Band Station', reps: '10 reps', description: 'Arm Care', instructions: 'Band mounted shoulder height, keep elbows shoulder height, grab the handles and walk back in a zombie pose with elbows at shoulder level until the slack is removed from the bands, drive the elbows straight back squeezing between the shoulder blades keeping the elbows at shoulder height. Maintain the elbow position and rotate up into a "field goal" pose. Then from there extend the arms into a "Y" pose, lower slowly back into zombie pose and repeat.' },
+        { name: 'Weighted Ball Holds', reps: '3-5 per hand position', description: 'Build strength without throwing stress', instructions: 'Choose weighted ball (7-21 oz, never throw heavier ball during season—just hold). Grip, go through pitching motion, STOP at release (do not throw). 3-5 holds per hand position, focus on solid grip and smooth deceleration.\n\nNote: for 12U, stick to 11oz or less, only go above 11oz after puberty.' },
+        { name: 'In and Outs', reps: '15', description: 'Flexibility', instructions: 'Swing arms across body and back (Hugs).' },
+        { name: 'Arm Saws', reps: '15 each', description: 'Flexibility', instructions: 'Start with your arms extended out at shoulder height to the side (airplane wings) with your palms forward (thumbs up) and flap your arms forward and back like a bird horizontal to the ground, then do them with your palms to the sky for palms up, then switch for the last 15 to thumbs down, palms behind you.' },
+        { name: 'Wrist Stretches', reps: '30 sec each position', description: 'Flexibility', instructions: 'Get down on all fours with your fingers pointing straight up, rock forward until you feel the stretch, hold for 30. Rotate fingers pointing to the sides and rock side to side for 30 seconds. Rotate once more until fingers point to your knees and sit back towards your feet (deep stretch), hold for 30 seconds.' },
+      ]},
+      { label: 'Friday', activities: [
+        { name: 'Jog Forwards and Backwards', reps: '30 sec each', description: 'Warm Up', instructions: 'Jog forwards for 30 seconds, then backwards for 30 seconds.' },
+        { name: 'High Knee Skips', reps: '30 sec each direction', description: 'Warm Up', instructions: 'High knee skips, 30 seconds each direction.' },
+        { name: 'Bounds with High Knees', reps: '30 sec each leg', description: 'Warm Up', instructions: 'Large strides with high knees, 30 seconds each leg.' },
+        { name: 'Carioca (Grapevine)', reps: '30 sec each direction', description: 'Warm Up', instructions: 'Sideways shuffle/grapevine, 30 seconds each direction.' },
+        { name: 'Tap & Go', reps: '30 sec', description: 'Warm Up', instructions: 'Lateral steps touching the ground with the opposite hand, 30 seconds.' },
+        { name: 'Rocker Drill', reps: '3-5 per hand position', description: 'Throwing Drill', instructions: '1. Stand with stride foot forward and landing knee bent at 90 degrees.\n2. Keep back leg on ground, rock torso gently back and forth.\n3. After max load, throw to target—glove stays out front.\n4. Repeat 3-5 reps per hand position.' },
+        { name: 'Crow-Hop (Run and Gun)', reps: '3-5 per hand position', description: 'Throwing Drill', instructions: '1. Cross back foot behind lead foot, hop forward to drive off rear leg.\n2. Use body momentum to throw on a straight line with max effort.\n3. Always finish with glove in front.\n4. Repeat 3-5 reps per hand position.' },
+        { name: 'Flat Ground Throws', reps: '10-15 per distance', description: 'Throwing Drill', instructions: '1. Play catch starting at 40-60 ft.\n2. Gradually extend distance: 90 ft, 120 ft, up to 130 ft. 90ft is plenty for 12U.\n3. Focus on flat trajectory, mechanics consistent with mound delivery.\n4. Stop increasing distance if mechanics break down—one-hop throws if needed.\n5. 10-15 throws per distance.' },
+      ]},
+      { label: 'Saturday', activities: [
+        { name: 'Jog Forwards and Backwards', reps: '30 sec each', description: 'Warm Up', instructions: 'Jog forwards for 30 seconds, then backwards for 30 seconds.' },
+        { name: 'High Knee Skips', reps: '30 sec each direction', description: 'Warm Up', instructions: 'High knee skips, 30 seconds each direction.' },
+        { name: 'Bounds with High Knees', reps: '30 sec each leg', description: 'Warm Up', instructions: 'Large strides with high knees, 30 seconds each leg.' },
+        { name: 'Carioca (Grapevine)', reps: '30 sec each direction', description: 'Warm Up', instructions: 'Sideways shuffle/grapevine, 30 seconds each direction.' },
+        { name: 'Tap & Go', reps: '30 sec', description: 'Warm Up', instructions: 'Lateral steps touching the ground with the opposite hand, 30 seconds.' },
+        { name: 'T-Flex Walks + Arm Circles', reps: '30 sec each', description: 'Arm Care Warm Up', instructions: 'T-Flex walks and arm circles to prepare the arm for velocity work.' },
+        { name: 'Speed Towels', reps: '24 reps in 30 sec', description: 'Arm Care Warm Up', instructions: 'Speed towel drill at full intent to complete arm warm-up before weighted ball work.' },
+        { name: 'Weighted Ball Velocity: Knee Drill', reps: '3 holds + 2 throws per weight/position', description: 'Weighted Ball Velocity (INTENSE)', instructions: 'For each ball weight, use 3 hand positions—palm forward (FB), in (CB), out (CH).\n\n1. Kneel facing target, hips and knees aligned.\n2. Hold weighted ball, glove in front.\n3. Twist upper body to load, then throw with full intent (max torque), glove stays in front.\n4. Do 3 "holds" (go through motion but do NOT release ball), then 2 actual throws per ball weight and hand position.\n\nEquipment: 2oz, 4oz, 5oz (standard), 7oz, 9oz, 11oz. Stop at 11oz for 12U.' },
+        { name: 'Weighted Ball Velocity: Rocker Drill', reps: '3 holds + 2 throws per weight/position', description: 'Weighted Ball Velocity (INTENSE)', instructions: '1. Stand in stride stance, landing knee bent 90 degrees, back leg anchored.\n2. Rock torso gently forward and back, loading hips.\n3. At max load, throw to target focusing on mechanics.\n4. Repeat 3 "holds" then 2 throws per ball weight and hand position.' },
+        { name: 'Weighted Ball Velocity: Step-Behind', reps: '2 holds + 3 throws per weight/position', description: 'Weighted Ball Velocity (INTENSE)', instructions: '1. Stand next to plate, step behind with rear leg to load.\n2. Follow through, rotate hips then shoulders, throw toward target.\n3. Always finish tall and glove stays out front.\n4. 2 holds, 3 throws each per weight and hand position.\n\nProgress to this drill after building basics with Knee and Rocker drills.' },
+        { name: 'Weighted Ball Velocity: Crow-Hop', reps: '2 holds + 3 throws per weight/position', description: 'Weighted Ball Velocity (INTENSE)', instructions: '1. Cross back foot behind and hop to generate momentum.\n2. Throw with max intent; use only light & regular weights.\n3. 2 holds, 3 throws per ball/hand position once mechanics are consistent.\n\nTotal throws and holds should rarely exceed 40 per session; stop when mechanics break down or fatigue sets in.' },
+        { name: 'Post-Throwing Arm Care', reps: '5-10 min', description: 'Recovery', instructions: 'Light jogging: 5 minutes\nArm stretches (shoulder/elbow): 15-30 seconds each\nIce if performing max effort throws or weighted balls heavier than 7 oz\nHydrate and focus on post-throw nutrition' },
+      ]},
+      { label: 'Sunday', activities: [
+        { name: 'Jog Forwards and Backwards', reps: '30 sec each', description: 'Warm Up', instructions: 'Jog forwards for 30 seconds, then backwards for 30 seconds.' },
+        { name: 'High Knee Skips', reps: '30 sec each direction', description: 'Warm Up', instructions: 'High knee skips, 30 seconds each direction.' },
+        { name: 'Bounds with High Knees', reps: '30 sec each leg', description: 'Warm Up', instructions: 'Large strides with high knees, 30 seconds each leg.' },
+        { name: 'Carioca (Grapevine)', reps: '30 sec each direction', description: 'Warm Up', instructions: 'Sideways shuffle/grapevine, 30 seconds each direction.' },
+        { name: 'Tap & Go', reps: '30 sec', description: 'Warm Up', instructions: 'Lateral steps touching the ground with the opposite hand, 30 seconds.' },
+        { name: 'Flat Ground Throws', reps: '10-15 per distance', description: 'Throwing Drill', instructions: '1. Play catch starting at 40-60 ft.\n2. Gradually extend distance: 90 ft, 120 ft, up to 130 ft. 90ft is plenty for 12U.\n3. Focus on flat trajectory, mechanics consistent with mound delivery.\n4. Stop increasing distance if mechanics break down—one-hop throws if needed.\n5. 10-15 throws per distance.' },
+        { name: 'Long Toss', reps: '10 throws per phase', description: 'Throwing Drill', instructions: 'Medium Distance: Move back to 90 feet, increase intent but maintain smooth mechanics, make 10 throws focusing on accuracy and posture.\n\nMaximum Distance: Progress out to 120-130 feet, deliver firm throws keeping a flat trajectory, complete up to 10 throws. If form breaks down, reduce distance or switch to one-hop throws.\n\nReturn-In: Gradually move closer after reaching max distance, maintain effort and consistency of mechanics, finish with 10 throws decreasing back to short toss.' },
+      ]},
+    ];
+
+    for (let i = 0; i < days.length; i++) {
+      const day = await db.addProgramDay({ program_id: program.id, day_label: days[i].label, day_number: i, sort_order: i });
+      for (let j = 0; j < days[i].activities.length; j++) {
+        const a = days[i].activities[j];
+        await db.addProgramActivity({ program_day_id: day.id, activity_name: a.name, description: a.description, instructions: a.instructions, reps: a.reps, sort_order: j });
+      }
+    }
+    res.redirect('/admin/programs/' + program.id + '/edit?success=Arm+Care+program+seeded');
+  } catch (err) {
+    console.error('Seed error:', err);
+    res.redirect('/admin/programs?error=' + encodeURIComponent(err.message));
+  }
+});
+
 app.post('/event/:id/save-as-program', requireAdmin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/admin');
