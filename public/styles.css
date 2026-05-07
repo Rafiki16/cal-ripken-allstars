@@ -1001,6 +1001,16 @@ main { flex: 1; padding-bottom: 40px; }
   height: 8px;
   border-radius: 50%;
   cursor: pointer;
+  position: relative;
+}
+.cal-event-dot::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: -6px;
+  bottom: -6px;
+  border-radius: 50%;
 }
 
 .cal-flyout {
