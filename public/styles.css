@@ -1235,6 +1235,10 @@ main { flex: 1; padding-bottom: 40px; }
 .drill-touch-ghost { position:fixed; z-index:9999; opacity:0.85; pointer-events:none; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.15); }
 .drill-coach-notes { font-size:12px; color:#92400e; background:#fef3c7; padding:4px 8px; border-radius:6px; margin-top:4px; }
 .coach-notes-badge { font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:#d97706; margin-right:4px; }
+.drill-staff-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.drill-staff-tag { font-size:11px; font-weight:600; color:#1e40af; background:#dbeafe; padding:2px 8px; border-radius:10px; }
+.staff-checkbox-group { display:flex; flex-wrap:wrap; gap:6px 14px; }
+.staff-checkbox-label { font-size:13px; display:flex; align-items:center; gap:4px; cursor:pointer; }
 
 /* Timer */
 .timer-panel { text-align:center; padding:24px; background:var(--navy); border-radius:14px; color:white; }
