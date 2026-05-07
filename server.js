@@ -2026,18 +2026,18 @@ app.post('/admin/programs/:id/day', requireAdmin, async (req, res) => {
   if (!program) return res.redirect('/admin/programs');
   const days = await db.getProgramDays(program.id);
   const dayLabel = (req.body.day_label || '').trim() || ('Day ' + (days.length + 1));
-  await db.addProgramDay({ program_id: program.id, day_label: dayLabel, day_number: days.length, sort_order: days.length });
-  res.redirect('/admin/programs/' + program.id + '/edit');
+  const newDay = await db.addProgramDay({ program_id: program.id, day_label: dayLabel, day_number: days.length, sort_order: days.length });
+  res.redirect('/admin/programs/' + program.id + '/edit#day-' + newDay.id);
 });
 
 app.post('/admin/programs/:id/day/:dayId/update', requireAdmin, async (req, res) => {
   await db.updateProgramDay(Number(req.params.dayId), { day_label: (req.body.day_label || '').trim() || 'Day', day_number: parseInt(req.body.day_number) || 0, sort_order: parseInt(req.body.sort_order) || 0 });
-  res.redirect('/admin/programs/' + req.params.id + '/edit');
+  res.redirect('/admin/programs/' + req.params.id + '/edit#day-' + req.params.dayId);
 });
 
 app.post('/admin/programs/:id/day/:dayId/delete', requireAdmin, async (req, res) => {
   await db.removeProgramDay(Number(req.params.dayId));
-  res.redirect('/admin/programs/' + req.params.id + '/edit');
+  res.redirect('/admin/programs/' + req.params.id + '/edit#days-section');
 });
 
 app.post('/admin/programs/:id/day/:dayId/activity', requireAdmin, async (req, res) => {
@@ -2050,10 +2050,11 @@ app.post('/admin/programs/:id/day/:dayId/activity', requireAdmin, async (req, re
     reps: (req.body.reps || '').trim() || null,
     sort_order: activities.length,
   });
-  res.redirect('/admin/programs/' + req.params.id + '/edit');
+  res.redirect('/admin/programs/' + req.params.id + '/edit#day-' + req.params.dayId);
 });
 
 app.post('/admin/programs/:id/activity/:actId/update', requireAdmin, async (req, res) => {
+  const dayId = req.body.program_day_id || '';
   await db.updateProgramActivity(Number(req.params.actId), {
     activity_name: (req.body.activity_name || '').trim() || 'Activity',
     description: (req.body.description || '').trim() || null,
@@ -2061,12 +2062,13 @@ app.post('/admin/programs/:id/activity/:actId/update', requireAdmin, async (req,
     reps: (req.body.reps || '').trim() || null,
     sort_order: parseInt(req.body.sort_order) || 0,
   });
-  res.redirect('/admin/programs/' + req.params.id + '/edit');
+  res.redirect('/admin/programs/' + req.params.id + '/edit#day-' + dayId);
 });
 
 app.post('/admin/programs/:id/activity/:actId/delete', requireAdmin, async (req, res) => {
+  const dayId = req.body.program_day_id || '';
   await db.removeProgramActivity(Number(req.params.actId));
-  res.redirect('/admin/programs/' + req.params.id + '/edit');
+  res.redirect('/admin/programs/' + req.params.id + '/edit#day-' + dayId);
 });
 
 app.post('/admin/programs/:id/assign', requireAdmin, async (req, res) => {
