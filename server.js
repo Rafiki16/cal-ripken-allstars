@@ -732,12 +732,13 @@ app.get('/admin', requireAdmin, async (req, res) => {
 });
 
 app.post('/admin/status', requireAdmin, async (req, res) => {
-  const { player_id, status } = req.body;
+  const { player_id, status, redirect } = req.body;
   if (!['confirmed', 'declined', 'pending'].includes(status)) {
     return res.redirect('/admin?error=Invalid+status');
   }
   await db.updateStatus(Number(player_id), status);
   const player = await db.getPlayer(Number(player_id));
+  if (redirect) return res.redirect(redirect + '?success=' + encodeURIComponent(`${player.player_name} set to ${status}`));
   res.redirect('/admin?success=' + encodeURIComponent(`${player.player_name} set to ${status}`));
 });
 

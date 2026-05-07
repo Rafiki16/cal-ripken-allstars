@@ -30,6 +30,43 @@
       <div class="alert alert-error"><%= error %></div>
     <% } %>
 
+    <% if (isAdmin) { %>
+    <div class="profile-section" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+      <div>
+        <div style="font-size:13px; color:var(--gray-500); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Status</div>
+        <span class="player-status-badge badge-<%= player.status %>" style="position:static; font-size:13px; padding:6px 14px;">
+          <%= player.status === 'confirmed' ? 'Confirmed' : player.status === 'declined' ? 'Declined' : 'Pending' %>
+        </span>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <% if (player.status !== 'confirmed') { %>
+          <form method="POST" action="/admin/status" style="margin:0;">
+            <input type="hidden" name="player_id" value="<%= player.id %>">
+            <input type="hidden" name="status" value="confirmed">
+            <input type="hidden" name="redirect" value="/profile/<%= player.id %>">
+            <button type="submit" class="btn btn-confirm" style="padding:10px 20px;">Confirm Player</button>
+          </form>
+        <% } %>
+        <% if (player.status !== 'declined') { %>
+          <form method="POST" action="/admin/status" style="margin:0;">
+            <input type="hidden" name="player_id" value="<%= player.id %>">
+            <input type="hidden" name="status" value="declined">
+            <input type="hidden" name="redirect" value="/profile/<%= player.id %>">
+            <button type="submit" class="btn btn-decline" style="padding:10px 20px;">Decline Player</button>
+          </form>
+        <% } %>
+        <% if (player.status !== 'pending') { %>
+          <form method="POST" action="/admin/status" style="margin:0;">
+            <input type="hidden" name="player_id" value="<%= player.id %>">
+            <input type="hidden" name="status" value="pending">
+            <input type="hidden" name="redirect" value="/profile/<%= player.id %>">
+            <button type="submit" class="btn btn-secondary" style="padding:10px 20px;">Reset to Pending</button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+    <% } %>
+
     <form method="POST" action="/profile/<%= player.id %>" class="profile-form">
       <input type="hidden" name="phone" value="<%= phone %>">
 
