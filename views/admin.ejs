@@ -356,8 +356,11 @@
 
         function fmtTime(t) {
           if (!t) return '';
-          const [h,m] = t.split(':');
+          var s = t.replace(/[{}"]/g, '').split(',').filter(Boolean).pop() || '';
+          if (!s || !s.includes(':')) return '';
+          const [h,m] = s.split(':');
           const hr = parseInt(h);
+          if (isNaN(hr)) return '';
           const ampm = hr >= 12 ? 'PM' : 'AM';
           return ((hr % 12) || 12) + ':' + m + ' ' + ampm;
         }
