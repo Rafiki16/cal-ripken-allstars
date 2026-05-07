@@ -412,9 +412,12 @@ async function init() {
         description TEXT,
         instructions TEXT,
         reps TEXT,
+        link_url TEXT,
         sort_order INTEGER NOT NULL DEFAULT 0
       )
     `);
+
+    await pool.query('ALTER TABLE program_activities ADD COLUMN IF NOT EXISTS link_url TEXT').catch(() => {});
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS program_assignments (
@@ -767,8 +770,8 @@ async function init() {
       updateProgramDay: async (id, d) => pool.query('UPDATE program_days SET day_label=$1, day_number=$2, sort_order=$3 WHERE id=$4', [d.day_label, d.day_number, d.sort_order, id]),
       removeProgramDay: async (id) => pool.query('DELETE FROM program_days WHERE id = $1', [id]),
       getProgramActivities: async (dayId) => (await pool.query('SELECT * FROM program_activities WHERE program_day_id = $1 ORDER BY sort_order', [dayId])).rows,
-      addProgramActivity: async (a) => (await pool.query('INSERT INTO program_activities (program_day_id, activity_name, description, instructions, reps, sort_order) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [a.program_day_id, a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order])).rows[0],
-      updateProgramActivity: async (id, a) => pool.query('UPDATE program_activities SET activity_name=$1, description=$2, instructions=$3, reps=$4, sort_order=$5 WHERE id=$6', [a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order, id]),
+      addProgramActivity: async (a) => (await pool.query('INSERT INTO program_activities (program_day_id, activity_name, description, instructions, reps, link_url, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id', [a.program_day_id, a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.link_url || null, a.sort_order])).rows[0],
+      updateProgramActivity: async (id, a) => pool.query('UPDATE program_activities SET activity_name=$1, description=$2, instructions=$3, reps=$4, link_url=$5, sort_order=$6 WHERE id=$7', [a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.link_url || null, a.sort_order, id]),
       removeProgramActivity: async (id) => pool.query('DELETE FROM program_activities WHERE id = $1', [id]),
       getProgramAssignments: async (programId) => (await pool.query('SELECT pa.*, p.player_name FROM program_assignments pa JOIN players p ON pa.player_id = p.id WHERE pa.program_id = $1 ORDER BY p.player_name', [programId])).rows,
       getPlayerAssignments: async (playerId) => (await pool.query("SELECT pa.*, pr.title, pr.description, pr.schedule_type FROM program_assignments pa JOIN programs pr ON pa.program_id = pr.id WHERE pa.player_id = $1 ORDER BY pr.title", [playerId])).rows,
@@ -1174,9 +1177,12 @@ async function init() {
         description TEXT,
         instructions TEXT,
         reps TEXT,
+        link_url TEXT,
         sort_order INTEGER NOT NULL DEFAULT 0
       )
     `);
+
+    try { sqliteDb.exec('ALTER TABLE program_activities ADD COLUMN link_url TEXT'); } catch (e) {}
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS program_assignments (
@@ -1523,10 +1529,10 @@ async function init() {
       removeProgramDay: async (id) => sqliteDb.prepare('DELETE FROM program_days WHERE id = ?').run(id),
       getProgramActivities: async (dayId) => sqliteDb.prepare('SELECT * FROM program_activities WHERE program_day_id = ? ORDER BY sort_order').all(dayId),
       addProgramActivity: async (a) => {
-        const r = sqliteDb.prepare('INSERT INTO program_activities (program_day_id, activity_name, description, instructions, reps, sort_order) VALUES (?,?,?,?,?,?)').run(a.program_day_id, a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order);
+        const r = sqliteDb.prepare('INSERT INTO program_activities (program_day_id, activity_name, description, instructions, reps, link_url, sort_order) VALUES (?,?,?,?,?,?,?)').run(a.program_day_id, a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.link_url || null, a.sort_order);
         return { id: r.lastInsertRowid };
       },
-      updateProgramActivity: async (id, a) => sqliteDb.prepare('UPDATE program_activities SET activity_name=?, description=?, instructions=?, reps=?, sort_order=? WHERE id=?').run(a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order, id),
+      updateProgramActivity: async (id, a) => sqliteDb.prepare('UPDATE program_activities SET activity_name=?, description=?, instructions=?, reps=?, link_url=?, sort_order=? WHERE id=?').run(a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.link_url || null, a.sort_order, id),
       removeProgramActivity: async (id) => sqliteDb.prepare('DELETE FROM program_activities WHERE id = ?').run(id),
       getProgramAssignments: async (programId) => sqliteDb.prepare('SELECT pa.*, p.player_name FROM program_assignments pa JOIN players p ON pa.player_id = p.id WHERE pa.program_id = ? ORDER BY p.player_name').all(programId),
       getPlayerAssignments: async (playerId) => sqliteDb.prepare("SELECT pa.*, pr.title, pr.description, pr.schedule_type FROM program_assignments pa JOIN programs pr ON pa.program_id = pr.id WHERE pa.player_id = ? ORDER BY pr.title").all(playerId),
