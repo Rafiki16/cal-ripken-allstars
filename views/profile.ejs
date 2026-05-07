@@ -179,7 +179,6 @@
     </form>
 
     <!-- Programs Enrolled -->
-    <!-- DEBUG: programData length = <%= programData ? programData.length : 'undefined' %> -->
     <% if (programData && programData.length > 0) { %>
     <% programData.forEach((pd, pi) => { %>
     <div class="profile-section program-enrollment-section">
@@ -222,13 +221,9 @@
           <ul class="today-activities-list">
             <% todayDay.activities.forEach(act => { %>
               <li>
-                <strong><%= act.title %></strong>
-                <% if (act.sets || act.reps || act.duration) { %>
-                  <span class="activity-detail">
-                    <% if (act.sets) { %><%= act.sets %> sets<% } %>
-                    <% if (act.reps) { %><%= act.sets ? ' x ' : '' %><%= act.reps %> reps<% } %>
-                    <% if (act.duration) { %><%= (act.sets || act.reps) ? ' &middot; ' : '' %><%= act.duration %><% } %>
-                  </span>
+                <strong><%= act.activity_name %></strong>
+                <% if (act.reps) { %>
+                  <span class="activity-detail"><%= act.reps %></span>
                 <% } %>
               </li>
             <% }); %>

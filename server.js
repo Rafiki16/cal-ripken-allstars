@@ -319,7 +319,7 @@ async function checkAndSendProgramReminders() {
         const player = await db.getPlayer(assignment.player_id);
         if (!player || player.status !== 'confirmed') continue;
         const contacts = getPlayerContacts(player);
-        const activityList = activities.slice(0, 3).map(a => a.title).join(', ');
+        const activityList = activities.slice(0, 3).map(a => a.activity_name).join(', ');
         const link = `${baseUrl}/programs/${program.id}`;
 
         for (const contact of contacts) {
@@ -669,7 +669,6 @@ app.get('/profile/:id', requireLogin, async (req, res) => {
 
   const events = await db.getPlayerEvents(player.id);
   const assignments = await db.getPlayerAssignments(player.id);
-  console.log('Profile player.id:', player.id, 'assignments:', JSON.stringify(assignments));
   const programData = [];
   for (const a of assignments) {
     const days = await db.getProgramDays(a.program_id);
