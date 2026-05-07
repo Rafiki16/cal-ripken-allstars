@@ -642,6 +642,21 @@ app.post('/profile/:id', async (req, res) => {
   });
 
   const updated = await db.getPlayer(Number(req.params.id));
+
+  // Auto-assign to programs based on position match
+  if (updated.status === 'confirmed' && updated.best_positions) {
+    try {
+      const playerPositions = updated.best_positions.split(',').map(p => p.trim()).filter(Boolean);
+      const programsWithPositions = await db.getAllProgramsWithPositions();
+      for (const prog of programsWithPositions) {
+        const progPositions = prog.assigned_positions.split(',').map(p => p.trim()).filter(Boolean);
+        if (playerPositions.some(pp => progPositions.includes(pp))) {
+          await db.assignProgram({ program_id: prog.id, player_id: updated.id, send_reminders: 1 });
+        }
+      }
+    } catch (e) { console.error('Auto-assign programs error:', e.message); }
+  }
+
   const events = await db.getPlayerEvents(updated.id);
   res.render('profile', {
     player: updated, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
@@ -2060,6 +2075,14 @@ app.get('/api/team-stats', async (req, res) => {
   res.json(stats);
 });
 
+function getMonday(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  return date.toISOString().split('T')[0];
+}
+
 app.get('/programs', async (req, res) => {
   const programs = await db.getPublishedPrograms();
   const playerAssignments = {};
@@ -2089,7 +2112,13 @@ app.get('/programs/:id', async (req, res) => {
     }
   }
   const allPlayers = await db.getAllPlayers();
-  res.render('program-detail', { program, days, isAdmin, assignments, players, parentUser: req.parentUser || null, subscribedPlayerIds, allPlayers });
+  // Gather completions for subscribed players this week
+  const weekOf = getMonday(new Date());
+  const playerCompletions = {};
+  for (const pid of subscribedPlayerIds) {
+    playerCompletions[pid] = await db.getCompletions(program.id, pid);
+  }
+  res.render('program-detail', { program, days, isAdmin, assignments, players, parentUser: req.parentUser || null, subscribedPlayerIds, allPlayers, weekOf, playerCompletions });
 });
 
 app.post('/programs/:id/subscribe', async (req, res) => {
@@ -2130,7 +2159,7 @@ app.get('/admin/programs/:id/edit', requireAdmin, async (req, res) => {
   }
   const assignments = await db.getProgramAssignments(program.id);
   const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
-  res.render('admin-program-edit', { program, days, assignments, players, success: req.query.success || null, error: req.query.error || null });
+  res.render('admin-program-edit', { program, days, assignments, players, success: req.query.success || null, error: req.query.error || null, POSITIONS });
 });
 
 app.post('/admin/programs/:id/update', requireAdmin, async (req, res) => {
@@ -2203,6 +2232,76 @@ app.post('/admin/programs/:id/assign', requireAdmin, async (req, res) => {
 app.post('/admin/programs/:id/unassign/:playerId', requireAdmin, async (req, res) => {
   await db.unassignProgram(Number(req.params.id), Number(req.params.playerId));
   res.redirect('/admin/programs/' + req.params.id + '/edit');
+});
+
+app.post('/admin/programs/:id/assign-positions', requireAdmin, async (req, res) => {
+  const programId = Number(req.params.id);
+  const positions = [].concat(req.body.positions || []).filter(p => POSITIONS.includes(p));
+  await db.updateProgramPositions(programId, positions.join(','));
+  // Auto-assign confirmed players whose best_positions match
+  const confirmedPlayers = await db.getConfirmedPlayers();
+  let count = 0;
+  for (const player of confirmedPlayers) {
+    if (!player.best_positions) continue;
+    const playerPositions = player.best_positions.split(',').map(p => p.trim()).filter(Boolean);
+    if (playerPositions.some(pp => positions.includes(pp))) {
+      await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1 });
+      count++;
+    }
+  }
+  res.redirect('/admin/programs/' + programId + '/edit?success=Positions+saved,+' + count + '+players+matched');
+});
+
+app.post('/admin/programs/:id/assign-all', requireAdmin, async (req, res) => {
+  const programId = Number(req.params.id);
+  const confirmedPlayers = await db.getConfirmedPlayers();
+  for (const player of confirmedPlayers) {
+    await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1 });
+  }
+  res.redirect('/admin/programs/' + programId + '/edit?success=All+' + confirmedPlayers.length + '+confirmed+players+assigned');
+});
+
+app.post('/programs/:id/complete-day', async (req, res) => {
+  const programId = Number(req.params.id);
+  const playerId = Number(req.body.player_id);
+  const dayId = Number(req.body.day_id);
+  const isAdmin = !!req.session.admin;
+  if (!isAdmin && (!req.parentUser || !req.parentUser.player_ids.includes(playerId))) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  const weekOf = getMonday(new Date());
+  await db.markDayComplete(programId, playerId, dayId, weekOf);
+  res.json({ success: true });
+});
+
+app.post('/programs/:id/uncomplete-day', async (req, res) => {
+  const programId = Number(req.params.id);
+  const playerId = Number(req.body.player_id);
+  const dayId = Number(req.body.day_id);
+  const isAdmin = !!req.session.admin;
+  if (!isAdmin && (!req.parentUser || !req.parentUser.player_ids.includes(playerId))) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  const weekOf = getMonday(new Date());
+  await db.unmarkDayComplete(programId, playerId, dayId, weekOf);
+  res.json({ success: true });
+});
+
+app.get('/admin/programs/:id/dashboard', requireAdmin, async (req, res) => {
+  const program = await db.getProgram(Number(req.params.id));
+  if (!program) return res.redirect('/admin/programs');
+  const days = await db.getProgramDays(program.id);
+  for (const day of days) {
+    day.activities = await db.getProgramActivities(day.id);
+  }
+  const assignments = await db.getProgramAssignments(program.id);
+  // Week navigation
+  const weekOffset = parseInt(req.query.week) || 0;
+  const now = new Date();
+  now.setDate(now.getDate() + weekOffset * 7);
+  const weekOf = getMonday(now);
+  const completions = await db.getCompletionsForWeek(program.id, weekOf);
+  res.render('admin-program-dashboard', { program, days, assignments, completions, weekOf, weekOffset });
 });
 
 app.post('/admin/seed-arm-care', requireAdmin, async (req, res) => {

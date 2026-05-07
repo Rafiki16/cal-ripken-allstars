@@ -424,6 +424,20 @@ async function init() {
       )
     `);
 
+    try { await pool.query('ALTER TABLE programs ADD COLUMN assigned_positions TEXT'); } catch (e) { /* exists */ }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS program_completions (
+        id SERIAL PRIMARY KEY,
+        program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        program_day_id INTEGER NOT NULL REFERENCES program_days(id) ON DELETE CASCADE,
+        completed_at TIMESTAMPTZ DEFAULT NOW(),
+        week_of DATE,
+        UNIQUE(program_id, player_id, program_day_id, week_of)
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -729,6 +743,20 @@ async function init() {
         return rows.length > 0 ? rows[0].value : null;
       },
       setSetting: async (key, value) => pool.query('INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value]),
+      updateProgramPositions: async (id, positions) => pool.query('UPDATE programs SET assigned_positions = $1 WHERE id = $2', [positions, id]),
+      getConfirmedPlayers: async () => (await pool.query("SELECT * FROM players WHERE status = 'confirmed' ORDER BY player_name")).rows,
+      getAllProgramsWithPositions: async () => (await pool.query("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != ''")).rows,
+      markDayComplete: async (programId, playerId, dayId, weekOf) => pool.query(
+        'INSERT INTO program_completions (program_id, player_id, program_day_id, week_of) VALUES ($1,$2,$3,$4) ON CONFLICT (program_id, player_id, program_day_id, week_of) DO UPDATE SET completed_at = NOW()',
+        [programId, playerId, dayId, weekOf]
+      ),
+      unmarkDayComplete: async (programId, playerId, dayId, weekOf) => pool.query(
+        'DELETE FROM program_completions WHERE program_id = $1 AND player_id = $2 AND program_day_id = $3 AND week_of = $4',
+        [programId, playerId, dayId, weekOf]
+      ),
+      getCompletions: async (programId, playerId) => (await pool.query('SELECT * FROM program_completions WHERE program_id = $1 AND player_id = $2', [programId, playerId])).rows,
+      getCompletionsForProgram: async (programId) => (await pool.query('SELECT * FROM program_completions WHERE program_id = $1', [programId])).rows,
+      getCompletionsForWeek: async (programId, weekOf) => (await pool.query('SELECT * FROM program_completions WHERE program_id = $1 AND week_of = $2', [programId, weekOf])).rows,
     };
   } else {
     const Database = require('better-sqlite3');
@@ -1115,6 +1143,20 @@ async function init() {
       )
     `);
 
+    try { sqliteDb.exec('ALTER TABLE programs ADD COLUMN assigned_positions TEXT'); } catch (e) { /* exists */ }
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS program_completions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        program_day_id INTEGER NOT NULL REFERENCES program_days(id) ON DELETE CASCADE,
+        completed_at TEXT DEFAULT (datetime('now')),
+        week_of TEXT,
+        UNIQUE(program_id, player_id, program_day_id, week_of)
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -1420,6 +1462,21 @@ async function init() {
         return row ? row.value : null;
       },
       setSetting: async (key, value) => sqliteDb.prepare('INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)').run(key, value),
+      updateProgramPositions: async (id, positions) => sqliteDb.prepare('UPDATE programs SET assigned_positions = ? WHERE id = ?').run(positions, id),
+      getConfirmedPlayers: async () => sqliteDb.prepare("SELECT * FROM players WHERE status = 'confirmed' ORDER BY player_name").all(),
+      getAllProgramsWithPositions: async () => sqliteDb.prepare("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != ''").all(),
+      markDayComplete: async (programId, playerId, dayId, weekOf) => {
+        const existing = sqliteDb.prepare('SELECT id FROM program_completions WHERE program_id = ? AND player_id = ? AND program_day_id = ? AND week_of = ?').get(programId, playerId, dayId, weekOf);
+        if (existing) {
+          sqliteDb.prepare('UPDATE program_completions SET completed_at = ? WHERE id = ?').run(new Date().toISOString(), existing.id);
+        } else {
+          sqliteDb.prepare('INSERT INTO program_completions (program_id, player_id, program_day_id, week_of) VALUES (?,?,?,?)').run(programId, playerId, dayId, weekOf);
+        }
+      },
+      unmarkDayComplete: async (programId, playerId, dayId, weekOf) => sqliteDb.prepare('DELETE FROM program_completions WHERE program_id = ? AND player_id = ? AND program_day_id = ? AND week_of = ?').run(programId, playerId, dayId, weekOf),
+      getCompletions: async (programId, playerId) => sqliteDb.prepare('SELECT * FROM program_completions WHERE program_id = ? AND player_id = ?').all(programId, playerId),
+      getCompletionsForProgram: async (programId) => sqliteDb.prepare('SELECT * FROM program_completions WHERE program_id = ?').all(programId),
+      getCompletionsForWeek: async (programId, weekOf) => sqliteDb.prepare('SELECT * FROM program_completions WHERE program_id = ? AND week_of = ?').all(programId, weekOf),
     };
   }
 }
@@ -1552,4 +1609,12 @@ module.exports = {
   updateAssignmentStatus: (...args) => impl.updateAssignmentStatus(...args),
   getSetting: (...args) => impl.getSetting(...args),
   setSetting: (...args) => impl.setSetting(...args),
+  updateProgramPositions: (...args) => impl.updateProgramPositions(...args),
+  getConfirmedPlayers: (...args) => impl.getConfirmedPlayers(...args),
+  getAllProgramsWithPositions: (...args) => impl.getAllProgramsWithPositions(...args),
+  markDayComplete: (...args) => impl.markDayComplete(...args),
+  unmarkDayComplete: (...args) => impl.unmarkDayComplete(...args),
+  getCompletions: (...args) => impl.getCompletions(...args),
+  getCompletionsForProgram: (...args) => impl.getCompletionsForProgram(...args),
+  getCompletionsForWeek: (...args) => impl.getCompletionsForWeek(...args),
 };
