@@ -12,6 +12,8 @@ const PORT = process.env.PORT || 3000;
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+app.set('trust proxy', 1);
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -20,14 +22,14 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'allstars-2026-secret',
   resave: false,
   saveUninitialized: false,
+  proxy: true,
   cookie: {
-    secure: process.env.NODE_ENV === 'production' && process.env.BASE_URL?.startsWith('https'),
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
+    sameSite: 'lax',
     maxAge: 24 * 60 * 60 * 1000,
   },
 }));
-
-app.set('trust proxy', 1);
 
 function normalizePhone(phone) {
   return phone.replace(/\D/g, '').slice(-10);
