@@ -669,6 +669,7 @@ app.get('/profile/:id', requireLogin, async (req, res) => {
 
   const events = await db.getPlayerEvents(player.id);
   const assignments = await db.getPlayerAssignments(player.id);
+  console.log('Profile player.id:', player.id, 'assignments:', JSON.stringify(assignments));
   const programData = [];
   for (const a of assignments) {
     const days = await db.getProgramDays(a.program_id);
