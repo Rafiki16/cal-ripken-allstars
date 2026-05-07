@@ -438,6 +438,17 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS program_equipment (
+        id SERIAL PRIMARY KEY,
+        program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        item_name TEXT NOT NULL,
+        is_required INTEGER NOT NULL DEFAULT 1,
+        buy_url TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -757,6 +768,10 @@ async function init() {
       getCompletions: async (programId, playerId) => (await pool.query('SELECT * FROM program_completions WHERE program_id = $1 AND player_id = $2', [programId, playerId])).rows,
       getCompletionsForProgram: async (programId) => (await pool.query('SELECT * FROM program_completions WHERE program_id = $1', [programId])).rows,
       getCompletionsForWeek: async (programId, weekOf) => (await pool.query('SELECT * FROM program_completions WHERE program_id = $1 AND week_of = $2', [programId, weekOf])).rows,
+      getProgramEquipment: async (programId) => (await pool.query('SELECT * FROM program_equipment WHERE program_id = $1 ORDER BY is_required DESC, sort_order', [programId])).rows,
+      addProgramEquipment: async (e) => (await pool.query('INSERT INTO program_equipment (program_id, item_name, is_required, buy_url, sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id', [e.program_id, e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0])).rows[0],
+      updateProgramEquipment: async (id, e) => pool.query('UPDATE program_equipment SET item_name=$1, is_required=$2, buy_url=$3, sort_order=$4 WHERE id=$5', [e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0, id]),
+      removeProgramEquipment: async (id) => pool.query('DELETE FROM program_equipment WHERE id = $1', [id]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -1157,6 +1172,17 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS program_equipment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        item_name TEXT NOT NULL,
+        is_required INTEGER NOT NULL DEFAULT 1,
+        buy_url TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -1477,6 +1503,10 @@ async function init() {
       getCompletions: async (programId, playerId) => sqliteDb.prepare('SELECT * FROM program_completions WHERE program_id = ? AND player_id = ?').all(programId, playerId),
       getCompletionsForProgram: async (programId) => sqliteDb.prepare('SELECT * FROM program_completions WHERE program_id = ?').all(programId),
       getCompletionsForWeek: async (programId, weekOf) => sqliteDb.prepare('SELECT * FROM program_completions WHERE program_id = ? AND week_of = ?').all(programId, weekOf),
+      getProgramEquipment: async (programId) => sqliteDb.prepare('SELECT * FROM program_equipment WHERE program_id = ? ORDER BY is_required DESC, sort_order').all(programId),
+      addProgramEquipment: async (e) => ({ id: sqliteDb.prepare('INSERT INTO program_equipment (program_id, item_name, is_required, buy_url, sort_order) VALUES (?,?,?,?,?)').run(e.program_id, e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0).lastInsertRowid }),
+      updateProgramEquipment: async (id, e) => sqliteDb.prepare('UPDATE program_equipment SET item_name=?, is_required=?, buy_url=?, sort_order=? WHERE id=?').run(e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0, id),
+      removeProgramEquipment: async (id) => sqliteDb.prepare('DELETE FROM program_equipment WHERE id = ?').run(id),
     };
   }
 }
@@ -1617,4 +1647,8 @@ module.exports = {
   getCompletions: (...args) => impl.getCompletions(...args),
   getCompletionsForProgram: (...args) => impl.getCompletionsForProgram(...args),
   getCompletionsForWeek: (...args) => impl.getCompletionsForWeek(...args),
+  getProgramEquipment: (...args) => impl.getProgramEquipment(...args),
+  addProgramEquipment: (...args) => impl.addProgramEquipment(...args),
+  updateProgramEquipment: (...args) => impl.updateProgramEquipment(...args),
+  removeProgramEquipment: (...args) => impl.removeProgramEquipment(...args),
 };

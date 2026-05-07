@@ -2118,7 +2118,8 @@ app.get('/programs/:id', async (req, res) => {
   for (const pid of subscribedPlayerIds) {
     playerCompletions[pid] = await db.getCompletions(program.id, pid);
   }
-  res.render('program-detail', { program, days, isAdmin, assignments, players, parentUser: req.parentUser || null, subscribedPlayerIds, allPlayers, weekOf, playerCompletions });
+  const equipment = await db.getProgramEquipment(program.id);
+  res.render('program-detail', { program, days, isAdmin, assignments, players, parentUser: req.parentUser || null, subscribedPlayerIds, allPlayers, weekOf, playerCompletions, equipment });
 });
 
 app.post('/programs/:id/subscribe', async (req, res) => {
@@ -2159,7 +2160,8 @@ app.get('/admin/programs/:id/edit', requireAdmin, async (req, res) => {
   }
   const assignments = await db.getProgramAssignments(program.id);
   const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
-  res.render('admin-program-edit', { program, days, assignments, players, success: req.query.success || null, error: req.query.error || null, POSITIONS });
+  const equipment = await db.getProgramEquipment(program.id);
+  res.render('admin-program-edit', { program, days, assignments, players, equipment, success: req.query.success || null, error: req.query.error || null, POSITIONS });
 });
 
 app.post('/admin/programs/:id/update', requireAdmin, async (req, res) => {
@@ -2218,6 +2220,25 @@ app.post('/admin/programs/:id/activity/:actId/update', requireAdmin, async (req,
 
 app.post('/admin/programs/:id/activity/:actId/delete', requireAdmin, async (req, res) => {
   await db.removeProgramActivity(Number(req.params.actId));
+  res.redirect('/admin/programs/' + req.params.id + '/edit');
+});
+
+app.post('/admin/programs/:id/equipment', requireAdmin, async (req, res) => {
+  const { item_name, is_required, buy_url } = req.body;
+  if (!item_name || !item_name.trim()) return res.redirect('/admin/programs/' + req.params.id + '/edit?error=Item+name+is+required');
+  const existing = await db.getProgramEquipment(Number(req.params.id));
+  await db.addProgramEquipment({ program_id: Number(req.params.id), item_name: item_name.trim(), is_required: is_required === '1' ? 1 : 0, buy_url: (buy_url || '').trim() || null, sort_order: existing.length });
+  res.redirect('/admin/programs/' + req.params.id + '/edit?success=Equipment+added');
+});
+
+app.post('/admin/programs/:id/equipment/:eqId/update', requireAdmin, async (req, res) => {
+  const { item_name, is_required, buy_url } = req.body;
+  await db.updateProgramEquipment(Number(req.params.eqId), { item_name: (item_name || '').trim(), is_required: is_required === '1' ? 1 : 0, buy_url: (buy_url || '').trim() || null, sort_order: Number(req.body.sort_order) || 0 });
+  res.redirect('/admin/programs/' + req.params.id + '/edit?success=Equipment+updated');
+});
+
+app.post('/admin/programs/:id/equipment/:eqId/delete', requireAdmin, async (req, res) => {
+  await db.removeProgramEquipment(Number(req.params.eqId));
   res.redirect('/admin/programs/' + req.params.id + '/edit');
 });
 

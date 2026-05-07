@@ -170,6 +170,83 @@
       <% }); %>
     </div>
 
+    <!-- Equipment Section -->
+    <div style="margin:24px 0; padding:20px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+        <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0;">Equipment Needed</h3>
+      </div>
+      <p style="font-size:12px; color:var(--gray-500); margin:0 0 16px;">List the gear players need for this program. Add buy links so parents can purchase items directly.</p>
+
+      <% if (equipment.length > 0) { %>
+      <div style="margin-bottom:16px;">
+        <% equipment.forEach((eq, eqIdx) => { %>
+        <details style="margin-bottom:6px; border:1px solid var(--gray-100); border-radius:8px; overflow:hidden;">
+          <summary style="padding:10px 14px; cursor:pointer; font-size:13px; background:#fff; display:flex; align-items:center; gap:8px;">
+            <span style="font-size:11px; font-weight:700; padding:1px 6px; border-radius:3px; <%= eq.is_required ? 'background:#fef2f2; color:#dc2626;' : 'background:#f0fdf4; color:#16a34a;' %>"><%= eq.is_required ? 'Required' : 'Optional' %></span>
+            <span style="flex:1; font-weight:600;"><%= eq.item_name %></span>
+            <% if (eq.buy_url) { %>
+            <span style="font-size:11px; color:#3b82f6;">Has link</span>
+            <% } %>
+          </summary>
+          <div style="padding:12px 14px; border-top:1px solid var(--gray-100); background:var(--gray-50);">
+            <form method="POST" action="/admin/programs/<%= program.id %>/equipment/<%= eq.id %>/update">
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <div style="flex:2; min-width:150px;">
+                    <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Item Name</label>
+                    <input type="text" name="item_name" value="<%= eq.item_name %>" class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
+                  </div>
+                  <div style="width:100px;">
+                    <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Type</label>
+                    <select name="is_required" class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
+                      <option value="1" <%= eq.is_required ? 'selected' : '' %>>Required</option>
+                      <option value="0" <%= !eq.is_required ? 'selected' : '' %>>Optional</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Buy Link (URL)</label>
+                  <input type="url" name="buy_url" value="<%= eq.buy_url || '' %>" placeholder="https://www.amazon.com/..." class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
+                </div>
+                <input type="hidden" name="sort_order" value="<%= eq.sort_order %>">
+                <div style="display:flex; gap:8px;">
+                  <button type="submit" class="btn btn-confirm" style="font-size:11px; padding:4px 10px;">Update</button>
+                </div>
+              </div>
+            </form>
+            <form method="POST" action="/admin/programs/<%= program.id %>/equipment/<%= eq.id %>/delete" style="margin-top:8px; padding-top:8px; border-top:1px solid var(--gray-200);" onsubmit="return confirm('Remove this equipment item?')">
+              <button type="submit" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; color:#dc2626;">Remove</button>
+            </form>
+          </div>
+        </details>
+        <% }); %>
+      </div>
+      <% } else { %>
+      <p style="color:var(--gray-400); font-size:13px; margin-bottom:12px;">No equipment added yet.</p>
+      <% } %>
+
+      <div style="padding-top:8px; border-top:1px solid var(--gray-100);">
+        <form method="POST" action="/admin/programs/<%= program.id %>/equipment" style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+          <div style="flex:2; min-width:150px;">
+            <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Item Name</label>
+            <input type="text" name="item_name" placeholder="e.g. Training Bat" required class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
+          </div>
+          <div style="width:100px;">
+            <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Type</label>
+            <select name="is_required" class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
+              <option value="1">Required</option>
+              <option value="0">Optional</option>
+            </select>
+          </div>
+          <div style="flex:2; min-width:180px;">
+            <label style="font-size:11px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px;">Buy Link</label>
+            <input type="url" name="buy_url" placeholder="https://..." class="form-input" style="width:100%; font-size:12px; padding:6px 8px;">
+          </div>
+          <button type="submit" class="btn btn-secondary" style="font-size:11px; padding:6px 10px; white-space:nowrap;">+ Add Equipment</button>
+        </form>
+      </div>
+    </div>
+
     <div style="margin:24px 0; padding:20px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
         <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0;">Position-Based Assignment</h3>

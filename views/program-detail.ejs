@@ -35,6 +35,40 @@
     </div>
     <% } %>
 
+    <% if (typeof equipment !== 'undefined' && equipment.length > 0) { %>
+    <% const reqItems = equipment.filter(e => e.is_required); %>
+    <% const optItems = equipment.filter(e => !e.is_required); %>
+    <div style="margin:16px 0; padding:16px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
+      <h3 style="font-size:14px; font-weight:700; color:var(--navy); margin:0 0 12px;">&#127942; Equipment Needed</h3>
+      <% if (reqItems.length > 0) { %>
+      <div style="margin-bottom:<%= optItems.length > 0 ? '12px' : '0' %>;">
+        <p style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--gray-400); margin:0 0 8px;">Required</p>
+        <% reqItems.forEach(item => { %>
+        <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--gray-100);">
+          <span style="font-size:14px; font-weight:600; color:var(--navy); flex:1;"><%= item.item_name %></span>
+          <% if (item.buy_url) { %>
+          <a href="<%= item.buy_url %>" target="_blank" rel="noopener" style="font-size:12px; font-weight:600; color:#fff; background:var(--navy); padding:4px 12px; border-radius:6px; text-decoration:none; white-space:nowrap;">Buy &rarr;</a>
+          <% } %>
+        </div>
+        <% }); %>
+      </div>
+      <% } %>
+      <% if (optItems.length > 0) { %>
+      <div>
+        <p style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--gray-400); margin:0 0 8px;">Optional</p>
+        <% optItems.forEach(item => { %>
+        <div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--gray-100);">
+          <span style="font-size:14px; color:var(--gray-600); flex:1;"><%= item.item_name %></span>
+          <% if (item.buy_url) { %>
+          <a href="<%= item.buy_url %>" target="_blank" rel="noopener" style="font-size:12px; font-weight:600; color:var(--navy); background:var(--gray-100); padding:4px 12px; border-radius:6px; text-decoration:none; white-space:nowrap;">Buy &rarr;</a>
+          <% } %>
+        </div>
+        <% }); %>
+      </div>
+      <% } %>
+    </div>
+    <% } %>
+
     <% if (parentUser && parentUser.player_ids.length > 0) { %>
     <div style="margin:16px 0; padding:16px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
       <h3 style="font-size:14px; font-weight:700; color:var(--navy); margin:0 0 12px;">Subscribe Your Players</h3>
