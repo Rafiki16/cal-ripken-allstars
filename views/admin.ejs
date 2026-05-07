@@ -320,11 +320,52 @@
       </div>
       <script>
       (function(){
-        const TE = <%- JSON.stringify(teamEvents.map(e => ({ type: e.event_type, title: e.title, start_date: e.start_date, end_date: e.end_date }))) %>;
-        const ABS = <%- JSON.stringify(allEvents.map(e => ({ start_date: e.start_date, end_date: e.end_date }))) %>;
+        const TE = <%- JSON.stringify(teamEvents.map(e => ({ type: e.event_type, title: e.title, start_date: e.start_date, end_date: e.end_date, start_time: e.start_time || '', location_name: e.location_name || '' }))) %>;
+        <% const playerMap = {}; players.forEach(p => { playerMap[p.id] = p.player_name; }); %>
+        const ABS = <%- JSON.stringify(allEvents.map(e => ({ start_date: e.start_date, end_date: e.end_date, player_name: playerMap[e.player_id] || 'Unknown', notes: e.notes || '' }))) %>;
         const TC = { practice:'#16a34a', game:'#111827', tournament:'#2563eb', other:'#6b7280' };
+        const TL = { practice:'Practice', game:'Game', tournament:'Tournament', other:'Other' };
         const today = new Date();
         let cMonth = today.getMonth(), cYear = today.getFullYear();
+
+        const flyout = document.createElement('div');
+        flyout.className = 'cal-flyout';
+        flyout.style.display = 'none';
+        document.body.appendChild(flyout);
+
+        function showFlyout(dot, html) {
+          flyout.innerHTML = html;
+          flyout.style.display = 'block';
+          const dr = dot.getBoundingClientRect();
+          const fr = flyout.getBoundingClientRect();
+          let top = dr.top - fr.height - 8;
+          let left = dr.left + dr.width / 2 - fr.width / 2;
+          if (top < 4) top = dr.bottom + 8;
+          if (left < 4) left = 4;
+          if (left + fr.width > window.innerWidth - 4) left = window.innerWidth - fr.width - 4;
+          flyout.style.top = top + window.scrollY + 'px';
+          flyout.style.left = left + 'px';
+        }
+
+        function hideFlyout() { flyout.style.display = 'none'; }
+
+        function fmtDate(d) {
+          const [y,m,dd] = d.split('-');
+          return parseInt(m) + '/' + parseInt(dd);
+        }
+
+        function fmtTime(t) {
+          if (!t) return '';
+          const [h,m] = t.split(':');
+          const hr = parseInt(h);
+          const ampm = hr >= 12 ? 'PM' : 'AM';
+          return ((hr % 12) || 12) + ':' + m + ' ' + ampm;
+        }
+
+        function attachFlyout(dot, html) {
+          dot.addEventListener('mouseenter', function() { showFlyout(dot, html); });
+          dot.addEventListener('mouseleave', hideFlyout);
+        }
 
         function renderAdmCal() {
           const firstDay = new Date(cYear, cMonth, 1).getDay();
@@ -339,11 +380,28 @@
               cell.innerHTML = '<span class="cal-day-num">' + day + '</span>';
               if (ds === today.toISOString().slice(0,10)) cell.classList.add('cal-today');
               TE.filter(e => { if (e.end_date) return ds >= e.start_date && ds <= e.end_date; return e.start_date === ds; }).forEach(ev => {
-                const dot = document.createElement('div'); dot.className = 'cal-event-dot'; dot.style.background = TC[ev.type] || TC.other; dot.title = ev.title; cell.appendChild(dot);
+                const dot = document.createElement('div'); dot.className = 'cal-event-dot'; dot.style.background = TC[ev.type] || TC.other; cell.appendChild(dot);
+                let html = '<div class="cal-flyout-title" style="color:' + (TC[ev.type] || TC.other) + '">' + (TL[ev.type] || 'Event') + '</div>';
+                html += '<div class="cal-flyout-name">' + ev.title + '</div>';
+                const parts = [];
+                if (ev.start_time) parts.push(fmtTime(ev.start_time));
+                if (ev.end_date && ev.end_date !== ev.start_date) parts.push(fmtDate(ev.start_date) + ' – ' + fmtDate(ev.end_date));
+                if (ev.location_name) parts.push(ev.location_name);
+                if (parts.length) html += '<div class="cal-flyout-detail">' + parts.join(' · ') + '</div>';
+                attachFlyout(dot, html);
               });
-              const hasAbsence = ABS.some(a => { if (a.end_date) return ds >= a.start_date && ds <= a.end_date; return a.start_date === ds; });
-              if (hasAbsence) {
-                const dot = document.createElement('div'); dot.className = 'cal-event-dot'; dot.style.background = '#dc2626'; dot.title = 'Player absence'; cell.appendChild(dot);
+              const dayAbs = ABS.filter(a => { if (a.end_date) return ds >= a.start_date && ds <= a.end_date; return a.start_date === ds; });
+              if (dayAbs.length) {
+                const dot = document.createElement('div'); dot.className = 'cal-event-dot'; dot.style.background = '#dc2626'; cell.appendChild(dot);
+                let html = '<div class="cal-flyout-title" style="color:#dc2626">Player Absence' + (dayAbs.length > 1 ? 's' : '') + '</div>';
+                dayAbs.forEach(a => {
+                  html += '<div class="cal-flyout-name">' + a.player_name + '</div>';
+                  const parts = [];
+                  if (a.end_date && a.end_date !== a.start_date) parts.push(fmtDate(a.start_date) + ' – ' + fmtDate(a.end_date));
+                  if (a.notes) parts.push(a.notes);
+                  if (parts.length) html += '<div class="cal-flyout-detail">' + parts.join(' · ') + '</div>';
+                });
+                attachFlyout(dot, html);
               }
             } else { cell.classList.add('cal-empty'); }
           });

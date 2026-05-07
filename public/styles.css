@@ -1000,7 +1000,40 @@ main { flex: 1; padding-bottom: 40px; }
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  cursor: pointer;
 }
+
+.cal-flyout {
+  position: absolute;
+  z-index: 200;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 10px 14px;
+  min-width: 160px;
+  max-width: 260px;
+  pointer-events: none;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.cal-flyout-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+.cal-flyout-name {
+  font-weight: 600;
+  color: var(--gray-800);
+}
+.cal-flyout-detail {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-bottom: 4px;
+}
+.cal-flyout-detail:last-child { margin-bottom: 0; }
 
 /* Team event cards */
 .upcoming-events { margin-bottom: 32px; }
