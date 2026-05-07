@@ -1481,10 +1481,29 @@ app.post('/messages/pin', requireAdmin, async (req, res) => {
 
 function requireScoreKeeper(req, res, next) {
   const token = req.query.token || req.session.scoreToken;
-  if (!token) return res.status(401).send('Scoring access required. Use your scorekeeper link.');
-  req.scoreToken = token;
-  if (!req.session.scoreToken) req.session.scoreToken = token;
-  next();
+  if (token) {
+    req.scoreToken = token;
+    if (!req.session.scoreToken) req.session.scoreToken = token;
+    return next();
+  }
+  if (req.session.admin) {
+    req.isAdminScorer = true;
+    return next();
+  }
+  return res.status(401).send('Scoring access required. Use your scorekeeper link.');
+}
+
+async function refreshScorerHeartbeat(req) {
+  const gameId = Number(req.params.id);
+  if (!gameId) return;
+  let name;
+  if (req.isAdminScorer) {
+    name = req.session.admin.username || 'Admin';
+  } else if (req.scoreToken) {
+    const k = await db.getScoreKeeperByToken(req.scoreToken);
+    name = k ? k.name : 'Unknown';
+  }
+  if (name) await db.updateGameState(gameId, { active_scorer_name: name, active_scorer_at: new Date().toISOString() });
 }
 
 app.get('/admin/scorekeepers', requireAdmin, async (req, res) => {
@@ -1706,10 +1725,30 @@ app.post('/game/:id/end', requireAdmin, async (req, res) => {
 app.get('/game/:id/score', requireScoreKeeper, async (req, res) => {
   const game = await db.getLiveGame(Number(req.params.id));
   if (!game) return res.status(404).send('Game not found');
-  const keeper = await db.getScoreKeeperByToken(req.scoreToken);
+
+  let keeper;
+  let scorerName;
+  if (req.isAdminScorer) {
+    scorerName = req.session.admin.username || 'Admin';
+    keeper = { name: scorerName };
+  } else {
+    keeper = await db.getScoreKeeperByToken(req.scoreToken);
+    scorerName = keeper ? keeper.name : 'Unknown';
+  }
+
+  const ACTIVE_TIMEOUT_MS = 5 * 60 * 1000;
+  if (game.active_scorer_name && game.active_scorer_at) {
+    const elapsed = Date.now() - new Date(game.active_scorer_at).getTime();
+    if (elapsed < ACTIVE_TIMEOUT_MS && game.active_scorer_name !== scorerName) {
+      return res.status(409).send(`${game.active_scorer_name} is currently scoring this game. Try again later or ask them to close the scoring page.`);
+    }
+  }
+
+  await db.updateGameState(game.id, { active_scorer_name: scorerName, active_scorer_at: new Date().toISOString() });
+
   const roster = await db.getGameRoster(game.id);
   const oppRoster = await db.getOppRoster(game.id);
-  res.render('game-score', { game, keeper, roster, oppRoster, token: req.scoreToken });
+  res.render('game-score', { game, keeper, roster, oppRoster, token: req.scoreToken || '' });
 });
 
 app.get('/api/game/:id/state', async (req, res) => {
@@ -1740,6 +1779,7 @@ app.get('/api/game/:id/state', async (req, res) => {
 });
 
 app.post('/api/game/:id/pitch', requireScoreKeeper, async (req, res) => {
+  refreshScorerHeartbeat(req);
   const gameId = Number(req.params.id);
   const game = await db.getLiveGame(gameId);
   if (!game || game.status !== 'active') return res.status(400).json({ error: 'Game not active' });
@@ -1880,6 +1920,7 @@ app.post('/api/game/:id/pitch', requireScoreKeeper, async (req, res) => {
 });
 
 app.post('/api/game/:id/at-bat-result', requireScoreKeeper, async (req, res) => {
+  refreshScorerHeartbeat(req);
   const gameId = Number(req.params.id);
   const game = await db.getLiveGame(gameId);
   if (!game || game.status !== 'active') return res.status(400).json({ error: 'Game not active' });
@@ -1946,6 +1987,7 @@ app.post('/api/game/:id/at-bat-result', requireScoreKeeper, async (req, res) => 
 });
 
 app.post('/api/game/:id/update-state', requireScoreKeeper, async (req, res) => {
+  refreshScorerHeartbeat(req);
   const gameId = Number(req.params.id);
   const game = await db.getLiveGame(gameId);
   if (!game) return res.status(404).json({ error: 'Game not found' });
@@ -1963,6 +2005,7 @@ app.post('/api/game/:id/update-state', requireScoreKeeper, async (req, res) => {
 });
 
 app.post('/api/game/:id/undo', requireScoreKeeper, async (req, res) => {
+  refreshScorerHeartbeat(req);
   const gameId = Number(req.params.id);
   const entry = await db.popUndo(gameId);
   if (!entry) return res.status(400).json({ error: 'Nothing to undo' });
@@ -1988,6 +2031,7 @@ app.post('/api/game/:id/undo', requireScoreKeeper, async (req, res) => {
 });
 
 app.post('/api/game/:id/roster-update', requireScoreKeeper, async (req, res) => {
+  refreshScorerHeartbeat(req);
   const gameId = Number(req.params.id);
   const { roster_id, position } = req.body;
   if (roster_id) {
