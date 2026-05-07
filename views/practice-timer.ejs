@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Practice Timer &middot; Cal Ripken All-Stars</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+
+    .pt-top-bar { background: #1a2744; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; }
+    .pt-top-bar a { color: #94a3b8; text-decoration: none; font-size: 14px; }
+    .pt-top-bar .pt-title { color: #d4a843; font-weight: 700; font-size: 15px; }
+
+    .pt-timer { background: #1e293b; padding: 24px 16px 20px; text-align: center; border-bottom: 1px solid #334155; }
+    .pt-drill-label { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px; min-height: 28px; }
+    .pt-drill-desc { font-size: 13px; color: #94a3b8; margin-bottom: 12px; min-height: 18px; }
+    .pt-clock { font-size: 72px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: 2px; color: #fff; line-height: 1; margin-bottom: 12px; }
+    .pt-clock.warning { color: #f59e0b; }
+    .pt-clock.danger { color: #ef4444; }
+
+    .pt-progress { width: 100%; height: 8px; background: #334155; border-radius: 4px; overflow: hidden; margin-bottom: 14px; }
+    .pt-progress-fill { height: 100%; background: #d4a843; border-radius: 4px; transition: width 0.4s linear; }
+    .pt-progress-fill.warning { background: #f59e0b; }
+    .pt-progress-fill.danger { background: #ef4444; }
+
+    .pt-next-label { font-size: 13px; color: #64748b; margin-bottom: 16px; min-height: 18px; }
+
+    .pt-controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .pt-btn { border: none; border-radius: 10px; padding: 14px 28px; font-size: 16px; font-weight: 700; cursor: pointer; min-width: 100px; transition: transform 0.1s, opacity 0.1s; }
+    .pt-btn:active { transform: scale(0.95); opacity: 0.85; }
+    .pt-btn-start { background: #16a34a; color: #fff; padding: 16px 44px; font-size: 20px; }
+    .pt-btn-pause { background: #f59e0b; color: #1a2744; }
+    .pt-btn-skip { background: #3b82f6; color: #fff; }
+    .pt-btn-end { background: #475569; color: #fff; }
+    .pt-btn-restart { background: #16a34a; color: #fff; margin-top: 8px; }
+
+    .pt-overall { display: flex; justify-content: center; gap: 24px; padding: 10px 16px; background: #0f172a; border-bottom: 1px solid #1e293b; font-size: 12px; color: #64748b; }
+    .pt-overall strong { color: #94a3b8; }
+
+    .pt-drills { flex: 1; overflow-y: auto; padding: 12px 16px 80px; -webkit-overflow-scrolling: touch; }
+
+    .pt-drill { background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; transition: border-color 0.3s, background 0.3s, transform 0.2s; }
+    .pt-drill.active { border-color: #d4a843; background: #1a2744; transform: scale(1.02); }
+    .pt-drill.done { opacity: 0.45; border-color: #1e293b; }
+    .pt-drill.done .pt-drill-check { display: flex; }
+
+    .pt-drill-num { width: 30px; height: 30px; border-radius: 50%; background: #334155; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; color: #94a3b8; flex-shrink: 0; }
+    .pt-drill.active .pt-drill-num { background: #d4a843; color: #1a2744; }
+
+    .pt-drill-info { flex: 1; min-width: 0; }
+    .pt-drill-name { font-weight: 700; font-size: 15px; color: #e2e8f0; }
+    .pt-drill.active .pt-drill-name { color: #fff; }
+    .pt-drill-subdesc { font-size: 12px; color: #64748b; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .pt-drill-time { font-weight: 700; font-size: 14px; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
+    .pt-drill.active .pt-drill-time { color: #d4a843; }
+
+    .pt-drill-check { display: none; color: #22c55e; font-size: 18px; flex-shrink: 0; }
+
+    .pt-complete { text-align: center; padding: 32px 16px; }
+    .pt-complete-icon { font-size: 48px; margin-bottom: 12px; }
+    .pt-complete-text { font-size: 22px; font-weight: 800; color: #22c55e; margin-bottom: 8px; }
+    .pt-complete-sub { font-size: 14px; color: #94a3b8; }
+
+    @media (min-width: 500px) {
+      .pt-clock { font-size: 96px; }
+      .pt-drill { padding: 16px 20px; }
+      .pt-drill-name { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="pt-top-bar">
+    <a href="/event/<%= event.id %>">&larr; Back</a>
+    <span class="pt-title"><%= event.title %></span>
+    <span style="width:50px;"></span>
+  </div>
+
+  <div class="pt-timer">
+    <div class="pt-drill-label" id="drill-label">Ready to start</div>
+    <div class="pt-drill-desc" id="drill-desc"></div>
+    <div class="pt-clock" id="clock">00:00</div>
+    <div class="pt-progress"><div class="pt-progress-fill" id="progress"></div></div>
+    <div class="pt-next-label" id="next-label"></div>
+    <div class="pt-controls" id="controls">
+      <button class="pt-btn pt-btn-start" id="btn-start">Start Practice</button>
+    </div>
+  </div>
+
+  <div class="pt-overall" id="overall-bar" style="display:none;">
+    <span>Drill <strong id="drill-counter">1 / <%= drills.length %></strong></span>
+    <span>Elapsed <strong id="elapsed-time">00:00</strong></span>
+    <span>Remaining <strong id="remaining-time"><%= drills.reduce((s, d) => s + d.duration_minutes, 0) %>:00</strong></span>
+  </div>
+
+  <div class="pt-drills" id="drill-list">
+    <% drills.forEach(function(drill, i) { %>
+    <div class="pt-drill" id="drill-<%= i %>" data-mins="<%= drill.duration_minutes %>">
+      <div class="pt-drill-num"><%= i + 1 %></div>
+      <div class="pt-drill-info">
+        <div class="pt-drill-name"><%= drill.drill_name %></div>
+        <% if (drill.description) { %><div class="pt-drill-subdesc"><%= drill.description %></div><% } %>
+      </div>
+      <div class="pt-drill-time"><%= drill.duration_minutes %> min</div>
+      <div class="pt-drill-check">&#10003;</div>
+    </div>
+    <% }); %>
+  </div>
+
+  <script>
+  (function() {
+    var drills = <%- JSON.stringify(drills.map(function(d) { return { name: d.drill_name, desc: d.description || '', mins: d.duration_minutes }; })) %>;
+    var totalDrills = drills.length;
+    var totalSeconds = drills.reduce(function(s, d) { return s + d.mins * 60; }, 0);
+
+    var idx = 0, remaining = 0, elapsed = 0, interval = null, paused = false, started = false;
+
+    var label = document.getElementById('drill-label');
+    var desc = document.getElementById('drill-desc');
+    var clock = document.getElementById('clock');
+    var progress = document.getElementById('progress');
+    var nextLabel = document.getElementById('next-label');
+    var controls = document.getElementById('controls');
+    var overallBar = document.getElementById('overall-bar');
+    var drillCounter = document.getElementById('drill-counter');
+    var elapsedEl = document.getElementById('elapsed-time');
+    var remainingEl = document.getElementById('remaining-time');
+
+    function fmt(s) {
+      var m = Math.floor(s / 60);
+      var sec = s % 60;
+      return (m < 10 ? '0' : '') + m + ':' + (sec < 10 ? '0' : '') + sec;
+    }
+
+    function clockClass(secs, total) {
+      var pct = secs / total;
+      if (pct <= 0.15) return 'danger';
+      if (pct <= 0.3) return 'warning';
+      return '';
+    }
+
+    function beep(freq, count) {
+      try {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        for (var i = 0; i < (count || 1); i++) {
+          (function(delay) {
+            setTimeout(function() {
+              var osc = ctx.createOscillator();
+              var gain = ctx.createGain();
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.frequency.value = freq || 880;
+              gain.gain.value = 0.3;
+              osc.start(ctx.currentTime);
+              osc.stop(ctx.currentTime + 0.2);
+            }, delay);
+          })(i * 300);
+        }
+      } catch(e) {}
+    }
+
+    function setDrillStates() {
+      for (var i = 0; i < totalDrills; i++) {
+        var el = document.getElementById('drill-' + i);
+        el.classList.remove('active', 'done');
+        if (i < idx) el.classList.add('done');
+        else if (i === idx && started) el.classList.add('active');
+      }
+    }
+
+    function scrollToActive() {
+      var el = document.getElementById('drill-' + idx);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function updateOverall() {
+      drillCounter.textContent = (idx + 1) + ' / ' + totalDrills;
+      elapsedEl.textContent = fmt(elapsed);
+      var left = 0;
+      for (var i = idx; i < totalDrills; i++) {
+        left += drills[i].mins * 60;
+      }
+      left = left - (drills[idx].mins * 60 - remaining);
+      remainingEl.textContent = fmt(Math.max(0, left));
+    }
+
+    function startDrill(i) {
+      if (i >= totalDrills) { finish(); return; }
+      idx = i;
+      remaining = drills[i].mins * 60;
+      label.textContent = drills[i].name;
+      desc.textContent = drills[i].desc;
+      nextLabel.textContent = i + 1 < totalDrills ? 'Next: ' + drills[i + 1].name + ' (' + drills[i + 1].mins + ' min)' : 'Final drill';
+      setDrillStates();
+      scrollToActive();
+      tick();
+    }
+
+    function tick() {
+      var total = drills[idx].mins * 60;
+      clock.textContent = fmt(remaining);
+      var pct = (total - remaining) / total * 100;
+      progress.style.width = pct + '%';
+
+      var cls = clockClass(remaining, total);
+      clock.className = 'pt-clock' + (cls ? ' ' + cls : '');
+      progress.className = 'pt-progress-fill' + (cls ? ' ' + cls : '');
+
+      updateOverall();
+
+      if (remaining <= 3 && remaining > 0) beep(660, 1);
+
+      if (remaining <= 0) {
+        beep(1100, 2);
+        startDrill(idx + 1);
+        return;
+      }
+      remaining--;
+      elapsed++;
+    }
+
+    function finish() {
+      clearInterval(interval);
+      interval = null;
+      started = false;
+      setDrillStates();
+      label.textContent = 'Practice Complete!';
+      desc.textContent = '';
+      clock.textContent = fmt(elapsed);
+      clock.className = 'pt-clock';
+      progress.style.width = '100%';
+      progress.className = 'pt-progress-fill';
+      nextLabel.textContent = 'Total practice time: ' + fmt(elapsed);
+      beep(880, 3);
+
+      controls.innerHTML = '<button class="pt-btn pt-btn-restart" onclick="location.reload()">Restart</button>' +
+        '<a href="/event/<%= event.id %>" class="pt-btn pt-btn-end" style="text-decoration:none;text-align:center;">Done</a>';
+    }
+
+    function renderRunningControls() {
+      controls.innerHTML = '';
+      var pauseBtn = document.createElement('button');
+      pauseBtn.className = 'pt-btn pt-btn-pause';
+      pauseBtn.textContent = 'Pause';
+      pauseBtn.onclick = function() {
+        paused = !paused;
+        this.textContent = paused ? 'Resume' : 'Pause';
+        this.className = 'pt-btn ' + (paused ? 'pt-btn-start' : 'pt-btn-pause');
+      };
+
+      var skipBtn = document.createElement('button');
+      skipBtn.className = 'pt-btn pt-btn-skip';
+      skipBtn.textContent = 'Skip';
+      skipBtn.onclick = function() { startDrill(idx + 1); };
+
+      var endBtn = document.createElement('button');
+      endBtn.className = 'pt-btn pt-btn-end';
+      endBtn.textContent = 'End';
+      endBtn.onclick = function() { finish(); };
+
+      controls.appendChild(pauseBtn);
+      controls.appendChild(skipBtn);
+      controls.appendChild(endBtn);
+    }
+
+    document.getElementById('btn-start').onclick = function() {
+      started = true;
+      paused = false;
+      elapsed = 0;
+      overallBar.style.display = '';
+      renderRunningControls();
+      startDrill(0);
+      if (interval) clearInterval(interval);
+      interval = setInterval(function() { if (!paused) tick(); }, 1000);
+
+      if (navigator.wakeLock) {
+        navigator.wakeLock.request('screen').catch(function() {});
+      }
+    };
+  })();
+  </script>
+</body>
+</html>

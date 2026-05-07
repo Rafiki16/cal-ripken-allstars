@@ -355,6 +355,13 @@ app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
   res.render('rsvp', { event, player, rsvp, token, success: `${player.player_name} is marked as ${status === 'yes' ? 'attending' : status === 'no' ? 'not attending' : 'maybe'}.` });
 });
 
+app.get('/event/:id/practice-timer', async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/');
+  const drills = await db.getDrills(event.id);
+  res.render('practice-timer', { event, drills });
+});
+
 app.post('/event/:id/rsvp', async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');

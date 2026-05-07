@@ -148,6 +148,8 @@
         <h3 class="ed-section-title">Practice Plan</h3>
 
         <% if (drills.length > 0) { %>
+        <a href="/event/<%= event.id %>/practice-timer" class="btn btn-confirm" style="display:inline-block;margin-bottom:16px;text-decoration:none;font-size:15px;padding:10px 24px;">Start Practice</a>
+        <% } %>
         <div id="drill-list" class="drill-list">
           <% drills.forEach((drill, i) => { %>
           <div class="drill-card<%= isAdmin ? ' drill-draggable' : '' %>" data-duration="<%= drill.duration_minutes %>" data-name="<%= drill.drill_name %>" data-id="<%= drill.id %>" id="drill-<%= drill.id %>" <% if (isAdmin) { %>draggable="true"<% } %>>
