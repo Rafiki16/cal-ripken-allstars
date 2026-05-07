@@ -131,6 +131,13 @@ async function init() {
     try { await pool.query('ALTER TABLE practice_drills ADD COLUMN coach_notes TEXT'); } catch (e) { /* exists */ }
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS site_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS tournament_sub_events (
         id SERIAL PRIMARY KEY,
         team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
@@ -639,6 +646,11 @@ async function init() {
         const r = await pool.query('SELECT COUNT(*)::int as cnt FROM game_undo_log WHERE game_id = $1', [gameId]);
         return r.rows[0].cnt;
       },
+      getSetting: async (key) => {
+        const { rows } = await pool.query('SELECT value FROM site_settings WHERE key = $1', [key]);
+        return rows.length > 0 ? rows[0].value : null;
+      },
+      setSetting: async (key, value) => pool.query('INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value]),
     };
   } else {
     const Database = require('better-sqlite3');
@@ -730,6 +742,13 @@ async function init() {
     `);
 
     try { sqliteDb.exec('ALTER TABLE practice_drills ADD COLUMN coach_notes TEXT'); } catch (e) { /* exists */ }
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS site_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    `);
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS tournament_sub_events (
@@ -1228,6 +1247,11 @@ async function init() {
         const r = sqliteDb.prepare('SELECT COUNT(*) as cnt FROM game_undo_log WHERE game_id = ?').get(gameId);
         return r.cnt;
       },
+      getSetting: async (key) => {
+        const row = sqliteDb.prepare('SELECT value FROM site_settings WHERE key = ?').get(key);
+        return row ? row.value : null;
+      },
+      setSetting: async (key, value) => sqliteDb.prepare('INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)').run(key, value),
     };
   }
 }
@@ -1331,4 +1355,6 @@ module.exports = {
   pushUndo: (...args) => impl.pushUndo(...args),
   popUndo: (...args) => impl.popUndo(...args),
   getUndoCount: (...args) => impl.getUndoCount(...args),
+  getSetting: (...args) => impl.getSetting(...args),
+  setSetting: (...args) => impl.setSetting(...args),
 };

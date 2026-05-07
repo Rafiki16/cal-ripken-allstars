@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><%= event.title %> &middot; Cal Ripken All-Stars</title>
+  <title><%= event.title %> &middot; <%= teamName %></title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -1081,7 +1081,7 @@
             html += '<div class="ump-header">';
             html += '<div class="ump-title">Batting Order</div>';
             html += '<div class="ump-team-info">';
-            html += '<div><span>Team:</span> <strong>Cal Ripken All-Stars</strong></div>';
+            html += '<div><span>Team:</span> <strong><%= teamName %></strong></div>';
             html += '<div><span>Date:</span> <strong>' + eventDate + '</strong></div>';
             if (opponentName) html += '<div><span>vs:</span> <strong>' + opponentName + '</strong></div>';
             html += '</div></div>';
@@ -1244,7 +1244,7 @@
 
   <footer>
     <div class="container">
-      <p>Summer 2026 Cal Ripken All-Stars &middot; Major Division</p>
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
     </div>
   </footer>
 </body>
