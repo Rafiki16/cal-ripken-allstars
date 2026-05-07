@@ -190,10 +190,29 @@
         <p style="color:#6b7280;font-size:14px;margin:4px 0 16px;"><%= pd.assignment.description %></p>
       <% } %>
 
+      <form method="POST" action="/programs/<%= pd.assignment.program_id %>/set-dates" class="program-dates-form">
+        <input type="hidden" name="player_id" value="<%= player.id %>">
+        <input type="hidden" name="phone" value="<%= phone %>">
+        <div class="program-dates-row">
+          <div class="form-group">
+            <label>Start Date</label>
+            <input type="date" name="start_date" class="form-input" value="<%= pd.assignment.start_date ? pd.assignment.start_date.toString().substring(0,10) : '' %>">
+          </div>
+          <div class="form-group">
+            <label>End Date</label>
+            <input type="date" name="end_date" class="form-input" value="<%= pd.assignment.end_date ? pd.assignment.end_date.toString().substring(0,10) : '' %>">
+          </div>
+          <button type="submit" class="btn btn-secondary btn-save-dates">Save Dates</button>
+        </div>
+      </form>
+
       <%
         const now = new Date();
         const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
         const todayName = dayNames[now.getDay()];
+        const progStart = pd.assignment.start_date ? new Date(pd.assignment.start_date.toString().substring(0,10) + 'T00:00:00') : null;
+        const progEnd = pd.assignment.end_date ? new Date(pd.assignment.end_date.toString().substring(0,10) + 'T23:59:59') : null;
+        const todayInRange = (!progStart || now >= progStart) && (!progEnd || now <= progEnd);
         const todayDay = pd.days.find(d => d.day_label === todayName);
         const todayDateStr = now.toISOString().split('T')[0];
 
@@ -206,7 +225,18 @@
         }
       %>
 
-      <% if (todayDay && todayDay.activities && todayDay.activities.length > 0) { %>
+      <% if (!todayInRange) { %>
+        <div class="today-activities-card today-rest">
+          <span class="today-label">Program Not Active Today</span>
+          <p style="margin:8px 0 0;color:#6b7280;font-size:14px;">
+            <% if (progStart && now < progStart) { %>
+              Starts <%= progStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %>
+            <% } else if (progEnd && now > progEnd) { %>
+              Ended <%= progEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %>
+            <% } %>
+          </p>
+        </div>
+      <% } else if (todayDay && todayDay.activities && todayDay.activities.length > 0) { %>
         <%
           const todayWeekOf = getMondayOf(now);
           const todayComplete = pd.completions.some(c => c.program_day_id === todayDay.id && c.week_of && c.week_of.substring(0,10) === todayWeekOf);
@@ -274,9 +304,10 @@
               const isToday = d === now.getDate() && calMonth === now.getMonth() && calYear === now.getFullYear();
               const isPast = cellDate < new Date(calYear, calMonth, now.getDate());
               const isFuture = cellDate > now;
+              const cellInRange = (!progStart || cellDate >= new Date(progStart.getFullYear(), progStart.getMonth(), progStart.getDate())) && (!progEnd || cellDate <= progEnd);
               let cellClass = 'cal-day';
               if (isToday) cellClass += ' cal-today';
-              if (cellProgramDay) {
+              if (cellProgramDay && cellInRange) {
                 const ckey = cellProgramDay.id + '|' + cellWeekOf;
                 if (completionMap[ckey]) {
                   cellClass += ' cal-complete';

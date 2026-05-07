@@ -425,6 +425,8 @@ async function init() {
     `);
 
     try { await pool.query('ALTER TABLE programs ADD COLUMN assigned_positions TEXT'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE program_assignments ADD COLUMN start_date DATE'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE program_assignments ADD COLUMN end_date DATE'); } catch (e) { /* exists */ }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS program_completions (
@@ -768,6 +770,7 @@ async function init() {
       assignProgram: async (a) => pool.query("INSERT INTO program_assignments (program_id, player_id, assigned_by_staff_id, send_reminders) VALUES ($1,$2,$3,$4) ON CONFLICT (program_id, player_id) DO UPDATE SET status = 'active', assigned_by_staff_id = $3, send_reminders = $4, started_at = NOW()", [a.program_id, a.player_id, a.assigned_by_staff_id || null, a.send_reminders ?? 1]),
       unassignProgram: async (programId, playerId) => pool.query('DELETE FROM program_assignments WHERE program_id = $1 AND player_id = $2', [programId, playerId]),
       updateAssignmentStatus: async (programId, playerId, status) => pool.query('UPDATE program_assignments SET status = $1 WHERE program_id = $2 AND player_id = $3', [status, programId, playerId]),
+      updateAssignmentDates: async (programId, playerId, startDate, endDate) => pool.query('UPDATE program_assignments SET start_date = $1, end_date = $2 WHERE program_id = $3 AND player_id = $4', [startDate || null, endDate || null, programId, playerId]),
       getSetting: async (key) => {
         const { rows } = await pool.query('SELECT value FROM site_settings WHERE key = $1', [key]);
         return rows.length > 0 ? rows[0].value : null;
@@ -1178,6 +1181,8 @@ async function init() {
     `);
 
     try { sqliteDb.exec('ALTER TABLE programs ADD COLUMN assigned_positions TEXT'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE program_assignments ADD COLUMN start_date TEXT'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE program_assignments ADD COLUMN end_date TEXT'); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS program_completions (
@@ -1520,6 +1525,7 @@ async function init() {
       },
       unassignProgram: async (programId, playerId) => sqliteDb.prepare('DELETE FROM program_assignments WHERE program_id = ? AND player_id = ?').run(programId, playerId),
       updateAssignmentStatus: async (programId, playerId, status) => sqliteDb.prepare('UPDATE program_assignments SET status = ? WHERE program_id = ? AND player_id = ?').run(status, programId, playerId),
+      updateAssignmentDates: async (programId, playerId, startDate, endDate) => sqliteDb.prepare('UPDATE program_assignments SET start_date = ?, end_date = ? WHERE program_id = ? AND player_id = ?').run(startDate || null, endDate || null, programId, playerId),
       getSetting: async (key) => {
         const row = sqliteDb.prepare('SELECT value FROM site_settings WHERE key = ?').get(key);
         return row ? row.value : null;
@@ -1674,6 +1680,7 @@ module.exports = {
   assignProgram: (...args) => impl.assignProgram(...args),
   unassignProgram: (...args) => impl.unassignProgram(...args),
   updateAssignmentStatus: (...args) => impl.updateAssignmentStatus(...args),
+  updateAssignmentDates: (...args) => impl.updateAssignmentDates(...args),
   getSetting: (...args) => impl.getSetting(...args),
   setSetting: (...args) => impl.setSetting(...args),
   updateProgramPositions: (...args) => impl.updateProgramPositions(...args),

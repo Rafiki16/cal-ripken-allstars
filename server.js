@@ -313,6 +313,8 @@ async function checkAndSendProgramReminders() {
 
       for (const assignment of assignments) {
         if (!assignment.send_reminders) continue;
+        if (assignment.start_date && todayStr < assignment.start_date.toString().substring(0,10)) continue;
+        if (assignment.end_date && todayStr > assignment.end_date.toString().substring(0,10)) continue;
         const alreadyDone = completions.some(c => c.player_id === assignment.player_id && c.program_day_id === todayDay.id);
         if (alreadyDone) continue;
 
@@ -2397,6 +2399,14 @@ app.post('/programs/:id/uncomplete-day', async (req, res) => {
   const weekOf = getMonday(new Date());
   await db.unmarkDayComplete(programId, playerId, dayId, weekOf);
   res.json({ success: true });
+});
+
+app.post('/programs/:id/set-dates', async (req, res) => {
+  const programId = Number(req.params.id);
+  const { player_id, phone, start_date, end_date } = req.body;
+  const playerId = Number(player_id);
+  await db.updateAssignmentDates(programId, playerId, start_date || null, end_date || null);
+  res.redirect(`/profile/${playerId}?phone=${encodeURIComponent(phone || '')}#program-${programId}`);
 });
 
 app.get('/admin/programs/:id/dashboard', requireAdmin, async (req, res) => {

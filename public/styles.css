@@ -1663,8 +1663,16 @@ main { flex: 1; padding-bottom: 40px; }
 .program-badge-link { text-decoration: none; }
 .program-badge { display: inline-block; background: #eff6ff; color: #1e40af; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; border: 1px solid #bfdbfe; transition: background 0.15s; }
 .program-badge-link:hover .program-badge { background: #dbeafe; }
+.program-dates-form { margin-bottom: 16px; }
+.program-dates-row { display: flex; gap: 12px; align-items: flex-end; }
+.program-dates-row .form-group { flex: 1; margin-bottom: 0; }
+.program-dates-row .form-group label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 4px; display: block; }
+.btn-save-dates { white-space: nowrap; padding: 8px 16px; font-size: 13px; align-self: flex-end; }
 
 @media (max-width: 480px) {
+  .program-dates-row { flex-wrap: wrap; }
+  .program-dates-row .form-group { flex: 1 1 45%; min-width: 130px; }
+  .btn-save-dates { flex: 1 1 100%; }
   .program-calendar .calendar-grid { gap: 2px; }
   .cal-day { border-radius: 6px; }
   .cal-num { font-size: 11px; }
