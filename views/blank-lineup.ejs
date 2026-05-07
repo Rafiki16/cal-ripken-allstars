@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blank Lineup Card &middot; Cal Ripken All-Stars</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { margin: 0; padding: 20px; font-family: Arial, Helvetica, sans-serif; }
+    .blank-controls { text-align: center; margin-bottom: 20px; }
+    .blank-controls button { margin: 0 6px; }
+    .blank-controls label { font-size: 13px; margin: 0 12px; cursor: pointer; }
+    .blank-card-wrap { max-width: 700px; margin: 0 auto; }
+    @media print {
+      .blank-controls { display: none !important; }
+      @page { margin: 0.4in; }
+    }
+  </style>
+</head>
+<body>
+  <div class="blank-controls no-print">
+    <a href="/admin" class="btn btn-secondary" style="text-decoration:none;">&larr; Back to Admin</a>
+    <button class="btn btn-confirm" onclick="window.print()">Print Cards</button>
+    <label><input type="number" id="card-count" value="2" min="1" max="10" style="width:50px;text-align:center;"> cards</label>
+    <label><input type="checkbox" id="show-team" checked> Show team name</label>
+  </div>
+
+  <div id="cards-container" class="blank-card-wrap"></div>
+
+  <script>
+  function renderCards() {
+    var count = parseInt(document.getElementById('card-count').value) || 2;
+    var showTeam = document.getElementById('show-team').checked;
+    var container = document.getElementById('cards-container');
+    var html = '';
+    for (var c = 0; c < count; c++) {
+      if (c > 0) html += '<div style="page-break-before:always;"></div>';
+      html += '<div class="ump-card" style="margin-bottom:40px;">';
+      html += '<div class="ump-header">';
+      html += '<div class="ump-title">Batting Order</div>';
+      html += '<div class="ump-team-info">';
+      html += '<div><span>Team:</span> <strong>' + (showTeam ? 'Cal Ripken All-Stars' : '________________________') + '</strong></div>';
+      html += '<div><span>Date:</span> <strong>_______________</strong></div>';
+      html += '<div><span>vs:</span> <strong>________________________</strong></div>';
+      html += '</div></div>';
+
+      html += '<table class="ump-table"><thead><tr>';
+      html += '<th class="ump-num">#</th>';
+      html += '<th class="ump-player">Player</th>';
+      html += '<th class="ump-pos">Pos</th>';
+      for (var i = 1; i <= 6; i++) html += '<th class="ump-inn-head">' + i + '</th>';
+      html += '</tr></thead><tbody>';
+
+      for (var s = 1; s <= 9; s++) {
+        html += '<tr class="ump-empty">';
+        html += '<td class="ump-num">' + s + '</td>';
+        html += '<td class="ump-player"></td>';
+        html += '<td class="ump-pos"></td>';
+        for (var inn = 0; inn < 6; inn++) html += '<td class="ump-inn"></td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+
+      html += '<div class="ump-eligible">';
+      html += '<div class="ump-eligible-title">Also Eligible</div>';
+      html += '<div style="min-height:40px;"></div>';
+      html += '</div>';
+
+      html += '<div class="ump-footer">';
+      html += '<div><span>Manager:</span> <span class="ump-sig-line">&nbsp;</span></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  }
+
+  document.getElementById('card-count').addEventListener('change', renderCards);
+  document.getElementById('show-team').addEventListener('change', renderCards);
+  renderCards();
+  </script>
+</body>
+</html>

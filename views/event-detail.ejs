@@ -442,6 +442,9 @@
           <button type="button" class="btn" onclick="printLineup('umpire')" style="margin-left:8px;">Print for Umpires</button>
           <button type="button" class="btn" onclick="printLineup('full')" style="margin-left:8px;">Print Full Lineup</button>
           <button type="button" class="btn" onclick="clearEntireLineup()" style="margin-left:8px; background:#dc2626; color:white;">Clear All</button>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer; margin-left:12px;">
+            <input type="checkbox" id="batting-nine-cb" <%= (event.batting_all || 0) === 0 ? 'checked' : '' %>> Batting 9
+          </label>
           <span class="lg-save-msg" id="lg-save-msg"></span>
         </div>
         <div class="lg-add-player" id="lg-add-player">
@@ -483,6 +486,10 @@
         const savedGrid = <%- JSON.stringify(lineupGrid) %>;
 
         let grid = []; // [{playerId, name, positions, cells: [null or {pos, status}]}]
+        let battingNine = <%= (event.batting_all || 0) === 0 ? 'true' : 'false' %>;
+        const eventDate = '<%= new Date(event.start_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %>';
+        const eventTitle = '<%= event.title %>';
+        const opponentName = '<%= event.opponent_name || "" %>';
 
         function initGrid() {
           const playerMap = {};
@@ -628,6 +635,13 @@
             tr.appendChild(sitTd);
 
             body.appendChild(tr);
+
+            if (battingNine && ri === 8 && grid.length > 9) {
+              var sep = document.createElement('tr');
+              sep.className = 'lg-eligible-divider';
+              sep.innerHTML = '<td colspan="' + (INNINGS + 3) + '">Also Eligible</td>';
+              body.appendChild(sep);
+            }
           });
           validateGrid();
         }
@@ -746,32 +760,83 @@
 
         window.printLineup = function(mode) {
           if (mode === 'umpire') {
+            var starters = battingNine ? grid.slice(0, 9) : grid;
+            var eligible = battingNine ? grid.slice(9) : [];
+            var numSlots = battingNine ? 9 : starters.length;
+
+            var html = '<div class="ump-card">';
+            html += '<div class="ump-header">';
+            html += '<div class="ump-title">Batting Order</div>';
+            html += '<div class="ump-team-info">';
+            html += '<div><span>Team:</span> <strong>Cal Ripken All-Stars</strong></div>';
+            html += '<div><span>Date:</span> <strong>' + eventDate + '</strong></div>';
+            if (opponentName) html += '<div><span>vs:</span> <strong>' + opponentName + '</strong></div>';
+            html += '</div></div>';
+
+            html += '<table class="ump-table"><thead><tr>';
+            html += '<th class="ump-num">#</th>';
+            html += '<th class="ump-player">Player</th>';
+            html += '<th class="ump-pos">Pos</th>';
+            for (var i = 1; i <= INNINGS; i++) html += '<th class="ump-inn-head">' + i + '</th>';
+            html += '</tr></thead><tbody>';
+
+            for (var s = 0; s < numSlots; s++) {
+              var p = starters[s];
+              var startPos = '';
+              if (p) {
+                var c0 = p.cells[0];
+                if (c0 && c0.status === 'field' && c0.pos) startPos = POS_MAP[c0.pos] || c0.pos;
+              }
+              html += '<tr' + (!p ? ' class="ump-empty"' : '') + '>';
+              html += '<td class="ump-num">' + (s + 1) + '</td>';
+              html += '<td class="ump-player">';
+              if (p) html += (p.jersey ? '<span class="ump-jersey">#' + p.jersey + '</span> ' : '') + p.name;
+              html += '</td>';
+              html += '<td class="ump-pos">' + startPos + '</td>';
+              for (var inn = 0; inn < INNINGS; inn++) {
+                var cv = '';
+                if (p) {
+                  var ci = p.cells[inn];
+                  if (ci && ci.status === 'field' && ci.pos) cv = POS_MAP[ci.pos] || ci.pos;
+                  else if (ci && ci.status === 'sit') cv = 'X';
+                  else if (ci && ci.status === 'sub_in') cv = 'SUB';
+                }
+                html += '<td class="ump-inn">' + cv + '</td>';
+              }
+              html += '</tr>';
+            }
+            html += '</tbody></table>';
+
+            if (battingNine && eligible.length > 0) {
+              html += '<div class="ump-eligible">';
+              html += '<div class="ump-eligible-title">Also Eligible</div>';
+              html += '<div class="ump-eligible-players">';
+              eligible.forEach(function(ep) {
+                html += '<div>';
+                html += (ep.jersey ? '#' + ep.jersey + ' ' : '') + ep.name;
+                if (ep.positions.length) html += ' <span>(' + ep.positions.join(', ') + ')</span>';
+                html += '</div>';
+              });
+              html += '</div></div>';
+            }
+
+            html += '<div class="ump-footer">';
+            html += '<div><span>Manager:</span> <span class="ump-sig-line">&nbsp;</span></div>';
+            html += '</div>';
+            html += '</div>';
+
+            var old = document.getElementById('umpire-print');
+            if (old) old.remove();
             var div = document.createElement('div');
             div.id = 'umpire-print';
-            div.innerHTML = '<h2 style="margin:0 0 4px;font-size:18px;">Cal Ripken All-Stars &mdash; Starting Lineup</h2>'
-              + '<p style="margin:0 0 12px;font-size:14px;color:#555;"><%= event.title %>'
-              + '<% if (event.opponent_name) { %> vs <%= event.opponent_name %><% } %>'
-              + ' &mdash; <%= new Date(event.start_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %></p>'
-              + '<table style="border-collapse:collapse;width:100%;">'
-              + '<thead><tr><th style="border:1px solid #999;padding:6px 10px;text-align:left;background:#eee;">#</th>'
-              + '<th style="border:1px solid #999;padding:6px 10px;text-align:left;background:#eee;">Player</th>'
-              + '<th style="border:1px solid #999;padding:6px 10px;text-align:left;background:#eee;">Position</th></tr></thead><tbody>';
-            grid.forEach(function(row, ri) {
-              var cell = row.cells[0];
-              var pos = '';
-              if (cell && cell.status === 'field' && cell.pos) pos = POS_MAP[cell.pos] || cell.pos;
-              else if (cell && cell.status === 'sit') pos = 'Sit';
-              else if (cell && cell.status === 'sub_in') pos = 'Sub';
-              div.innerHTML += '<tr><td style="border:1px solid #999;padding:6px 10px;font-weight:700;width:36px;">' + (ri+1) + '</td>'
-                + '<td style="border:1px solid #999;padding:6px 10px;">' + (row.jersey ? row.jersey + ' &mdash; ' : '') + row.name + '</td>'
-                + '<td style="border:1px solid #999;padding:6px 10px;font-weight:700;">' + pos + '</td></tr>';
-            });
-            div.innerHTML += '</tbody></table>';
+            div.innerHTML = html;
             document.body.appendChild(div);
             document.body.classList.add('print-umpire');
-            window.print();
-            document.body.classList.remove('print-umpire');
-            div.remove();
+            setTimeout(function() {
+              window.print();
+              document.body.classList.remove('print-umpire');
+              div.remove();
+            }, 100);
           } else {
             document.body.classList.add('print-full');
             window.print();
@@ -791,6 +856,19 @@
         };
 
         initGrid();
+
+        var b9cb = document.getElementById('batting-nine-cb');
+        if (b9cb) {
+          b9cb.addEventListener('change', function() {
+            battingNine = this.checked;
+            renderGrid();
+            fetch('/event/<%= event.id %>/batting-nine', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ batting_all: battingNine ? 0 : 1 })
+            });
+          });
+        }
       })();
       </script>
       <% } %>

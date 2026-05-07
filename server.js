@@ -1065,6 +1065,12 @@ app.post('/event/:id/lineup-grid', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/event/:id/batting-nine', requireAdmin, async (req, res) => {
+  const { batting_all } = req.body;
+  await db.updateBattingAll(Number(req.params.id), !!batting_all);
+  res.json({ ok: true });
+});
+
 app.post('/event/:id/sub-event/:subId/lineup-grid', requireAdmin, async (req, res) => {
   const subId = Number(req.params.subId);
   const { entries } = req.body;
@@ -1087,6 +1093,10 @@ app.get('/admin/event/:id/rsvps', requireAdmin, async (req, res) => {
       rsvp: rsvps.find(r => r.player_id === p.id) || null,
     })),
   });
+});
+
+app.get('/admin/blank-lineup', requireAdmin, (req, res) => {
+  res.render('blank-lineup');
 });
 
 app.post('/admin/jersey-number', requireAdmin, async (req, res) => {
