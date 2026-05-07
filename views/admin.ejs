@@ -364,7 +364,7 @@
                     <%= ev.event_type === 'practice' ? 'Practice' : ev.event_type === 'game' ? 'Game' : ev.event_type === 'tournament' ? 'Tournament' : 'Other' %>
                   </span>
                 </td>
-                <td class="td-bold"><%= ev.title %><% if (ev.event_type === 'game' && ev.our_score != null) { %> <span style="font-weight:400;font-size:12px;color:<%= ev.our_score > ev.opponent_score ? '#16a34a' : ev.our_score < ev.opponent_score ? '#dc2626' : '#854d0e' %>;"><%= ev.our_score > ev.opponent_score ? 'W' : ev.our_score < ev.opponent_score ? 'L' : 'T' %> <%= ev.our_score %>-<%= ev.opponent_score %></span><% } %></td>
+                <td class="td-bold"><a href="/event/<%= ev.id %>" style="color:inherit;text-decoration:none;"><%= ev.title %></a><% if (ev.event_type === 'game' && ev.our_score != null) { %> <span style="font-weight:400;font-size:12px;color:<%= ev.our_score > ev.opponent_score ? '#16a34a' : ev.our_score < ev.opponent_score ? '#dc2626' : '#854d0e' %>;"><%= ev.our_score > ev.opponent_score ? 'W' : ev.our_score < ev.opponent_score ? 'L' : 'T' %> <%= ev.our_score %>-<%= ev.opponent_score %></span><% } %></td>
                 <td style="white-space:nowrap; font-size:13px;"><%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %>&ndash;<%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %></td>
                 <td style="font-size:13px; white-space:nowrap;"><% if (ev.start_time) { const [_h,_m] = ev.start_time.split(':'); const _hr = parseInt(_h); %><%= (_hr % 12 || 12) + ':' + _m.slice(0,2) + ' ' + (_hr >= 12 ? 'PM' : 'AM') %><% if (ev.end_time) { const [_eh,_em] = ev.end_time.split(':'); const _ehr = parseInt(_eh); %><span style="color:var(--gray-400);"> &ndash; </span><%= (_ehr % 12 || 12) + ':' + _em.slice(0,2) + ' ' + (_ehr >= 12 ? 'PM' : 'AM') %><% } %><% } else { %>-<% } %></td>
                 <td style="font-size:13px;"><%= ev.location_name || ev.address || '-' %></td>
@@ -376,6 +376,7 @@
                 </td>
                 <td>
                   <div class="admin-action-row">
+                    <a href="/event/<%= ev.id %>" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 8px;text-decoration:none;">View</a>
                     <% if (ev.event_type === 'game') { %>
                     <a href="/event/<%= ev.id %>#lineup-grid-section" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 8px;text-decoration:none;">Lineup</a>
                     <% } %>
