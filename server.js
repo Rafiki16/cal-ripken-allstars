@@ -1404,7 +1404,7 @@ app.get('/admin/accounts', requireAdmin, async (req, res) => {
   const players = await db.getAllPlayers();
   const result = accounts.map(a => {
     const linked = players.filter(p => normalizePhone(p.parent_phone) === normalizePhone(a.phone));
-    return { ...a, players: linked.map(p => ({ id: p.id, name: p.player_name })) };
+    return { id: a.id, phone: a.phone, display_name: a.display_name, created_at: a.created_at, players: linked.map(p => ({ id: p.id, name: p.player_name })) };
   });
   res.json(result);
 });
