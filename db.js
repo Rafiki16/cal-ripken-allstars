@@ -772,10 +772,11 @@ async function init() {
       removeProgramActivity: async (id) => pool.query('DELETE FROM program_activities WHERE id = $1', [id]),
       getProgramAssignments: async (programId) => (await pool.query('SELECT pa.*, p.player_name FROM program_assignments pa JOIN players p ON pa.player_id = p.id WHERE pa.program_id = $1 ORDER BY p.player_name', [programId])).rows,
       getPlayerAssignments: async (playerId) => (await pool.query("SELECT pa.*, pr.title, pr.description, pr.schedule_type FROM program_assignments pa JOIN programs pr ON pa.program_id = pr.id WHERE pa.player_id = $1 ORDER BY pr.title", [playerId])).rows,
-      assignProgram: async (a) => pool.query("INSERT INTO program_assignments (program_id, player_id, assigned_by_staff_id, send_reminders) VALUES ($1,$2,$3,$4) ON CONFLICT (program_id, player_id) DO UPDATE SET status = 'active', assigned_by_staff_id = $3, send_reminders = $4, started_at = NOW()", [a.program_id, a.player_id, a.assigned_by_staff_id || null, a.send_reminders ?? 1]),
+      assignProgram: async (a) => pool.query("INSERT INTO program_assignments (program_id, player_id, assigned_by_staff_id, send_reminders, start_date, end_date) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (program_id, player_id) DO UPDATE SET status = 'active', assigned_by_staff_id = $3, send_reminders = $4, started_at = NOW(), start_date = COALESCE($5, program_assignments.start_date), end_date = COALESCE($6, program_assignments.end_date)", [a.program_id, a.player_id, a.assigned_by_staff_id || null, a.send_reminders ?? 1, a.start_date || null, a.end_date || null]),
       unassignProgram: async (programId, playerId) => pool.query('DELETE FROM program_assignments WHERE program_id = $1 AND player_id = $2', [programId, playerId]),
       updateAssignmentStatus: async (programId, playerId, status) => pool.query('UPDATE program_assignments SET status = $1 WHERE program_id = $2 AND player_id = $3', [status, programId, playerId]),
       updateAssignmentDates: async (programId, playerId, startDate, endDate) => pool.query('UPDATE program_assignments SET start_date = $1, end_date = $2 WHERE program_id = $3 AND player_id = $4', [startDate || null, endDate || null, programId, playerId]),
+      updateAllAssignmentDates: async (programId, startDate, endDate) => pool.query('UPDATE program_assignments SET start_date = $1, end_date = $2 WHERE program_id = $3', [startDate || null, endDate || null, programId]),
       getSetting: async (key) => {
         const { rows } = await pool.query('SELECT value FROM site_settings WHERE key = $1', [key]);
         return rows.length > 0 ? rows[0].value : null;
@@ -1530,12 +1531,14 @@ async function init() {
       getProgramAssignments: async (programId) => sqliteDb.prepare('SELECT pa.*, p.player_name FROM program_assignments pa JOIN players p ON pa.player_id = p.id WHERE pa.program_id = ? ORDER BY p.player_name').all(programId),
       getPlayerAssignments: async (playerId) => sqliteDb.prepare("SELECT pa.*, pr.title, pr.description, pr.schedule_type FROM program_assignments pa JOIN programs pr ON pa.program_id = pr.id WHERE pa.player_id = ? ORDER BY pr.title").all(playerId),
       assignProgram: async (a) => {
+        const existing = sqliteDb.prepare('SELECT start_date, end_date FROM program_assignments WHERE program_id = ? AND player_id = ?').get(a.program_id, a.player_id);
         sqliteDb.prepare('DELETE FROM program_assignments WHERE program_id = ? AND player_id = ?').run(a.program_id, a.player_id);
-        sqliteDb.prepare('INSERT INTO program_assignments (program_id, player_id, assigned_by_staff_id, send_reminders) VALUES (?,?,?,?)').run(a.program_id, a.player_id, a.assigned_by_staff_id || null, a.send_reminders ?? 1);
+        sqliteDb.prepare('INSERT INTO program_assignments (program_id, player_id, assigned_by_staff_id, send_reminders, start_date, end_date) VALUES (?,?,?,?,?,?)').run(a.program_id, a.player_id, a.assigned_by_staff_id || null, a.send_reminders ?? 1, a.start_date || (existing && existing.start_date) || null, a.end_date || (existing && existing.end_date) || null);
       },
       unassignProgram: async (programId, playerId) => sqliteDb.prepare('DELETE FROM program_assignments WHERE program_id = ? AND player_id = ?').run(programId, playerId),
       updateAssignmentStatus: async (programId, playerId, status) => sqliteDb.prepare('UPDATE program_assignments SET status = ? WHERE program_id = ? AND player_id = ?').run(status, programId, playerId),
       updateAssignmentDates: async (programId, playerId, startDate, endDate) => sqliteDb.prepare('UPDATE program_assignments SET start_date = ?, end_date = ? WHERE program_id = ? AND player_id = ?').run(startDate || null, endDate || null, programId, playerId),
+      updateAllAssignmentDates: async (programId, startDate, endDate) => sqliteDb.prepare('UPDATE program_assignments SET start_date = ?, end_date = ? WHERE program_id = ?').run(startDate || null, endDate || null, programId),
       getSetting: async (key) => {
         const row = sqliteDb.prepare('SELECT value FROM site_settings WHERE key = ?').get(key);
         return row ? row.value : null;
