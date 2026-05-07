@@ -363,7 +363,8 @@ app.get('/event/:id', async (req, res) => {
     lineup = await db.getLineupForEvent(event.id);
     lineupGrid = await db.getLineupGrid(event.id, null);
   }
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null });
+  const practiceTemplates = (event.event_type === 'practice' && isAdmin) ? (await db.getAllPrograms()).filter(p => p.program_type === 'practice_template') : [];
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null, practiceTemplates });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -2032,6 +2033,190 @@ app.get('/api/team-stats', async (req, res) => {
     stats.push({ player_id: p.id, player_name: p.player_name, jersey_number: p.jersey_number, hits, abs, avg: abs > 0 ? (hits / abs).toFixed(3) : '-', rbis, pa: completed.length });
   }
   res.json(stats);
+});
+
+app.get('/programs', async (req, res) => {
+  const programs = await db.getPublishedPrograms();
+  const playerAssignments = {};
+  if (req.parentUser) {
+    for (const pid of req.parentUser.player_ids) {
+      playerAssignments[pid] = await db.getPlayerAssignments(pid);
+    }
+  }
+  res.render('programs', { programs, parentUser: req.parentUser || null, playerAssignments });
+});
+
+app.get('/programs/:id', async (req, res) => {
+  const program = await db.getProgram(Number(req.params.id));
+  if (!program || (!program.published && !req.session.admin)) return res.redirect('/programs');
+  const days = await db.getProgramDays(program.id);
+  for (const day of days) {
+    day.activities = await db.getProgramActivities(day.id);
+  }
+  const isAdmin = !!req.session.admin;
+  const assignments = isAdmin ? await db.getProgramAssignments(program.id) : [];
+  const players = isAdmin ? (await db.getAllPlayers()).filter(p => p.status === 'confirmed') : [];
+  const subscribedPlayerIds = [];
+  if (req.parentUser) {
+    for (const pid of req.parentUser.player_ids) {
+      const pa = await db.getPlayerAssignments(pid);
+      if (pa.some(a => a.program_id === program.id)) subscribedPlayerIds.push(pid);
+    }
+  }
+  const allPlayers = await db.getAllPlayers();
+  res.render('program-detail', { program, days, isAdmin, assignments, players, parentUser: req.parentUser || null, subscribedPlayerIds, allPlayers });
+});
+
+app.post('/programs/:id/subscribe', async (req, res) => {
+  const program = await db.getProgram(Number(req.params.id));
+  if (!program || !program.published) return res.redirect('/programs');
+  const playerId = Number(req.body.player_id);
+  if (!req.parentUser || !req.parentUser.player_ids.includes(playerId)) return res.redirect('/programs/' + req.params.id);
+  const reminders = req.body.reminders === '1' ? 1 : 0;
+  await db.assignProgram({ program_id: program.id, player_id: playerId, send_reminders: reminders });
+  res.redirect('/programs/' + program.id);
+});
+
+app.post('/programs/:id/unsubscribe', async (req, res) => {
+  const playerId = Number(req.body.player_id);
+  if (!req.parentUser || !req.parentUser.player_ids.includes(playerId)) return res.redirect('/programs/' + req.params.id);
+  await db.unassignProgram(Number(req.params.id), playerId);
+  res.redirect('/programs/' + req.params.id);
+});
+
+app.get('/admin/programs', requireAdmin, async (req, res) => {
+  const programs = await db.getAllPrograms();
+  res.render('admin-programs', { programs, success: req.query.success || null, error: req.query.error || null });
+});
+
+app.post('/admin/programs', requireAdmin, async (req, res) => {
+  const { title, description, author, program_type, schedule_type } = req.body;
+  if (!title || !title.trim()) return res.redirect('/admin/programs?error=Title+is+required');
+  const result = await db.addProgram({ title: title.trim(), description: (description || '').trim() || null, author: (author || '').trim() || null, program_type: program_type || 'at_home', schedule_type: schedule_type || 'weekly' });
+  res.redirect('/admin/programs/' + result.id + '/edit');
+});
+
+app.get('/admin/programs/:id/edit', requireAdmin, async (req, res) => {
+  const program = await db.getProgram(Number(req.params.id));
+  if (!program) return res.redirect('/admin/programs');
+  const days = await db.getProgramDays(program.id);
+  for (const day of days) {
+    day.activities = await db.getProgramActivities(day.id);
+  }
+  const assignments = await db.getProgramAssignments(program.id);
+  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  res.render('admin-program-edit', { program, days, assignments, players, success: req.query.success || null, error: req.query.error || null });
+});
+
+app.post('/admin/programs/:id/update', requireAdmin, async (req, res) => {
+  const { title, description, author, program_type, schedule_type, published } = req.body;
+  await db.updateProgram(Number(req.params.id), { title: (title || '').trim(), description: (description || '').trim() || null, author: (author || '').trim() || null, program_type: program_type || 'at_home', schedule_type: schedule_type || 'weekly', published: published === '1' ? 1 : 0 });
+  res.redirect('/admin/programs/' + req.params.id + '/edit?success=Program+updated');
+});
+
+app.post('/admin/programs/:id/delete', requireAdmin, async (req, res) => {
+  await db.removeProgram(Number(req.params.id));
+  res.redirect('/admin/programs?success=Program+deleted');
+});
+
+app.post('/admin/programs/:id/day', requireAdmin, async (req, res) => {
+  const program = await db.getProgram(Number(req.params.id));
+  if (!program) return res.redirect('/admin/programs');
+  const days = await db.getProgramDays(program.id);
+  const dayLabel = (req.body.day_label || '').trim() || ('Day ' + (days.length + 1));
+  await db.addProgramDay({ program_id: program.id, day_label: dayLabel, day_number: days.length, sort_order: days.length });
+  res.redirect('/admin/programs/' + program.id + '/edit');
+});
+
+app.post('/admin/programs/:id/day/:dayId/update', requireAdmin, async (req, res) => {
+  await db.updateProgramDay(Number(req.params.dayId), { day_label: (req.body.day_label || '').trim() || 'Day', day_number: parseInt(req.body.day_number) || 0, sort_order: parseInt(req.body.sort_order) || 0 });
+  res.redirect('/admin/programs/' + req.params.id + '/edit');
+});
+
+app.post('/admin/programs/:id/day/:dayId/delete', requireAdmin, async (req, res) => {
+  await db.removeProgramDay(Number(req.params.dayId));
+  res.redirect('/admin/programs/' + req.params.id + '/edit');
+});
+
+app.post('/admin/programs/:id/day/:dayId/activity', requireAdmin, async (req, res) => {
+  const activities = await db.getProgramActivities(Number(req.params.dayId));
+  await db.addProgramActivity({
+    program_day_id: Number(req.params.dayId),
+    activity_name: (req.body.activity_name || '').trim() || 'New Activity',
+    description: (req.body.description || '').trim() || null,
+    instructions: (req.body.instructions || '').trim() || null,
+    reps: (req.body.reps || '').trim() || null,
+    sort_order: activities.length,
+  });
+  res.redirect('/admin/programs/' + req.params.id + '/edit');
+});
+
+app.post('/admin/programs/:id/activity/:actId/update', requireAdmin, async (req, res) => {
+  await db.updateProgramActivity(Number(req.params.actId), {
+    activity_name: (req.body.activity_name || '').trim() || 'Activity',
+    description: (req.body.description || '').trim() || null,
+    instructions: (req.body.instructions || '').trim() || null,
+    reps: (req.body.reps || '').trim() || null,
+    sort_order: parseInt(req.body.sort_order) || 0,
+  });
+  res.redirect('/admin/programs/' + req.params.id + '/edit');
+});
+
+app.post('/admin/programs/:id/activity/:actId/delete', requireAdmin, async (req, res) => {
+  await db.removeProgramActivity(Number(req.params.actId));
+  res.redirect('/admin/programs/' + req.params.id + '/edit');
+});
+
+app.post('/admin/programs/:id/assign', requireAdmin, async (req, res) => {
+  const playerIds = [].concat(req.body.player_ids || []).filter(Boolean).map(Number);
+  for (const pid of playerIds) {
+    await db.assignProgram({ program_id: Number(req.params.id), player_id: pid, send_reminders: 1 });
+  }
+  res.redirect('/admin/programs/' + req.params.id + '/edit?success=' + playerIds.length + '+players+assigned');
+});
+
+app.post('/admin/programs/:id/unassign/:playerId', requireAdmin, async (req, res) => {
+  await db.unassignProgram(Number(req.params.id), Number(req.params.playerId));
+  res.redirect('/admin/programs/' + req.params.id + '/edit');
+});
+
+app.post('/event/:id/save-as-program', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/admin');
+  const drills = await db.getDrills(event.id);
+  if (drills.length === 0) return res.redirect('/event/' + event.id);
+  const title = (req.body.template_name || '').trim() || event.title + ' Template';
+  const result = await db.addProgram({ title, description: 'Saved from: ' + event.title, program_type: 'practice_template', schedule_type: 'sequential' });
+  const day = await db.addProgramDay({ program_id: result.id, day_label: 'Practice', day_number: 0, sort_order: 0 });
+  for (const drill of drills) {
+    await db.addProgramActivity({ program_day_id: day.id, activity_name: drill.drill_name, description: drill.description, instructions: drill.coach_notes, reps: drill.duration_minutes + ' min', sort_order: drill.sort_order });
+  }
+  res.redirect('/admin/programs/' + result.id + '/edit?success=Practice+plan+saved+as+template');
+});
+
+app.post('/event/:id/load-program', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event || event.event_type !== 'practice') return res.redirect('/admin');
+  const programId = Number(req.body.program_id);
+  const program = await db.getProgram(programId);
+  if (!program) return res.redirect('/event/' + event.id);
+  const days = await db.getProgramDays(program.id);
+  const existingDrills = await db.getDrills(event.id);
+  let order = existingDrills.length;
+  for (const day of days) {
+    const activities = await db.getProgramActivities(day.id);
+    for (const act of activities) {
+      await db.addDrill({
+        team_event_id: event.id,
+        drill_name: act.activity_name,
+        description: act.description,
+        duration_minutes: parseInt(act.reps) || 10,
+        sort_order: order++,
+        coach_notes: act.instructions,
+      });
+    }
+  }
+  res.redirect('/event/' + event.id);
 });
 
 // --- Staff View (read-only) ---

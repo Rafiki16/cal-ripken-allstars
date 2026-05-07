@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= program.title %> &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/programs" class="back-link">&larr; Back to Programs</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1><%= program.title %></h1>
+            <p class="subtitle">
+              <span style="display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:4px; background:rgba(255,255,255,0.2); margin-right:6px;"><%= program.program_type === 'at_home' ? 'At Home' : 'Practice Template' %></span>
+              <span style="font-size:11px; opacity:0.8;"><%= program.schedule_type === 'weekly' ? 'Weekly Schedule' : 'Sequential' %></span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (program.description) { %>
+    <div style="margin:24px 0 16px; padding:16px; background:#f0f4ff; border-radius:12px;">
+      <p style="font-size:14px; color:var(--navy); margin:0; line-height:1.5;"><%= program.description %></p>
+      <% if (program.author) { %>
+      <p style="font-size:12px; color:var(--gray-400); margin:8px 0 0;">By <%= program.author %></p>
+      <% } %>
+    </div>
+    <% } %>
+
+    <% if (parentUser && parentUser.player_ids.length > 0) { %>
+    <div style="margin:16px 0; padding:16px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
+      <h3 style="font-size:14px; font-weight:700; color:var(--navy); margin:0 0 12px;">Subscribe Your Players</h3>
+      <% const playerMap = {}; allPlayers.forEach(p => { playerMap[p.id] = p; }); %>
+      <% parentUser.player_ids.forEach(pid => { %>
+        <% const player = playerMap[pid]; %>
+        <% if (player) { %>
+        <div style="display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--gray-100);">
+          <span style="font-weight:600; font-size:14px; flex:1;"><%= player.player_name %></span>
+          <% if (subscribedPlayerIds.includes(pid)) { %>
+          <span style="font-size:12px; font-weight:600; color:#16a34a; margin-right:8px;">Subscribed</span>
+          <form method="POST" action="/programs/<%= program.id %>/unsubscribe" style="margin:0;">
+            <input type="hidden" name="player_id" value="<%= pid %>">
+            <button type="submit" class="btn btn-secondary" style="font-size:12px; padding:4px 12px;">Unsubscribe</button>
+          </form>
+          <% } else { %>
+          <form method="POST" action="/programs/<%= program.id %>/subscribe" style="margin:0; display:flex; align-items:center; gap:8px;">
+            <input type="hidden" name="player_id" value="<%= pid %>">
+            <label style="font-size:12px; color:var(--gray-500); display:flex; align-items:center; gap:4px;">
+              <input type="checkbox" name="reminders" value="1" checked> Reminders
+            </label>
+            <button type="submit" class="btn btn-confirm" style="font-size:12px; padding:4px 12px;">Subscribe</button>
+          </form>
+          <% } %>
+        </div>
+        <% } %>
+      <% }); %>
+    </div>
+    <% } %>
+
+    <% if (days.length === 0) { %>
+    <p style="color:var(--gray-500); font-size:14px; margin-top:24px;">No days have been added to this program yet.</p>
+    <% } else { %>
+    <% days.forEach((day, dayIndex) => { %>
+    <div style="margin:24px 0;">
+      <h2 class="section-title" style="font-size:16px;"><%= day.day_label %></h2>
+      <% if (day.activities.length === 0) { %>
+      <p style="color:var(--gray-500); font-size:13px;">No activities added yet.</p>
+      <% } else { %>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <% day.activities.forEach((act, actIndex) => { %>
+        <div style="border:1px solid var(--gray-200); border-radius:10px; padding:14px 16px; background:#fff;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <span style="font-size:11px; font-weight:700; color:var(--gray-400); min-width:20px;"><%= actIndex + 1 %>.</span>
+            <h4 style="font-size:14px; font-weight:700; color:var(--navy); margin:0; flex:1;"><%= act.activity_name %></h4>
+            <% if (act.reps) { %>
+            <span style="font-size:12px; font-weight:600; color:var(--gray-500); background:var(--gray-50); padding:2px 8px; border-radius:6px; white-space:nowrap;"><%= act.reps %></span>
+            <% } %>
+          </div>
+          <% if (act.description) { %>
+          <p style="font-size:13px; color:var(--gray-500); margin:4px 0 0 28px; line-height:1.4;"><%= act.description %></p>
+          <% } %>
+          <% if (act.instructions) { %>
+          <details style="margin:8px 0 0 28px;">
+            <summary style="font-size:12px; font-weight:600; color:var(--navy); cursor:pointer;">Instructions</summary>
+            <pre style="font-size:12px; color:var(--gray-600); margin:8px 0 0; white-space:pre-wrap; font-family:inherit; line-height:1.5; background:var(--gray-50); padding:10px; border-radius:8px;"><%= act.instructions %></pre>
+          </details>
+          <% } %>
+        </div>
+        <% }); %>
+      </div>
+      <% } %>
+    </div>
+    <% }); %>
+    <% } %>
+
+    <% if (isAdmin) { %>
+    <div style="margin:32px 0; padding:20px; background:var(--gray-50); border-radius:12px; border:1px solid var(--gray-200);">
+      <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0 0 16px;">Assignments</h3>
+      <% if (assignments.length > 0) { %>
+      <div style="margin-bottom:16px;">
+        <% assignments.forEach(a => { %>
+        <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--gray-200);">
+          <span style="font-size:13px; font-weight:600; flex:1;"><%= a.player_name %></span>
+          <span style="font-size:11px; color:var(--gray-400);"><%= a.status %></span>
+          <form method="POST" action="/admin/programs/<%= program.id %>/unassign/<%= a.player_id %>" style="margin:0;">
+            <button type="submit" class="btn btn-secondary" style="font-size:11px; padding:2px 8px; color:#dc2626;">Remove</button>
+          </form>
+        </div>
+        <% }); %>
+      </div>
+      <% } %>
+      <form method="POST" action="/admin/programs/<%= program.id %>/assign">
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <label style="font-size:12px; font-weight:600; color:var(--gray-500);">Assign Players</label>
+          <div style="max-height:200px; overflow-y:auto; border:1px solid var(--gray-200); border-radius:8px; padding:8px; background:#fff;">
+            <% const assignedIds = assignments.map(a => a.player_id); %>
+            <% players.filter(p => !assignedIds.includes(p.id)).forEach(p => { %>
+            <label style="display:flex; align-items:center; gap:8px; padding:4px; font-size:13px; cursor:pointer;">
+              <input type="checkbox" name="player_ids" value="<%= p.id %>"> <%= p.player_name %>
+            </label>
+            <% }); %>
+            <% if (players.filter(p => !assignedIds.includes(p.id)).length === 0) { %>
+            <p style="font-size:12px; color:var(--gray-400); margin:4px;">All confirmed players are assigned.</p>
+            <% } %>
+          </div>
+          <button type="submit" class="btn btn-confirm" style="align-self:flex-start;">Assign Selected</button>
+        </div>
+      </form>
+    </div>
+    <div style="margin-bottom:24px;">
+      <a href="/admin/programs/<%= program.id %>/edit" class="btn btn-primary" style="text-decoration:none;">Edit Program</a>
+    </div>
+    <% } %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+      <p style="margin-top:8px;"><a href="/admin" style="color:#9ca3af;font-size:13px;">Admin</a></p>
+    </div>
+  </footer>
+</body>
+</html>

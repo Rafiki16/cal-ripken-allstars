@@ -374,6 +374,54 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS programs (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        author TEXT,
+        program_type TEXT NOT NULL DEFAULT 'at_home',
+        schedule_type TEXT NOT NULL DEFAULT 'weekly',
+        published INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS program_days (
+        id SERIAL PRIMARY KEY,
+        program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        day_label TEXT NOT NULL,
+        day_number INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS program_activities (
+        id SERIAL PRIMARY KEY,
+        program_day_id INTEGER NOT NULL REFERENCES program_days(id) ON DELETE CASCADE,
+        activity_name TEXT NOT NULL,
+        description TEXT,
+        instructions TEXT,
+        reps TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS program_assignments (
+        id SERIAL PRIMARY KEY,
+        program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        assigned_by_staff_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'active',
+        send_reminders INTEGER NOT NULL DEFAULT 1,
+        started_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(program_id, player_id)
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -654,6 +702,25 @@ async function init() {
         const r = await pool.query('SELECT COUNT(*)::int as cnt FROM game_undo_log WHERE game_id = $1', [gameId]);
         return r.rows[0].cnt;
       },
+      getAllPrograms: async () => (await pool.query('SELECT * FROM programs ORDER BY created_at DESC')).rows,
+      getPublishedPrograms: async () => (await pool.query('SELECT * FROM programs WHERE published = 1 ORDER BY title')).rows,
+      getProgram: async (id) => (await pool.query('SELECT * FROM programs WHERE id = $1', [id])).rows[0] || null,
+      addProgram: async (p) => (await pool.query('INSERT INTO programs (title, description, author, program_type, schedule_type, published) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [p.title, p.description || null, p.author || null, p.program_type || 'at_home', p.schedule_type || 'weekly', p.published || 0])).rows[0],
+      updateProgram: async (id, p) => pool.query('UPDATE programs SET title=$1, description=$2, author=$3, program_type=$4, schedule_type=$5, published=$6 WHERE id=$7', [p.title, p.description || null, p.author || null, p.program_type, p.schedule_type, p.published || 0, id]),
+      removeProgram: async (id) => pool.query('DELETE FROM programs WHERE id = $1', [id]),
+      getProgramDays: async (programId) => (await pool.query('SELECT * FROM program_days WHERE program_id = $1 ORDER BY sort_order', [programId])).rows,
+      addProgramDay: async (d) => (await pool.query('INSERT INTO program_days (program_id, day_label, day_number, sort_order) VALUES ($1,$2,$3,$4) RETURNING id', [d.program_id, d.day_label, d.day_number, d.sort_order])).rows[0],
+      updateProgramDay: async (id, d) => pool.query('UPDATE program_days SET day_label=$1, day_number=$2, sort_order=$3 WHERE id=$4', [d.day_label, d.day_number, d.sort_order, id]),
+      removeProgramDay: async (id) => pool.query('DELETE FROM program_days WHERE id = $1', [id]),
+      getProgramActivities: async (dayId) => (await pool.query('SELECT * FROM program_activities WHERE program_day_id = $1 ORDER BY sort_order', [dayId])).rows,
+      addProgramActivity: async (a) => (await pool.query('INSERT INTO program_activities (program_day_id, activity_name, description, instructions, reps, sort_order) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [a.program_day_id, a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order])).rows[0],
+      updateProgramActivity: async (id, a) => pool.query('UPDATE program_activities SET activity_name=$1, description=$2, instructions=$3, reps=$4, sort_order=$5 WHERE id=$6', [a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order, id]),
+      removeProgramActivity: async (id) => pool.query('DELETE FROM program_activities WHERE id = $1', [id]),
+      getProgramAssignments: async (programId) => (await pool.query('SELECT pa.*, p.player_name FROM program_assignments pa JOIN players p ON pa.player_id = p.id WHERE pa.program_id = $1 ORDER BY p.player_name', [programId])).rows,
+      getPlayerAssignments: async (playerId) => (await pool.query("SELECT pa.*, pr.title, pr.description, pr.schedule_type FROM program_assignments pa JOIN programs pr ON pa.program_id = pr.id WHERE pa.player_id = $1 AND pa.status = 'active' ORDER BY pr.title", [playerId])).rows,
+      assignProgram: async (a) => pool.query("INSERT INTO program_assignments (program_id, player_id, assigned_by_staff_id, send_reminders) VALUES ($1,$2,$3,$4) ON CONFLICT (program_id, player_id) DO UPDATE SET status = 'active', assigned_by_staff_id = $3, send_reminders = $4, started_at = NOW()", [a.program_id, a.player_id, a.assigned_by_staff_id || null, a.send_reminders ?? 1]),
+      unassignProgram: async (programId, playerId) => pool.query('DELETE FROM program_assignments WHERE program_id = $1 AND player_id = $2', [programId, playerId]),
+      updateAssignmentStatus: async (programId, playerId, status) => pool.query('UPDATE program_assignments SET status = $1 WHERE program_id = $2 AND player_id = $3', [status, programId, playerId]),
       getSetting: async (key) => {
         const { rows } = await pool.query('SELECT value FROM site_settings WHERE key = $1', [key]);
         return rows.length > 0 ? rows[0].value : null;
@@ -995,6 +1062,54 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS programs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        author TEXT,
+        program_type TEXT NOT NULL DEFAULT 'at_home',
+        schedule_type TEXT NOT NULL DEFAULT 'weekly',
+        published INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS program_days (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        day_label TEXT NOT NULL,
+        day_number INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS program_activities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        program_day_id INTEGER NOT NULL REFERENCES program_days(id) ON DELETE CASCADE,
+        activity_name TEXT NOT NULL,
+        description TEXT,
+        instructions TEXT,
+        reps TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS program_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        program_id INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        assigned_by_staff_id INTEGER,
+        status TEXT NOT NULL DEFAULT 'active',
+        send_reminders INTEGER NOT NULL DEFAULT 1,
+        started_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(program_id, player_id)
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -1263,6 +1378,37 @@ async function init() {
         const r = sqliteDb.prepare('SELECT COUNT(*) as cnt FROM game_undo_log WHERE game_id = ?').get(gameId);
         return r.cnt;
       },
+      getAllPrograms: async () => sqliteDb.prepare('SELECT * FROM programs ORDER BY created_at DESC').all(),
+      getPublishedPrograms: async () => sqliteDb.prepare('SELECT * FROM programs WHERE published = 1 ORDER BY title').all(),
+      getProgram: async (id) => sqliteDb.prepare('SELECT * FROM programs WHERE id = ?').get(id) || null,
+      addProgram: async (p) => {
+        const r = sqliteDb.prepare('INSERT INTO programs (title, description, author, program_type, schedule_type, published) VALUES (?,?,?,?,?,?)').run(p.title, p.description || null, p.author || null, p.program_type || 'at_home', p.schedule_type || 'weekly', p.published || 0);
+        return { id: r.lastInsertRowid };
+      },
+      updateProgram: async (id, p) => sqliteDb.prepare('UPDATE programs SET title=?, description=?, author=?, program_type=?, schedule_type=?, published=? WHERE id=?').run(p.title, p.description || null, p.author || null, p.program_type, p.schedule_type, p.published || 0, id),
+      removeProgram: async (id) => sqliteDb.prepare('DELETE FROM programs WHERE id = ?').run(id),
+      getProgramDays: async (programId) => sqliteDb.prepare('SELECT * FROM program_days WHERE program_id = ? ORDER BY sort_order').all(programId),
+      addProgramDay: async (d) => {
+        const r = sqliteDb.prepare('INSERT INTO program_days (program_id, day_label, day_number, sort_order) VALUES (?,?,?,?)').run(d.program_id, d.day_label, d.day_number, d.sort_order);
+        return { id: r.lastInsertRowid };
+      },
+      updateProgramDay: async (id, d) => sqliteDb.prepare('UPDATE program_days SET day_label=?, day_number=?, sort_order=? WHERE id=?').run(d.day_label, d.day_number, d.sort_order, id),
+      removeProgramDay: async (id) => sqliteDb.prepare('DELETE FROM program_days WHERE id = ?').run(id),
+      getProgramActivities: async (dayId) => sqliteDb.prepare('SELECT * FROM program_activities WHERE program_day_id = ? ORDER BY sort_order').all(dayId),
+      addProgramActivity: async (a) => {
+        const r = sqliteDb.prepare('INSERT INTO program_activities (program_day_id, activity_name, description, instructions, reps, sort_order) VALUES (?,?,?,?,?,?)').run(a.program_day_id, a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order);
+        return { id: r.lastInsertRowid };
+      },
+      updateProgramActivity: async (id, a) => sqliteDb.prepare('UPDATE program_activities SET activity_name=?, description=?, instructions=?, reps=?, sort_order=? WHERE id=?').run(a.activity_name, a.description || null, a.instructions || null, a.reps || null, a.sort_order, id),
+      removeProgramActivity: async (id) => sqliteDb.prepare('DELETE FROM program_activities WHERE id = ?').run(id),
+      getProgramAssignments: async (programId) => sqliteDb.prepare('SELECT pa.*, p.player_name FROM program_assignments pa JOIN players p ON pa.player_id = p.id WHERE pa.program_id = ? ORDER BY p.player_name').all(programId),
+      getPlayerAssignments: async (playerId) => sqliteDb.prepare("SELECT pa.*, pr.title, pr.description, pr.schedule_type FROM program_assignments pa JOIN programs pr ON pa.program_id = pr.id WHERE pa.player_id = ? AND pa.status = 'active' ORDER BY pr.title").all(playerId),
+      assignProgram: async (a) => {
+        sqliteDb.prepare('DELETE FROM program_assignments WHERE program_id = ? AND player_id = ?').run(a.program_id, a.player_id);
+        sqliteDb.prepare('INSERT INTO program_assignments (program_id, player_id, assigned_by_staff_id, send_reminders) VALUES (?,?,?,?)').run(a.program_id, a.player_id, a.assigned_by_staff_id || null, a.send_reminders ?? 1);
+      },
+      unassignProgram: async (programId, playerId) => sqliteDb.prepare('DELETE FROM program_assignments WHERE program_id = ? AND player_id = ?').run(programId, playerId),
+      updateAssignmentStatus: async (programId, playerId, status) => sqliteDb.prepare('UPDATE program_assignments SET status = ? WHERE program_id = ? AND player_id = ?').run(status, programId, playerId),
       getSetting: async (key) => {
         const row = sqliteDb.prepare('SELECT value FROM site_settings WHERE key = ?').get(key);
         return row ? row.value : null;
@@ -1378,6 +1524,25 @@ module.exports = {
   pushUndo: (...args) => impl.pushUndo(...args),
   popUndo: (...args) => impl.popUndo(...args),
   getUndoCount: (...args) => impl.getUndoCount(...args),
+  getAllPrograms: (...args) => impl.getAllPrograms(...args),
+  getPublishedPrograms: (...args) => impl.getPublishedPrograms(...args),
+  getProgram: (...args) => impl.getProgram(...args),
+  addProgram: (...args) => impl.addProgram(...args),
+  updateProgram: (...args) => impl.updateProgram(...args),
+  removeProgram: (...args) => impl.removeProgram(...args),
+  getProgramDays: (...args) => impl.getProgramDays(...args),
+  addProgramDay: (...args) => impl.addProgramDay(...args),
+  updateProgramDay: (...args) => impl.updateProgramDay(...args),
+  removeProgramDay: (...args) => impl.removeProgramDay(...args),
+  getProgramActivities: (...args) => impl.getProgramActivities(...args),
+  addProgramActivity: (...args) => impl.addProgramActivity(...args),
+  updateProgramActivity: (...args) => impl.updateProgramActivity(...args),
+  removeProgramActivity: (...args) => impl.removeProgramActivity(...args),
+  getProgramAssignments: (...args) => impl.getProgramAssignments(...args),
+  getPlayerAssignments: (...args) => impl.getPlayerAssignments(...args),
+  assignProgram: (...args) => impl.assignProgram(...args),
+  unassignProgram: (...args) => impl.unassignProgram(...args),
+  updateAssignmentStatus: (...args) => impl.updateAssignmentStatus(...args),
   getSetting: (...args) => impl.getSetting(...args),
   setSetting: (...args) => impl.setSetting(...args),
 };
