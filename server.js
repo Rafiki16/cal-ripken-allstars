@@ -308,6 +308,8 @@ app.get('/event/:id', async (req, res) => {
   const players = await db.getAllPlayers();
   const confirmed = players.filter(p => p.status === 'confirmed');
   const isAdmin = !!req.session.admin;
+  const staffPhone = req.parentUser ? req.parentUser.phone : null;
+  const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone)) : false);
   let drills = [], subEvents = [], lineup = [], subLineups = {}, lineupGrid = [], subGrids = {};
   if (event.event_type === 'practice') drills = await db.getDrills(event.id);
   if (event.event_type === 'tournament') {
@@ -323,7 +325,7 @@ app.get('/event/:id', async (req, res) => {
     lineup = await db.getLineupForEvent(event.id);
     lineupGrid = await db.getLineupGrid(event.id, null);
   }
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null });
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -967,6 +969,7 @@ app.post('/event/:id/drill', requireAdmin, async (req, res) => {
     description: (req.body.description || '').trim() || null,
     duration_minutes: parseInt(req.body.duration_minutes) || 10,
     sort_order: drills.length,
+    coach_notes: (req.body.coach_notes || '').trim() || null,
   });
   res.redirect('/event/' + event.id);
 });
@@ -977,8 +980,20 @@ app.post('/event/:id/drill/:drillId/update', requireAdmin, async (req, res) => {
     description: (req.body.description || '').trim() || null,
     duration_minutes: parseInt(req.body.duration_minutes) || 10,
     sort_order: parseInt(req.body.sort_order) || 0,
+    coach_notes: (req.body.coach_notes || '').trim() || null,
   });
   res.redirect('/event/' + req.params.id);
+});
+
+app.post('/event/:id/drill/reorder', requireAdmin, async (req, res) => {
+  const order = req.body.order;
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'Invalid order' });
+  const drills = await db.getDrills(Number(req.params.id));
+  for (let i = 0; i < order.length; i++) {
+    const d = drills.find(x => x.id === order[i]);
+    if (d) await db.updateDrill(d.id, { drill_name: d.drill_name, description: d.description, duration_minutes: d.duration_minutes, sort_order: i, coach_notes: d.coach_notes });
+  }
+  res.json({ ok: true });
 });
 
 app.post('/event/:id/drill/:drillId/delete', requireAdmin, async (req, res) => {
