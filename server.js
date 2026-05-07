@@ -2103,7 +2103,8 @@ app.get('/stats', requireLogin, async (req, res) => {
   const isAdmin = req.session && req.session.adminId;
   const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
   const parentUser = req.parentUser;
-  res.render('player-stats', { isAdmin: !!isAdmin, isStaff: !!isStaff, parentUser: parentUser || null });
+  const teamName = await db.getSetting('team_name') || 'Cal Ripken All-Stars';
+  res.render('player-stats', { isAdmin: !!isAdmin, isStaff: !!isStaff, parentUser: parentUser || null, teamName });
 });
 
 app.get('/api/player-stats/:playerId', async (req, res) => {
@@ -2151,19 +2152,37 @@ app.get('/api/player-stats/:playerId', async (req, res) => {
 app.get('/api/team-stats', async (req, res) => {
   const isAdmin = req.session && req.session.adminId;
   const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
-  if (!isAdmin && !isStaff) return res.status(403).json({ error: 'Admin or staff only' });
+  const parentUser = req.parentUser;
+  const parentOnly = !isAdmin && !isStaff && parentUser;
+  if (!isAdmin && !isStaff && !parentOnly) return res.status(403).json({ error: 'Not authorized' });
 
-  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
-  const stats = [];
+  let players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  if (parentOnly) players = players.filter(p => parentUser.player_ids.includes(p.id));
+
+  const batting = [];
+  const pitching = [];
   for (const p of players) {
     const atBats = await db.getAtBatsForPlayer(p.id);
     const completed = atBats.filter(ab => ab.result);
     const hits = completed.filter(ab => ['1B','2B','3B','HR'].includes(ab.result)).length;
     const abs = completed.filter(ab => !['BB','HBP','SAC'].includes(ab.result)).length;
     const rbis = completed.reduce((s, ab) => s + (ab.rbi_count || 0), 0);
-    stats.push({ player_id: p.id, player_name: p.player_name, jersey_number: p.jersey_number, hits, abs, avg: abs > 0 ? (hits / abs).toFixed(3) : '-', rbis, pa: completed.length });
+    const bbs = completed.filter(ab => ab.result === 'BB' || ab.result === 'HBP').length;
+    const ks = completed.filter(ab => ab.result === 'K').length;
+    const doubles = completed.filter(ab => ab.result === '2B').length;
+    const triples = completed.filter(ab => ab.result === '3B').length;
+    const hrs = completed.filter(ab => ab.result === 'HR').length;
+    batting.push({ player_id: p.id, player_name: p.player_name, jersey_number: p.jersey_number, hits, abs, avg: abs > 0 ? (hits / abs).toFixed(3) : '-', rbis, bbs, ks, doubles, triples, hrs, pa: completed.length });
+
+    const pitchData = await db.getPitchesForPitcherSeason(p.id);
+    if (pitchData.length > 0) {
+      const strikes = pitchData.filter(pt => ['called_strike','swinging_strike','foul','foul_tip','in_play'].includes(pt.result)).length;
+      const gameGroups = {};
+      for (const pt of pitchData) { if (!gameGroups[pt.game_id]) gameGroups[pt.game_id] = []; gameGroups[pt.game_id].push(pt); }
+      pitching.push({ player_id: p.id, player_name: p.player_name, jersey_number: p.jersey_number, totalPitches: pitchData.length, strikes, balls: pitchData.length - strikes, strikePercent: Math.round((strikes / pitchData.length) * 100), games: Object.keys(gameGroups).length });
+    }
   }
-  res.json(stats);
+  res.json({ batting, pitching });
 });
 
 function getMonday(d) {
