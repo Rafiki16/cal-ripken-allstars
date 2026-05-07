@@ -70,7 +70,26 @@
     <% } else { %>
     <% days.forEach((day, dayIndex) => { %>
     <div style="margin:24px 0;">
-      <h2 class="section-title" style="font-size:16px;"><%= day.day_label %></h2>
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+        <h2 class="section-title" style="font-size:16px; margin:0; flex:1;"><%= day.day_label %></h2>
+        <% if (parentUser && subscribedPlayerIds.length > 0) { %>
+          <% subscribedPlayerIds.forEach(pid => { %>
+            <% const pName = (allPlayers.find(p => p.id === pid) || {}).player_name || ''; %>
+            <% const pCompletions = playerCompletions[pid] || []; %>
+            <% const isDayDone = pCompletions.some(c => c.program_day_id === day.id && c.week_of === weekOf); %>
+            <label class="day-complete-toggle" style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:4px 10px; border-radius:8px; border:1px solid <%= isDayDone ? '#16a34a' : 'var(--gray-200)' %>; background:<%= isDayDone ? '#f0fdf4' : '#fff' %>; font-size:12px; font-weight:600; color:<%= isDayDone ? '#16a34a' : 'var(--gray-500)' %>; transition:all 0.2s;">
+              <input type="checkbox" class="completion-checkbox"
+                data-program-id="<%= program.id %>"
+                data-player-id="<%= pid %>"
+                data-day-id="<%= day.id %>"
+                <%= isDayDone ? 'checked' : '' %>
+                style="width:16px; height:16px; accent-color:#16a34a;">
+              <% if (isDayDone) { %>&#10003;<% } %>
+              <% if (subscribedPlayerIds.length > 1) { %><span style="font-size:11px;"><%= pName.split(' ')[0] %></span><% } %>
+            </label>
+          <% }); %>
+        <% } %>
+      </div>
       <% if (day.activities.length === 0) { %>
       <p style="color:var(--gray-500); font-size:13px;">No activities added yet.</p>
       <% } else { %>
@@ -99,6 +118,40 @@
       <% } %>
     </div>
     <% }); %>
+    <% } %>
+
+    <% if (parentUser && subscribedPlayerIds.length > 0) { %>
+    <script>
+    document.querySelectorAll('.completion-checkbox').forEach(cb => {
+      cb.addEventListener('change', async function() {
+        const programId = this.dataset.programId;
+        const playerId = this.dataset.playerId;
+        const dayId = this.dataset.dayId;
+        const url = this.checked
+          ? '/programs/' + programId + '/complete-day'
+          : '/programs/' + programId + '/uncomplete-day';
+        try {
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_id: Number(playerId), day_id: Number(dayId) })
+          });
+          if (resp.ok) {
+            const label = this.closest('.day-complete-toggle');
+            if (this.checked) {
+              label.style.borderColor = '#16a34a';
+              label.style.background = '#f0fdf4';
+              label.style.color = '#16a34a';
+            } else {
+              label.style.borderColor = 'var(--gray-200)';
+              label.style.background = '#fff';
+              label.style.color = 'var(--gray-500)';
+            }
+          }
+        } catch (e) { console.error('Completion toggle failed:', e); }
+      });
+    });
+    </script>
     <% } %>
 
     <% if (isAdmin) { %>

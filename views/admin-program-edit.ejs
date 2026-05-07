@@ -171,7 +171,33 @@
     </div>
 
     <div style="margin:24px 0; padding:20px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
-      <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0 0 16px;">Assignments</h3>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+        <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0;">Position-Based Assignment</h3>
+      </div>
+      <p style="font-size:12px; color:var(--gray-500); margin:0 0 12px;">Select positions to auto-assign all confirmed players who play those positions.</p>
+      <form method="POST" action="/admin/programs/<%= program.id %>/assign-positions">
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+          <% const currentPositions = (program.assigned_positions || '').split(',').filter(Boolean); %>
+          <% POSITIONS.forEach(pos => { %>
+          <label style="display:flex; align-items:center; gap:4px; font-size:13px; font-weight:600; cursor:pointer; padding:6px 10px; border:1px solid var(--gray-200); border-radius:8px; background:<%= currentPositions.includes(pos) ? '#e0f2fe' : '#fff' %>;">
+            <input type="checkbox" name="positions" value="<%= pos %>" <%= currentPositions.includes(pos) ? 'checked' : '' %>> <%= pos %>
+          </label>
+          <% }); %>
+        </div>
+        <button type="submit" class="btn btn-confirm" style="font-size:12px; padding:6px 14px;">Save Positions & Assign Matching Players</button>
+      </form>
+      <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--gray-100);">
+        <form method="POST" action="/admin/programs/<%= program.id %>/assign-all" style="display:inline;" onsubmit="return confirm('Assign ALL confirmed players to this program?')">
+          <button type="submit" class="btn btn-secondary" style="font-size:12px; padding:6px 14px;">Assign All Confirmed Players</button>
+        </form>
+      </div>
+    </div>
+
+    <div style="margin:24px 0; padding:20px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+        <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0;">Assignments</h3>
+        <a href="/admin/programs/<%= program.id %>/dashboard" class="btn btn-primary" style="font-size:12px; padding:6px 14px; text-decoration:none;">View Dashboard</a>
+      </div>
 
       <% if (assignments.length > 0) { %>
       <div style="margin-bottom:16px;">

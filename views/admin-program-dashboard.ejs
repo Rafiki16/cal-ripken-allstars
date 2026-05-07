@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard: <%= program.title %> &middot; Admin &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/admin/programs/<%= program.id %>/edit" class="back-link">&larr; Back to Edit</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Program Dashboard</h1>
+            <p class="subtitle"><%= program.title %></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (program.description) { %>
+    <div style="margin:16px 0; padding:12px 16px; background:#f0f4ff; border-radius:10px;">
+      <p style="font-size:13px; color:var(--navy); margin:0; line-height:1.4;"><%= program.description %></p>
+    </div>
+    <% } %>
+
+    <div style="margin:24px 0; display:flex; align-items:center; justify-content:space-between;">
+      <a href="/admin/programs/<%= program.id %>/dashboard?week=<%= weekOffset - 1 %>" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:6px 14px;">&larr; Prev Week</a>
+      <div style="text-align:center;">
+        <div style="font-size:15px; font-weight:700; color:var(--navy);">
+          Week of <%= new Date(weekOf + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %>
+        </div>
+        <% if (weekOffset !== 0) { %>
+        <a href="/admin/programs/<%= program.id %>/dashboard" style="font-size:11px; color:var(--gray-400);">Go to current week</a>
+        <% } else { %>
+        <span style="font-size:11px; color:#16a34a; font-weight:600;">Current Week</span>
+        <% } %>
+      </div>
+      <a href="/admin/programs/<%= program.id %>/dashboard?week=<%= weekOffset + 1 %>" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:6px 14px;">Next Week &rarr;</a>
+    </div>
+
+    <% if (assignments.length === 0) { %>
+    <div style="padding:40px 20px; text-align:center; color:var(--gray-500);">
+      <p style="font-size:14px;">No players assigned to this program yet.</p>
+      <a href="/admin/programs/<%= program.id %>/edit" class="btn btn-confirm" style="text-decoration:none; margin-top:12px; display:inline-block;">Assign Players</a>
+    </div>
+    <% } else if (days.length === 0) { %>
+    <div style="padding:40px 20px; text-align:center; color:var(--gray-500);">
+      <p style="font-size:14px;">No days added to this program yet.</p>
+      <a href="/admin/programs/<%= program.id %>/edit" class="btn btn-confirm" style="text-decoration:none; margin-top:12px; display:inline-block;">Add Days</a>
+    </div>
+    <% } else { %>
+
+    <%
+      // Build completion lookup: completionMap[playerId][dayId] = true
+      const completionMap = {};
+      assignments.forEach(a => { completionMap[a.player_id] = {}; });
+      completions.forEach(c => {
+        if (completionMap[c.player_id]) {
+          completionMap[c.player_id][c.program_day_id] = true;
+        }
+      });
+
+      // Calculate per-player and per-day stats
+      const playerPcts = {};
+      assignments.forEach(a => {
+        const done = days.filter(d => completionMap[a.player_id][d.id]).length;
+        playerPcts[a.player_id] = days.length > 0 ? Math.round((done / days.length) * 100) : 0;
+      });
+
+      const dayPcts = {};
+      days.forEach(d => {
+        const done = assignments.filter(a => completionMap[a.player_id][d.id]).length;
+        dayPcts[d.id] = assignments.length > 0 ? Math.round((done / assignments.length) * 100) : 0;
+      });
+
+      const totalCells = assignments.length * days.length;
+      const totalDone = completions.length;
+    %>
+
+    <div style="overflow-x:auto; margin:24px 0;">
+      <table style="width:100%; border-collapse:collapse; font-size:13px; background:#fff; border:1px solid var(--gray-200); border-radius:12px; overflow:hidden;">
+        <thead>
+          <tr style="background:var(--navy); color:#fff;">
+            <th style="text-align:left; padding:10px 14px; font-weight:700; font-size:12px; white-space:nowrap; position:sticky; left:0; background:var(--navy); z-index:2;">Player</th>
+            <% days.forEach(day => { %>
+            <th style="text-align:center; padding:10px 8px; font-weight:600; font-size:11px; min-width:70px; white-space:nowrap;"><%= day.day_label %></th>
+            <% }); %>
+            <th style="text-align:center; padding:10px 8px; font-weight:700; font-size:11px; min-width:60px; background:rgba(255,255,255,0.1);">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% assignments.forEach((a, i) => { %>
+          <tr style="border-bottom:1px solid var(--gray-100); background:<%= i % 2 === 0 ? '#fff' : 'var(--gray-50)' %>;">
+            <td style="padding:10px 14px; font-weight:600; white-space:nowrap; position:sticky; left:0; background:<%= i % 2 === 0 ? '#fff' : 'var(--gray-50)' %>; z-index:1;"><%= a.player_name %></td>
+            <% days.forEach(day => { %>
+            <td style="text-align:center; padding:10px 8px;">
+              <% if (completionMap[a.player_id][day.id]) { %>
+              <span style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:#dcfce7; color:#16a34a; font-weight:700; font-size:16px;">&#10003;</span>
+              <% } else { %>
+              <span style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:var(--gray-50); color:var(--gray-300); font-size:14px;">&#8211;</span>
+              <% } %>
+            </td>
+            <% }); %>
+            <td style="text-align:center; padding:10px 8px; font-weight:700; color:<%= playerPcts[a.player_id] === 100 ? '#16a34a' : playerPcts[a.player_id] > 0 ? '#ca8a04' : 'var(--gray-400)' %>;">
+              <%= playerPcts[a.player_id] %>%
+            </td>
+          </tr>
+          <% }); %>
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--gray-50); border-top:2px solid var(--gray-200);">
+            <td style="padding:10px 14px; font-weight:700; font-size:12px; color:var(--navy); position:sticky; left:0; background:var(--gray-50); z-index:1;">Day Completion</td>
+            <% days.forEach(day => { %>
+            <td style="text-align:center; padding:10px 8px; font-weight:700; font-size:12px; color:<%= dayPcts[day.id] === 100 ? '#16a34a' : dayPcts[day.id] > 0 ? '#ca8a04' : 'var(--gray-400)' %>;">
+              <%= dayPcts[day.id] %>%
+            </td>
+            <% }); %>
+            <td style="text-align:center; padding:10px 8px; font-weight:700; font-size:12px; color:var(--navy);">
+              <%= totalCells > 0 ? Math.round((totalDone / totalCells) * 100) : 0 %>%
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div style="margin:24px 0; display:flex; gap:16px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:200px; padding:16px; background:#fff; border:1px solid var(--gray-200); border-radius:12px; text-align:center;">
+        <div style="font-size:28px; font-weight:800; color:var(--navy);"><%= assignments.length %></div>
+        <div style="font-size:12px; color:var(--gray-500); margin-top:4px;">Players Assigned</div>
+      </div>
+      <div style="flex:1; min-width:200px; padding:16px; background:#fff; border:1px solid var(--gray-200); border-radius:12px; text-align:center;">
+        <div style="font-size:28px; font-weight:800; color:var(--navy);"><%= days.length %></div>
+        <div style="font-size:12px; color:var(--gray-500); margin-top:4px;">Days in Program</div>
+      </div>
+      <div style="flex:1; min-width:200px; padding:16px; background:#fff; border:1px solid var(--gray-200); border-radius:12px; text-align:center;">
+        <div style="font-size:28px; font-weight:800; color:<%= totalCells > 0 && Math.round((totalDone / totalCells) * 100) === 100 ? '#16a34a' : 'var(--navy)' %>;"><%= totalCells > 0 ? Math.round((totalDone / totalCells) * 100) : 0 %>%</div>
+        <div style="font-size:12px; color:var(--gray-500); margin-top:4px;">Overall Completion</div>
+      </div>
+    </div>
+
+    <% } %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>
