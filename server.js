@@ -112,20 +112,49 @@ function clearParentCookie(res) {
 }
 
 app.use(async (req, res, next) => {
-  const token = getParentTokenFromReq(req);
-  const phone = verifyParentToken(token);
-  if (phone) {
+  if (req.session.admin && req.session.impersonatePhone) {
+    const phone = req.session.impersonatePhone;
     const account = await db.getParentAccountByPhone(phone);
     if (account) {
       const pPlayers = await db.getPlayersByPhone(phone);
       req.parentUser = { ...account, player_ids: pPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
+      req.impersonating = true;
+    }
+  } else {
+    const token = getParentTokenFromReq(req);
+    const phone = verifyParentToken(token);
+    if (phone) {
+      const account = await db.getParentAccountByPhone(phone);
+      if (account) {
+        const pPlayers = await db.getPlayersByPhone(phone);
+        req.parentUser = { ...account, player_ids: pPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
+      }
     }
   }
+  res.locals.impersonating = req.impersonating || false;
+  res.locals.impersonateName = req.parentUser && req.impersonating ? req.parentUser.display_name : null;
   next();
 });
 
 app.use(async (req, res, next) => {
   res.locals.teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+  next();
+});
+
+app.use((req, res, next) => {
+  if (!req.impersonating) return next();
+  const origRender = res.render.bind(res);
+  res.render = function(view, opts, callback) {
+    const cb = callback || function(err, html) {
+      if (err) return next(err);
+      const banner = '<div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c3aed;color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:700;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,0.2);">' +
+        '<span>Viewing as <strong>' + res.locals.impersonateName + '</strong></span>' +
+        '<a href="/admin/stop-impersonate" style="background:#fff;color:#7c3aed;padding:4px 12px;border-radius:4px;text-decoration:none;font-size:12px;font-weight:800;">Exit</a>' +
+        '</div><div style="height:40px;"></div>';
+      res.send(html.replace(/<body([^>]*)>/, '<body$1>' + banner));
+    };
+    origRender(view, opts, cb);
+  };
   next();
 });
 
@@ -1366,6 +1395,104 @@ app.post('/admin/scorekeepers', requireAdmin, async (req, res) => {
 app.post('/admin/scorekeepers/:id/delete', requireAdmin, async (req, res) => {
   await db.removeScoreKeeper(Number(req.params.id));
   res.json({ ok: true });
+});
+
+// --- User Account Management ---
+
+app.get('/admin/accounts', requireAdmin, async (req, res) => {
+  const accounts = await db.getAllParentAccounts();
+  const players = await db.getAllPlayers();
+  const result = accounts.map(a => {
+    const linked = players.filter(p => normalizePhone(p.parent_phone) === normalizePhone(a.phone));
+    return { ...a, players: linked.map(p => ({ id: p.id, name: p.player_name })) };
+  });
+  res.json(result);
+});
+
+app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
+  const { phone, display_name, password, player_ids } = req.body;
+  const normalized = normalizePhone(phone || '');
+  if (normalized.length !== 10) return res.json({ ok: false, error: 'Invalid phone number.' });
+  if (!display_name || !display_name.trim()) return res.json({ ok: false, error: 'Name is required.' });
+  if (!password || password.length < 6) return res.json({ ok: false, error: 'Password must be at least 6 characters.' });
+
+  const existing = await db.getParentAccountByPhone(normalized);
+  if (existing) return res.json({ ok: false, error: 'An account already exists for this phone number.' });
+
+  const hash = bcrypt.hashSync(password, 10);
+  await db.createParentAccount(normalized, display_name.trim(), hash);
+
+  if (player_ids && player_ids.length > 0) {
+    for (const pid of player_ids) {
+      await db.updatePlayerParentPhone(Number(pid), normalized);
+    }
+  }
+  res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/update', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const { display_name, phone } = req.body;
+  const account = await db.getParentAccountById(id);
+  if (!account) return res.json({ ok: false, error: 'Account not found.' });
+
+  if (display_name && display_name.trim()) {
+    await db.updateParentAccountName(id, display_name.trim());
+  }
+  if (phone) {
+    const normalized = normalizePhone(phone);
+    if (normalized.length !== 10) return res.json({ ok: false, error: 'Invalid phone number.' });
+    const clash = await db.getParentAccountByPhone(normalized);
+    if (clash && clash.id !== id) return res.json({ ok: false, error: 'Phone already in use by another account.' });
+    const oldPhone = account.phone;
+    await db.updateParentAccountPhone(id, normalized);
+    const linkedPlayers = await db.getPlayersByPhone(oldPhone);
+    for (const p of linkedPlayers) {
+      await db.updatePlayerParentPhone(p.id, normalized);
+    }
+  }
+  res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/reset-password', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const { password } = req.body;
+  if (!password || password.length < 6) return res.json({ ok: false, error: 'Password must be at least 6 characters.' });
+  const hash = bcrypt.hashSync(password, 10);
+  await db.updateParentAccountPassword(id, hash);
+  res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/link-player', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const { player_id } = req.body;
+  const account = await db.getParentAccountById(id);
+  if (!account) return res.json({ ok: false, error: 'Account not found.' });
+  await db.updatePlayerParentPhone(Number(player_id), account.phone);
+  res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/unlink-player', requireAdmin, async (req, res) => {
+  const { player_id } = req.body;
+  await db.updatePlayerParentPhone(Number(player_id), '');
+  res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/delete', requireAdmin, async (req, res) => {
+  await db.deleteParentAccount(Number(req.params.id));
+  res.json({ ok: true });
+});
+
+app.get('/admin/impersonate/:id', requireAdmin, async (req, res) => {
+  const account = await db.getParentAccountById(Number(req.params.id));
+  if (!account) return res.redirect('/admin');
+  req.session.impersonatePhone = account.phone;
+  res.redirect('/');
+});
+
+app.get('/admin/stop-impersonate', (req, res) => {
+  delete req.session.impersonatePhone;
+  res.redirect('/admin');
 });
 
 app.get('/score/:token', async (req, res) => {

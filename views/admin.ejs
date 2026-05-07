@@ -710,6 +710,229 @@
       });
     </script>
 
+    <!-- User Account Management -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Parent Accounts</h2>
+      <p class="section-hint">Manage parent login accounts, reset passwords, link players, or view the site as any parent.</p>
+
+      <div id="ua-list" style="margin-bottom:16px;"></div>
+
+      <details style="margin-bottom:16px;">
+        <summary style="cursor:pointer;font-weight:700;color:var(--navy);font-size:14px;margin-bottom:8px;">+ Create New Account</summary>
+        <div class="add-player-form" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:130px;">
+            <label style="font-size:12px;color:#6b7280;">Name *</label>
+            <input type="text" id="ua-name" placeholder="Parent name" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+          </div>
+          <div style="flex:1;min-width:130px;">
+            <label style="font-size:12px;color:#6b7280;">Phone *</label>
+            <input type="tel" id="ua-phone" placeholder="(941) 555-1234" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+          </div>
+          <div style="flex:1;min-width:130px;">
+            <label style="font-size:12px;color:#6b7280;">Password *</label>
+            <input type="text" id="ua-password" placeholder="Min 6 chars" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+          </div>
+          <div style="flex:1;min-width:160px;">
+            <label style="font-size:12px;color:#6b7280;">Link Players</label>
+            <select id="ua-players" multiple style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;min-height:60px;font-size:13px;">
+              <% players.filter(p => p.status === 'confirmed').forEach(p => { %>
+                <option value="<%= p.id %>"><%= p.player_name %></option>
+              <% }); %>
+            </select>
+          </div>
+          <button type="button" class="btn btn-confirm" onclick="createAccount()" style="white-space:nowrap;">Create Account</button>
+        </div>
+      </details>
+    </div>
+
+    <!-- Account Modals -->
+    <div id="ua-reset-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:100;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:16px;padding:28px;max-width:400px;width:90%;margin:auto;position:relative;top:50%;transform:translateY(-50%);">
+        <h3 style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:16px;">Reset Password</h3>
+        <p id="ua-reset-name" style="font-size:14px;color:#6b7280;margin-bottom:12px;"></p>
+        <input type="text" id="ua-reset-pw" placeholder="New password (min 6 chars)" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:12px;box-sizing:border-box;">
+        <input type="hidden" id="ua-reset-id">
+        <div style="display:flex;gap:12px;">
+          <button class="btn btn-confirm" style="flex:1;" onclick="submitResetPassword()">Reset Password</button>
+          <button class="btn btn-secondary" style="flex:1;" onclick="document.getElementById('ua-reset-modal').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ua-link-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:100;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:16px;padding:28px;max-width:400px;width:90%;margin:auto;position:relative;top:50%;transform:translateY(-50%);">
+        <h3 style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:16px;">Link Player</h3>
+        <p id="ua-link-name" style="font-size:14px;color:#6b7280;margin-bottom:12px;"></p>
+        <select id="ua-link-player" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;margin-bottom:12px;">
+          <% players.filter(p => p.status === 'confirmed').forEach(p => { %>
+            <option value="<%= p.id %>"><%= p.player_name %></option>
+          <% }); %>
+        </select>
+        <input type="hidden" id="ua-link-id">
+        <div style="display:flex;gap:12px;">
+          <button class="btn btn-confirm" style="flex:1;" onclick="submitLinkPlayer()">Link Player</button>
+          <button class="btn btn-secondary" style="flex:1;" onclick="document.getElementById('ua-link-modal').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ua-edit-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:100;align-items:center;justify-content:center;">
+      <div style="background:white;border-radius:16px;padding:28px;max-width:400px;width:90%;margin:auto;position:relative;top:50%;transform:translateY(-50%);">
+        <h3 style="font-size:18px;font-weight:800;color:var(--navy);margin-bottom:16px;">Edit Account</h3>
+        <input type="hidden" id="ua-edit-id">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;color:#6b7280;font-weight:600;">Name</label>
+          <input type="text" id="ua-edit-name" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;color:#6b7280;font-weight:600;">Phone</label>
+          <input type="tel" id="ua-edit-phone" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="display:flex;gap:12px;">
+          <button class="btn btn-confirm" style="flex:1;" onclick="submitEditAccount()">Save</button>
+          <button class="btn btn-secondary" style="flex:1;" onclick="document.getElementById('ua-edit-modal').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    function loadAccounts() {
+      fetch('/admin/accounts').then(r => r.json()).then(list => {
+        if (list.length === 0) {
+          document.getElementById('ua-list').innerHTML = '<p style="color:#6b7280;font-size:13px;">No parent accounts yet.</p>';
+          return;
+        }
+        var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+        html += '<tr style="background:#f3f4f6;"><th style="padding:8px;text-align:left;">Name</th><th style="padding:8px;text-align:left;">Phone</th><th style="padding:8px;text-align:left;">Players</th><th style="padding:8px;text-align:left;">Created</th><th style="padding:8px;text-align:right;">Actions</th></tr>';
+        list.forEach(function(a) {
+          var ph = a.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+          var pNames = a.players.map(function(p) {
+            return '<span style="display:inline-flex;align-items:center;gap:2px;background:#e0e7ff;color:#3730a3;border-radius:4px;padding:2px 6px;font-size:11px;margin:1px;">' + p.name +
+              ' <button onclick="unlinkPlayer(' + a.id + ',' + p.id + ')" style="background:none;border:none;color:#6366f1;cursor:pointer;font-size:13px;padding:0;line-height:1;" title="Unlink">&times;</button></span>';
+          }).join(' ') || '<span style="color:#9ca3af;font-size:12px;">None</span>';
+          var created = a.created_at ? new Date(a.created_at).toLocaleDateString() : '-';
+          html += '<tr style="border-bottom:1px solid #f3f4f6;">';
+          html += '<td style="padding:8px;"><strong>' + a.display_name + '</strong></td>';
+          html += '<td style="padding:8px;font-family:monospace;font-size:12px;">' + ph + '</td>';
+          html += '<td style="padding:8px;">' + pNames + '</td>';
+          html += '<td style="padding:8px;color:#6b7280;font-size:12px;">' + created + '</td>';
+          html += '<td style="padding:8px;text-align:right;white-space:nowrap;">';
+          html += '<a href="/admin/impersonate/' + a.id + '" style="background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;text-decoration:none;margin-right:4px;" title="View site as this user">View As</a>';
+          html += '<button onclick="showLinkPlayer(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#3b82f6;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Link a player">Link</button>';
+          html += '<button onclick="showEditAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\',\'' + a.phone + '\')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Edit">Edit</button>';
+          html += '<button onclick="showResetPassword(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#6b7280;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Reset password">PW</button>';
+          html += '<button onclick="deleteAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;" title="Delete">&times;</button>';
+          html += '</td></tr>';
+        });
+        html += '</table>';
+        document.getElementById('ua-list').innerHTML = html;
+      });
+    }
+
+    function createAccount() {
+      var name = document.getElementById('ua-name').value.trim();
+      var phone = document.getElementById('ua-phone').value.trim();
+      var password = document.getElementById('ua-password').value.trim();
+      var sel = document.getElementById('ua-players');
+      var pids = Array.from(sel.selectedOptions).map(function(o) { return Number(o.value); });
+      if (!name || !phone || !password) return alert('Name, phone, and password are required.');
+      fetch('/admin/accounts/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: name, phone: phone, password: password, player_ids: pids })
+      }).then(r => r.json()).then(function(d) {
+        if (d.ok) {
+          document.getElementById('ua-name').value = '';
+          document.getElementById('ua-phone').value = '';
+          document.getElementById('ua-password').value = '';
+          sel.selectedIndex = -1;
+          loadAccounts();
+        } else { alert(d.error); }
+      });
+    }
+
+    function showResetPassword(id, name) {
+      document.getElementById('ua-reset-id').value = id;
+      document.getElementById('ua-reset-name').textContent = 'Reset password for ' + name;
+      document.getElementById('ua-reset-pw').value = '';
+      document.getElementById('ua-reset-modal').style.display = 'flex';
+    }
+    function submitResetPassword() {
+      var id = document.getElementById('ua-reset-id').value;
+      var pw = document.getElementById('ua-reset-pw').value.trim();
+      if (!pw || pw.length < 6) return alert('Password must be at least 6 characters.');
+      fetch('/admin/accounts/' + id + '/reset-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      }).then(r => r.json()).then(function(d) {
+        if (d.ok) {
+          document.getElementById('ua-reset-modal').style.display = 'none';
+          alert('Password reset successfully.');
+        } else { alert(d.error); }
+      });
+    }
+
+    function showLinkPlayer(id, name) {
+      document.getElementById('ua-link-id').value = id;
+      document.getElementById('ua-link-name').textContent = 'Link a player to ' + name;
+      document.getElementById('ua-link-modal').style.display = 'flex';
+    }
+    function submitLinkPlayer() {
+      var id = document.getElementById('ua-link-id').value;
+      var pid = document.getElementById('ua-link-player').value;
+      fetch('/admin/accounts/' + id + '/link-player', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: pid })
+      }).then(r => r.json()).then(function(d) {
+        if (d.ok) {
+          document.getElementById('ua-link-modal').style.display = 'none';
+          loadAccounts();
+        } else { alert(d.error); }
+      });
+    }
+
+    function unlinkPlayer(accountId, playerId) {
+      if (!confirm('Unlink this player from the account?')) return;
+      fetch('/admin/accounts/' + accountId + '/unlink-player', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: playerId })
+      }).then(r => r.json()).then(function(d) { if (d.ok) loadAccounts(); });
+    }
+
+    function showEditAccount(id, name, phone) {
+      document.getElementById('ua-edit-id').value = id;
+      document.getElementById('ua-edit-name').value = name;
+      document.getElementById('ua-edit-phone').value = phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+      document.getElementById('ua-edit-modal').style.display = 'flex';
+    }
+    function submitEditAccount() {
+      var id = document.getElementById('ua-edit-id').value;
+      var name = document.getElementById('ua-edit-name').value.trim();
+      var phone = document.getElementById('ua-edit-phone').value.trim();
+      fetch('/admin/accounts/' + id + '/update', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: name, phone: phone })
+      }).then(r => r.json()).then(function(d) {
+        if (d.ok) {
+          document.getElementById('ua-edit-modal').style.display = 'none';
+          loadAccounts();
+        } else { alert(d.error); }
+      });
+    }
+
+    function deleteAccount(id, name) {
+      if (!confirm('Delete the account for ' + name + '? This cannot be undone.')) return;
+      fetch('/admin/accounts/' + id + '/delete', { method: 'POST' }).then(r => r.json()).then(function(d) {
+        if (d.ok) loadAccounts();
+      });
+    }
+
+    loadAccounts();
+
+    ['ua-reset-modal','ua-link-modal','ua-edit-modal'].forEach(function(mid) {
+      document.getElementById(mid).addEventListener('click', function(e) { if (e.target === this) this.style.display = 'none'; });
+    });
+    </script>
+
     <!-- Scorekeeper Management -->
     <div class="admin-section">
       <h2 class="profile-section-title">Scorekeepers</h2>
