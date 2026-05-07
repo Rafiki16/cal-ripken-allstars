@@ -515,13 +515,45 @@
           return !playerPositions.includes(posStr);
         }
 
+        let dragIdx = null;
+
         function renderGrid() {
           const body = document.getElementById('lg-body');
           body.innerHTML = '';
           grid.forEach((row, ri) => {
             const tr = document.createElement('tr');
+            if (isAdmin) {
+              tr.draggable = true;
+              tr.dataset.ri = ri;
+              tr.addEventListener('dragstart', function(e) {
+                dragIdx = ri;
+                tr.classList.add('lg-dragging');
+                e.dataTransfer.effectAllowed = 'move';
+              });
+              tr.addEventListener('dragend', function() {
+                tr.classList.remove('lg-dragging');
+                dragIdx = null;
+                document.querySelectorAll('.lg-drag-over').forEach(el => el.classList.remove('lg-drag-over'));
+              });
+              tr.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragIdx !== null && dragIdx !== ri) tr.classList.add('lg-drag-over');
+              });
+              tr.addEventListener('dragleave', function() { tr.classList.remove('lg-drag-over'); });
+              tr.addEventListener('drop', function(e) {
+                e.preventDefault();
+                tr.classList.remove('lg-drag-over');
+                if (dragIdx === null || dragIdx === ri) return;
+                var moved = grid.splice(dragIdx, 1)[0];
+                grid.splice(ri, 0, moved);
+                dragIdx = null;
+                renderGrid();
+              });
+            }
             const orderTd = document.createElement('td');
             orderTd.className = 'lg-cell-order';
+            if (isAdmin) { orderTd.style.cursor = 'grab'; orderTd.title = 'Drag to reorder'; }
             orderTd.textContent = ri + 1;
             tr.appendChild(orderTd);
 

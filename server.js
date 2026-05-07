@@ -33,12 +33,19 @@ function normalizePhone(phone) {
   return phone.replace(/\D/g, '').slice(-10);
 }
 
+const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
 const smtpTransport = process.env.SMTP_HOST ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT) || 465,
-  secure: (parseInt(process.env.SMTP_PORT) || 465) === 465,
+  port: smtpPort,
+  secure: smtpPort === 465,
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 }) : null;
+if (smtpTransport) {
+  smtpTransport.verify().then(() => console.log('SMTP connection verified')).catch(e => console.error('SMTP verify failed:', e.message));
+}
 
 let twilioClient = null;
 const twilioFrom = process.env.TWILIO_FROM_NUMBER || null;
