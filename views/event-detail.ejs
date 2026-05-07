@@ -150,11 +150,13 @@
         <% if (drills.length > 0) { %>
         <div id="drill-list" class="drill-list">
           <% drills.forEach((drill, i) => { %>
-          <div class="drill-card" data-duration="<%= drill.duration_minutes %>" data-name="<%= drill.drill_name %>" id="drill-<%= drill.id %>">
+          <div class="drill-card<%= isAdmin ? ' drill-draggable' : '' %>" data-duration="<%= drill.duration_minutes %>" data-name="<%= drill.drill_name %>" data-id="<%= drill.id %>" id="drill-<%= drill.id %>" <% if (isAdmin) { %>draggable="true"<% } %>>
+            <% if (isAdmin) { %><div class="drill-grip" title="Drag to reorder">&#9776;</div><% } %>
             <div class="drill-num"><%= i + 1 %></div>
             <div class="drill-body">
               <div class="drill-name"><%= drill.drill_name %></div>
               <% if (drill.description) { %><div class="drill-desc"><%= drill.description %></div><% } %>
+              <% if (isStaff && drill.coach_notes) { %><div class="drill-coach-notes"><span class="coach-notes-badge">Coach Notes</span> <%= drill.coach_notes %></div><% } %>
             </div>
             <div class="drill-dur"><%= drill.duration_minutes %> min</div>
           </div>
@@ -266,11 +268,26 @@
         <div class="ed-admin-section">
           <h4 class="ed-admin-title">Add Drill</h4>
           <form method="POST" action="/event/<%= event.id %>/drill" class="drill-form">
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              <input type="text" name="drill_name" placeholder="Drill name" required class="form-input" style="flex:2; min-width:140px;">
-              <input type="text" name="description" placeholder="Description (optional)" class="form-input" style="flex:2; min-width:140px;">
-              <input type="number" name="duration_minutes" placeholder="Min" value="10" min="1" max="120" class="form-input" style="width:70px;">
-              <button type="submit" class="btn btn-confirm">Add</button>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+                <div style="flex:2; min-width:200px;">
+                  <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Drill Name *</label>
+                  <input type="text" name="drill_name" placeholder="e.g. Infield grounders, Batting practice..." required class="form-input" style="width:100%;">
+                </div>
+                <div style="width:80px;">
+                  <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Minutes</label>
+                  <input type="number" name="duration_minutes" placeholder="Min" value="10" min="1" max="120" class="form-input" style="width:100%;">
+                </div>
+              </div>
+              <div>
+                <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Description <span style="font-weight:400;">(visible to parents)</span></label>
+                <textarea name="description" placeholder="What players should expect, what to bring, etc." class="form-input" rows="2" style="width:100%; resize:vertical;"></textarea>
+              </div>
+              <div>
+                <label style="font-size:12px; font-weight:600; color:var(--orange, #d97706); display:block; margin-bottom:4px;">Coach Notes <span style="font-weight:400;">(staff only)</span></label>
+                <textarea name="coach_notes" placeholder="Internal coaching notes — only visible to staff and admins" class="form-input" rows="2" style="width:100%; resize:vertical; border-color:var(--orange, #d97706);"></textarea>
+              </div>
+              <button type="submit" class="btn btn-confirm" style="align-self:flex-start;">Add Drill</button>
             </div>
           </form>
 
@@ -429,19 +446,158 @@
           </script>
 
           <% if (drills.length > 0) { %>
-          <div style="margin-top:12px;">
+          <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--gray-200);">
+            <h4 class="ed-admin-title">Manage Drills</h4>
             <% drills.forEach(drill => { %>
-            <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--gray-100);">
-              <span style="flex:1; font-size:13px; font-weight:600;"><%= drill.drill_name %></span>
-              <span style="font-size:12px; color:var(--gray-500);"><%= drill.duration_minutes %>m</span>
-              <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/delete" style="margin:0;">
-                <button type="submit" class="btn-sm btn-sm-remove" title="Remove">&times;</button>
-              </form>
-            </div>
+            <details style="margin-bottom:8px; border:1px solid var(--gray-200); border-radius:8px; overflow:hidden;">
+              <summary style="padding:8px 12px; cursor:pointer; font-size:13px; font-weight:600; background:var(--gray-50); display:flex; align-items:center; gap:8px;">
+                <span style="flex:1;"><%= drill.drill_name %></span>
+                <span style="font-size:12px; color:var(--gray-500); font-weight:400;"><%= drill.duration_minutes %>m</span>
+              </summary>
+              <div style="padding:10px 12px;">
+                <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/update">
+                  <input type="hidden" name="sort_order" value="<%= drill.sort_order %>">
+                  <div style="display:flex; flex-direction:column; gap:6px;">
+                    <div style="display:flex; gap:8px; align-items:end;">
+                      <div style="flex:2;">
+                        <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Name</label>
+                        <input type="text" name="drill_name" value="<%= drill.drill_name %>" class="form-input" style="width:100%;">
+                      </div>
+                      <div style="width:70px;">
+                        <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Min</label>
+                        <input type="number" name="duration_minutes" value="<%= drill.duration_minutes %>" min="1" max="120" class="form-input" style="width:100%;">
+                      </div>
+                    </div>
+                    <div>
+                      <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Description (visible to parents)</label>
+                      <textarea name="description" class="form-input" rows="2" style="width:100%; resize:vertical;"><%= drill.description || '' %></textarea>
+                    </div>
+                    <div>
+                      <label style="font-size:11px; font-weight:600; color:var(--orange, #d97706);">Coach Notes (staff only)</label>
+                      <textarea name="coach_notes" class="form-input" rows="2" style="width:100%; resize:vertical; border-color:var(--orange, #d97706);"><%= drill.coach_notes || '' %></textarea>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                      <button type="submit" class="btn btn-confirm" style="font-size:12px; padding:4px 12px;">Save</button>
+                    </div>
+                  </div>
+                </form>
+                <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/delete" onsubmit="return confirm('Delete this drill?')" style="margin-top:6px;">
+                  <button type="submit" class="btn-sm btn-sm-remove" style="font-size:11px;">Delete Drill</button>
+                </form>
+              </div>
+            </details>
             <% }); %>
           </div>
           <% } %>
         </div>
+
+        <% if (isAdmin && drills.length > 1) { %>
+        <script>
+        (function() {
+          const list = document.getElementById('drill-list');
+          if (!list) return;
+          let dragEl = null;
+
+          list.addEventListener('dragstart', function(e) {
+            const card = e.target.closest('.drill-draggable');
+            if (!card) return;
+            dragEl = card;
+            card.classList.add('drill-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+          });
+
+          list.addEventListener('dragend', function(e) {
+            if (dragEl) dragEl.classList.remove('drill-dragging');
+            document.querySelectorAll('.drill-drop-target').forEach(c => c.classList.remove('drill-drop-target'));
+            dragEl = null;
+          });
+
+          list.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const card = e.target.closest('.drill-draggable');
+            document.querySelectorAll('.drill-drop-target').forEach(c => c.classList.remove('drill-drop-target'));
+            if (card && card !== dragEl) card.classList.add('drill-drop-target');
+          });
+
+          list.addEventListener('drop', function(e) {
+            e.preventDefault();
+            const target = e.target.closest('.drill-draggable');
+            if (!target || !dragEl || target === dragEl) return;
+            const cards = [...list.querySelectorAll('.drill-draggable')];
+            const fromIdx = cards.indexOf(dragEl);
+            const toIdx = cards.indexOf(target);
+            if (fromIdx < toIdx) target.after(dragEl);
+            else target.before(dragEl);
+            renumber();
+            saveOrder();
+          });
+
+          function renumber() {
+            list.querySelectorAll('.drill-draggable').forEach((c, i) => {
+              const num = c.querySelector('.drill-num');
+              if (num) num.textContent = i + 1;
+            });
+          }
+
+          function saveOrder() {
+            const order = [...list.querySelectorAll('.drill-draggable')].map(c => Number(c.dataset.id));
+            fetch('/event/<%= event.id %>/drill/reorder', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ order }),
+            });
+          }
+
+          // Touch support
+          let touchEl = null, touchClone = null, touchStartY = 0;
+          list.addEventListener('touchstart', function(e) {
+            const grip = e.target.closest('.drill-grip');
+            if (!grip) return;
+            touchEl = grip.closest('.drill-draggable');
+            if (!touchEl) return;
+            touchStartY = e.touches[0].clientY;
+            touchClone = touchEl.cloneNode(true);
+            touchClone.classList.add('drill-touch-ghost');
+            touchClone.style.width = touchEl.offsetWidth + 'px';
+            document.body.appendChild(touchClone);
+            touchEl.classList.add('drill-dragging');
+            e.preventDefault();
+          }, { passive: false });
+
+          document.addEventListener('touchmove', function(e) {
+            if (!touchEl || !touchClone) return;
+            e.preventDefault();
+            const y = e.touches[0].clientY;
+            touchClone.style.top = y - 20 + 'px';
+            touchClone.style.left = touchEl.getBoundingClientRect().left + 'px';
+            const target = document.elementFromPoint(e.touches[0].clientX, y);
+            const card = target ? target.closest('.drill-draggable') : null;
+            document.querySelectorAll('.drill-drop-target').forEach(c => c.classList.remove('drill-drop-target'));
+            if (card && card !== touchEl) card.classList.add('drill-drop-target');
+          }, { passive: false });
+
+          document.addEventListener('touchend', function(e) {
+            if (!touchEl) return;
+            const dropTarget = document.querySelector('.drill-drop-target');
+            if (dropTarget) {
+              const cards = [...list.querySelectorAll('.drill-draggable')];
+              const fromIdx = cards.indexOf(touchEl);
+              const toIdx = cards.indexOf(dropTarget);
+              if (fromIdx < toIdx) dropTarget.after(touchEl);
+              else dropTarget.before(touchEl);
+              renumber();
+              saveOrder();
+            }
+            touchEl.classList.remove('drill-dragging');
+            document.querySelectorAll('.drill-drop-target').forEach(c => c.classList.remove('drill-drop-target'));
+            if (touchClone) { touchClone.remove(); touchClone = null; }
+            touchEl = null;
+          });
+        })();
+        </script>
+        <% } %>
+
         <% } %>
       </div>
       <% } %>
