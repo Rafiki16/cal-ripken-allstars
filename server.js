@@ -18,7 +18,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-app.use(session({
+const sessionConfig = {
   secret: process.env.SESSION_SECRET || 'allstars-2026-secret',
   resave: false,
   saveUninitialized: false,
@@ -27,9 +27,21 @@ app.use(session({
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   },
-}));
+};
+
+if (process.env.DATABASE_URL) {
+  const pgSession = require('connect-pg-simple')(session);
+  const { Pool } = require('pg');
+  sessionConfig.store = new pgSession({
+    pool: new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }),
+    tableName: 'user_sessions',
+    createTableIfMissing: true,
+  });
+}
+
+app.use(session(sessionConfig));
 
 function normalizePhone(phone) {
   return phone.replace(/\D/g, '').slice(-10);
