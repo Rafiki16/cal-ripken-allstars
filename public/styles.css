@@ -1608,3 +1608,67 @@ main { flex: 1; padding-bottom: 40px; }
   .te-title { font-size: 16px; }
   .msg-compose-row { flex-direction: column; align-items: stretch; }
 }
+
+/* Program Enrollment on Profile */
+.program-enrollment-section { position: relative; }
+.program-enrollment-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.program-enrolled-badge { background: #dcfce7; color: #166534; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; white-space: nowrap; }
+
+/* Today's Activities Card */
+.today-activities-card { background: #eff6ff; border: 2px solid #bfdbfe; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; }
+.today-activities-card.today-complete { background: #f0fdf4; border-color: #86efac; }
+.today-activities-card.today-rest { background: #f9fafb; border-color: #e5e7eb; }
+.today-activities-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.today-label { font-weight: 700; font-size: 15px; color: #1e3a5f; }
+.today-complete .today-label { color: #166534; }
+.today-check { font-size: 20px; color: #16a34a; font-weight: 700; }
+.today-activities-list { list-style: none; padding: 0; margin: 0 0 12px; }
+.today-activities-list li { padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 14px; color: #374151; }
+.today-activities-list li:last-child { border-bottom: none; }
+.activity-detail { color: #6b7280; font-size: 13px; margin-left: 8px; }
+.btn-mark-complete { margin-top: 4px; width: 100%; }
+
+/* Program Calendar */
+.program-calendar { margin-top: 16px; }
+.program-calendar .calendar-header { font-size: 16px; font-weight: 700; color: var(--navy); text-align: center; margin-bottom: 8px; }
+.program-calendar .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal-dow { text-align: center; font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; padding: 4px 0; }
+.cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; position: relative; background: #f9fafb; }
+.cal-empty { background: transparent; }
+.cal-num { font-size: 13px; font-weight: 500; color: #374151; z-index: 1; }
+.cal-today { outline: 2px solid var(--navy); outline-offset: -2px; }
+.cal-complete { background: #dcfce7; }
+.cal-complete .cal-num { color: #166534; font-weight: 700; }
+.cal-missed { background: #fee2e2; }
+.cal-missed .cal-num { color: #991b1b; font-weight: 700; }
+.cal-due { background: #dbeafe; }
+.cal-due .cal-num { color: #1e40af; font-weight: 700; }
+.cal-scheduled { background: #f3f4f6; }
+.cal-rest { background: #fafafa; }
+.cal-rest .cal-num { color: #d1d5db; }
+
+/* Calendar Legend */
+.calendar-legend { display: flex; gap: 16px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #6b7280; }
+.legend-dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+.legend-complete { background: #dcfce7; border: 1px solid #86efac; }
+.legend-missed { background: #fee2e2; border: 1px solid #fca5a5; }
+.legend-scheduled { background: #f3f4f6; border: 1px solid #e5e7eb; }
+.legend-rest { background: #fafafa; border: 1px solid #e5e7eb; }
+
+/* Program Badges on Verify/My Players */
+.player-programs-section { padding: 12px 20px 16px; border-top: 1px solid #e5e7eb; }
+.programs-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #9ca3af; margin-bottom: 6px; }
+.programs-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.program-badge-link { text-decoration: none; }
+.program-badge { display: inline-block; background: #eff6ff; color: #1e40af; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; border: 1px solid #bfdbfe; transition: background 0.15s; }
+.program-badge-link:hover .program-badge { background: #dbeafe; }
+
+@media (max-width: 480px) {
+  .program-calendar .calendar-grid { gap: 2px; }
+  .cal-day { border-radius: 6px; }
+  .cal-num { font-size: 11px; }
+  .cal-dow { font-size: 10px; }
+  .today-activities-card { padding: 12px 14px; }
+  .calendar-legend { gap: 10px; }
+}

@@ -103,6 +103,19 @@
             </form>
           </div>
 
+          <% if (player.assignments && player.assignments.length > 0) { %>
+          <div class="player-programs-section">
+            <div class="programs-label">Enrolled Programs</div>
+            <div class="programs-badges">
+              <% player.assignments.forEach(a => { %>
+                <a href="/profile/<%= player.id %>?phone=<%= phone %>#program-<%= a.program_id %>" class="program-badge-link">
+                  <span class="program-badge"><%= a.title %></span>
+                </a>
+              <% }); %>
+            </div>
+          </div>
+          <% } %>
+
           <div class="profile-link-section">
             <a href="/profile/<%= player.id %>?phone=<%= phone %>" class="btn btn-profile">
               &#9997; <%= player.profile_updated_at ? 'Edit Player Profile' : 'Fill Out Player Profile' %>

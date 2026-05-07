@@ -284,6 +284,79 @@ async function checkAndSendReminders() {
   }
 }
 
+async function checkAndSendProgramReminders() {
+  try {
+    const now = new Date();
+    const hour = now.getHours();
+    if (hour < 12 || hour >= 13) return;
+    const todayStr = now.toISOString().split('T')[0];
+    const alreadySentToday = await db.hasProgramReminderBeenSent(todayStr);
+    if (alreadySentToday) return;
+
+    const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayName = dayNames[now.getDay()];
+
+    const programs = await db.getAllPrograms();
+    for (const program of programs) {
+      if (!program.published) continue;
+      const days = await db.getProgramDays(program.id);
+      const todayDay = days.find(d => d.day_label === todayName);
+      if (!todayDay) continue;
+      const activities = await db.getProgramActivities(todayDay.id);
+      if (activities.length === 0) continue;
+
+      const assignments = await db.getProgramAssignments(program.id);
+      const weekOf = getMonday(now);
+      const completions = await db.getCompletionsForWeek(program.id, weekOf);
+
+      for (const assignment of assignments) {
+        if (!assignment.send_reminders) continue;
+        const alreadyDone = completions.some(c => c.player_id === assignment.player_id && c.program_day_id === todayDay.id);
+        if (alreadyDone) continue;
+
+        const player = await db.getPlayer(assignment.player_id);
+        if (!player || player.status !== 'confirmed') continue;
+        const contacts = getPlayerContacts(player);
+        const activityList = activities.slice(0, 3).map(a => a.title).join(', ');
+        const link = `${baseUrl}/programs/${program.id}`;
+
+        for (const contact of contacts) {
+          if (contact.type === 'email') {
+            if (!smtpTransport) continue;
+            const tn = teamName;
+            await smtpTransport.sendMail({
+              from: `"${tn}" <${process.env.SMTP_USER}>`,
+              to: contact.value,
+              subject: `${player.player_name} — Today's ${program.title} Activities`,
+              html: `
+                <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+                  <div style="background:#1a2744;color:#fff;padding:20px;text-align:center;">
+                    <h2 style="margin:0;">&#9918; ${tn}</h2>
+                  </div>
+                  <div style="padding:24px;background:#f9fafb;">
+                    <h3 style="margin-top:0;">Today's ${program.title} (${todayName})</h3>
+                    <p><strong>${player.player_name}</strong> has activities to complete today:</p>
+                    <p style="color:#374151;">${activityList}${activities.length > 3 ? ` + ${activities.length - 3} more` : ''}</p>
+                    <div style="text-align:center;margin:24px 0;">
+                      <a href="${link}" style="background:#2563eb;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">View & Complete Activities</a>
+                    </div>
+                  </div>
+                </div>`
+            }).catch(e => console.error('Program reminder email error:', e.message));
+          } else {
+            await sendSMS(contact.value, `${teamName}: ${player.player_name} has ${program.title} activities today (${todayName}): ${activityList}. Mark complete: ${link}`);
+          }
+        }
+        await db.logProgramReminder(program.id, assignment.player_id, todayStr);
+      }
+    }
+  } catch (err) {
+    console.error('Program reminder check error:', err.message);
+  }
+}
+
 async function sendConfirmationEmail(player, email, teamName) {
   if (!smtpTransport || !email) return;
   const tn = teamName || 'Cal Ripken All-Stars';
@@ -449,6 +522,9 @@ app.get('/api/location-search', async (req, res) => {
 app.get('/verify', requireLogin, async (req, res) => {
   if (req.parentUser) {
     const players = await db.getPlayersByPhone(req.parentUser.phone);
+    for (const p of players) {
+      p.assignments = await db.getPlayerAssignments(p.id);
+    }
     return res.render('verify', { players: players.length > 0 ? players : null, phone: req.parentUser.phone, error: null, success: null, parentUser: req.parentUser, hasAccount: true });
   }
   res.render('verify', { players: null, phone: '', error: null, success: null, parentUser: null, hasAccount: false });
@@ -472,6 +548,9 @@ app.post('/verify', async (req, res) => {
   }
 
   const hasAccount = !!(await db.getParentAccountByPhone(phone));
+  for (const p of players) {
+    p.assignments = await db.getPlayerAssignments(p.id);
+  }
   res.render('verify', { players, phone, error: null, success: null, parentUser: req.parentUser || null, hasAccount });
 });
 
@@ -589,7 +668,17 @@ app.get('/profile/:id', requireLogin, async (req, res) => {
   }
 
   const events = await db.getPlayerEvents(player.id);
-  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, error: null, success: null });
+  const assignments = await db.getPlayerAssignments(player.id);
+  const programData = [];
+  for (const a of assignments) {
+    const days = await db.getProgramDays(a.program_id);
+    const completions = await db.getCompletions(a.program_id, player.id);
+    for (const day of days) {
+      day.activities = await db.getProgramActivities(day.id);
+    }
+    programData.push({ assignment: a, days, completions });
+  }
+  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData, error: null, success: null });
 });
 
 app.post('/profile/:id', async (req, res) => {
@@ -2512,6 +2601,8 @@ db.init().then(() => {
   });
   setInterval(checkAndSendReminders, 15 * 60 * 1000);
   setTimeout(checkAndSendReminders, 15000);
+  setInterval(checkAndSendProgramReminders, 15 * 60 * 1000);
+  setTimeout(checkAndSendProgramReminders, 20000);
 }).catch(err => {
   console.error('Failed to initialize database:', err);
   process.exit(1);

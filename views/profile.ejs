@@ -178,6 +178,137 @@
       </div>
     </form>
 
+    <!-- Programs Enrolled -->
+    <% if (programData && programData.length > 0) { %>
+    <% programData.forEach((pd, pi) => { %>
+    <div class="profile-section program-enrollment-section">
+      <div class="program-enrollment-header">
+        <h2 class="profile-section-title" style="margin:0;"><%= pd.assignment.title %></h2>
+        <span class="program-enrolled-badge">Enrolled</span>
+      </div>
+      <% if (pd.assignment.description) { %>
+        <p style="color:#6b7280;font-size:14px;margin:4px 0 16px;"><%= pd.assignment.description %></p>
+      <% } %>
+
+      <%
+        const now = new Date();
+        const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        const todayName = dayNames[now.getDay()];
+        const todayDay = pd.days.find(d => d.day_label === todayName);
+        const todayDateStr = now.toISOString().split('T')[0];
+
+        function getMondayOf(d) {
+          const dt = new Date(d);
+          const day = dt.getDay();
+          const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+          dt.setDate(diff);
+          return dt.toISOString().split('T')[0];
+        }
+      %>
+
+      <% if (todayDay && todayDay.activities && todayDay.activities.length > 0) { %>
+        <%
+          const todayWeekOf = getMondayOf(now);
+          const todayComplete = pd.completions.some(c => c.program_day_id === todayDay.id && c.week_of && c.week_of.substring(0,10) === todayWeekOf);
+        %>
+        <div class="today-activities-card <%= todayComplete ? 'today-complete' : '' %>">
+          <div class="today-activities-header">
+            <span class="today-label"><%= todayComplete ? 'Completed Today' : "Today's Activities" %> &mdash; <%= todayName %></span>
+            <% if (todayComplete) { %>
+              <span class="today-check">&#10003;</span>
+            <% } %>
+          </div>
+          <ul class="today-activities-list">
+            <% todayDay.activities.forEach(act => { %>
+              <li>
+                <strong><%= act.title %></strong>
+                <% if (act.sets || act.reps || act.duration) { %>
+                  <span class="activity-detail">
+                    <% if (act.sets) { %><%= act.sets %> sets<% } %>
+                    <% if (act.reps) { %><%= act.sets ? ' x ' : '' %><%= act.reps %> reps<% } %>
+                    <% if (act.duration) { %><%= (act.sets || act.reps) ? ' &middot; ' : '' %><%= act.duration %><% } %>
+                  </span>
+                <% } %>
+              </li>
+            <% }); %>
+          </ul>
+          <% if (!todayComplete) { %>
+            <button class="btn btn-confirm btn-mark-complete" onclick="markDayComplete(<%= pd.assignment.program_id %>, <%= player.id %>, <%= todayDay.id %>, this)">
+              &#10003; Mark Today Complete
+            </button>
+          <% } %>
+        </div>
+      <% } else { %>
+        <div class="today-activities-card today-rest">
+          <span class="today-label">Rest Day &mdash; <%= todayName %></span>
+          <p style="margin:8px 0 0;color:#6b7280;font-size:14px;">No activities scheduled for today.</p>
+        </div>
+      <% } %>
+
+      <!-- Monthly Calendar -->
+      <%
+        const calYear = now.getFullYear();
+        const calMonth = now.getMonth();
+        const monthName = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const firstDay = new Date(calYear, calMonth, 1);
+        const lastDay = new Date(calYear, calMonth + 1, 0);
+        const startPad = firstDay.getDay();
+        const daysInMonth = lastDay.getDate();
+
+        const dayLabelMap = {};
+        pd.days.forEach(d => { dayLabelMap[d.day_label] = d; });
+
+        const completionMap = {};
+        pd.completions.forEach(c => {
+          const key = c.program_day_id + '|' + (c.week_of ? c.week_of.substring(0,10) : '');
+          completionMap[key] = true;
+        });
+      %>
+      <div class="program-calendar">
+        <div class="calendar-header"><%= monthName %></div>
+        <div class="calendar-grid">
+          <div class="cal-dow">Sun</div><div class="cal-dow">Mon</div><div class="cal-dow">Tue</div><div class="cal-dow">Wed</div><div class="cal-dow">Thu</div><div class="cal-dow">Fri</div><div class="cal-dow">Sat</div>
+          <% for (let i = 0; i < startPad; i++) { %><div class="cal-day cal-empty"></div><% } %>
+          <% for (let d = 1; d <= daysInMonth; d++) { %>
+            <%
+              const cellDate = new Date(calYear, calMonth, d);
+              const cellDayName = dayNames[cellDate.getDay()];
+              const cellProgramDay = dayLabelMap[cellDayName];
+              const cellWeekOf = getMondayOf(cellDate);
+              const isToday = d === now.getDate() && calMonth === now.getMonth() && calYear === now.getFullYear();
+              const isPast = cellDate < new Date(calYear, calMonth, now.getDate());
+              const isFuture = cellDate > now;
+              let cellClass = 'cal-day';
+              if (isToday) cellClass += ' cal-today';
+              if (cellProgramDay) {
+                const ckey = cellProgramDay.id + '|' + cellWeekOf;
+                if (completionMap[ckey]) {
+                  cellClass += ' cal-complete';
+                } else if (isPast) {
+                  cellClass += ' cal-missed';
+                } else if (isToday) {
+                  cellClass += ' cal-due';
+                } else {
+                  cellClass += ' cal-scheduled';
+                }
+              } else {
+                cellClass += ' cal-rest';
+              }
+            %>
+            <div class="<%= cellClass %>"><span class="cal-num"><%= d %></span></div>
+          <% } %>
+        </div>
+        <div class="calendar-legend">
+          <span class="legend-item"><span class="legend-dot legend-complete"></span>Completed</span>
+          <span class="legend-item"><span class="legend-dot legend-missed"></span>Missed</span>
+          <span class="legend-item"><span class="legend-dot legend-scheduled"></span>Scheduled</span>
+          <span class="legend-item"><span class="legend-dot legend-rest"></span>Rest</span>
+        </div>
+      </div>
+    </div>
+    <% }); %>
+    <% } %>
+
     <!-- Availability / Events -->
     <div class="profile-section">
       <h2 class="profile-section-title">Availability / Absences</h2>
@@ -238,6 +369,32 @@
     </div>
 
       <script>
+      async function markDayComplete(programId, playerId, dayId, btn) {
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        try {
+          const res = await fetch('/programs/' + programId + '/complete-day', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ player_id: playerId, day_id: dayId })
+          });
+          if (res.ok) {
+            const card = btn.closest('.today-activities-card');
+            card.classList.add('today-complete');
+            card.querySelector('.today-activities-header .today-label').textContent = "Completed Today — " + new Date().toLocaleDateString('en-US', { weekday: 'long' });
+            const headerEl = card.querySelector('.today-activities-header');
+            if (!headerEl.querySelector('.today-check')) {
+              const checkSpan = document.createElement('span');
+              checkSpan.className = 'today-check';
+              checkSpan.innerHTML = '&#10003;';
+              headerEl.appendChild(checkSpan);
+            }
+            btn.remove();
+            location.reload();
+          } else { btn.disabled = false; btn.textContent = '✓ Mark Today Complete'; }
+        } catch (e) { btn.disabled = false; btn.textContent = '✓ Mark Today Complete'; }
+      }
+
       function addContact() {
         const list = document.getElementById('contacts-list');
         const idx = list.querySelectorAll('.contact-row').length;

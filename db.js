@@ -449,6 +449,17 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS program_reminder_log (
+        id SERIAL PRIMARY KEY,
+        program_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        sent_date DATE NOT NULL,
+        sent_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(program_id, player_id, sent_date)
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -564,6 +575,14 @@ async function init() {
       logReminder: async (eventId, playerId, type, channel, value) => pool.query(
         'INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES ($1,$2,$3,$4,$5)',
         [eventId, playerId, type, channel, value]
+      ),
+      hasProgramReminderBeenSent: async (sentDate) => {
+        const { rows } = await pool.query('SELECT COUNT(*) as c FROM program_reminder_log WHERE sent_date = $1', [sentDate]);
+        return parseInt(rows[0].c) > 0;
+      },
+      logProgramReminder: async (programId, playerId, sentDate) => pool.query(
+        'INSERT INTO program_reminder_log (program_id, player_id, sent_date) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [programId, playerId, sentDate]
       ),
       updateJerseyNumber: async (id, number) => pool.query('UPDATE players SET jersey_number = $1 WHERE id = $2', [number, id]),
       getParentAccountByPhone: async (phone) => (await pool.query('SELECT * FROM parent_accounts WHERE phone = $1', [phone])).rows[0] || null,
@@ -1183,6 +1202,17 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS program_reminder_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        program_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        sent_date TEXT NOT NULL,
+        sent_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(program_id, player_id, sent_date)
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -1300,6 +1330,13 @@ async function init() {
       },
       logReminder: async (eventId, playerId, type, channel, value) => {
         sqliteDb.prepare('INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES (?,?,?,?,?)').run(eventId, playerId, type, channel, value);
+      },
+      hasProgramReminderBeenSent: async (sentDate) => {
+        const row = sqliteDb.prepare('SELECT COUNT(*) as c FROM program_reminder_log WHERE sent_date = ?').get(sentDate);
+        return row.c > 0;
+      },
+      logProgramReminder: async (programId, playerId, sentDate) => {
+        sqliteDb.prepare('INSERT OR IGNORE INTO program_reminder_log (program_id, player_id, sent_date) VALUES (?,?,?)').run(programId, playerId, sentDate);
       },
       updateJerseyNumber: async (id, number) => sqliteDb.prepare('UPDATE players SET jersey_number = ? WHERE id = ?').run(number, id),
       getParentAccountByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE phone = ?').get(phone) || null,
@@ -1647,6 +1684,8 @@ module.exports = {
   getCompletions: (...args) => impl.getCompletions(...args),
   getCompletionsForProgram: (...args) => impl.getCompletionsForProgram(...args),
   getCompletionsForWeek: (...args) => impl.getCompletionsForWeek(...args),
+  hasProgramReminderBeenSent: (...args) => impl.hasProgramReminderBeenSent(...args),
+  logProgramReminder: (...args) => impl.logProgramReminder(...args),
   getProgramEquipment: (...args) => impl.getProgramEquipment(...args),
   addProgramEquipment: (...args) => impl.addProgramEquipment(...args),
   updateProgramEquipment: (...args) => impl.updateProgramEquipment(...args),
