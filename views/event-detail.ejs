@@ -108,6 +108,10 @@
             </div>
             <button type="submit" class="btn btn-confirm" style="font-size:12px;">Update Score</button>
           </form>
+          <form method="POST" action="/admin/clear-score" style="margin-top:8px;" onsubmit="return confirm('Clear the score for this game?')">
+            <input type="hidden" name="event_id" value="<%= event.id %>">
+            <button type="submit" class="btn-sm btn-sm-remove" style="font-size:11px; padding:4px 12px;">Clear Score</button>
+          </form>
         </div>
         <% } %>
 
@@ -559,13 +563,18 @@
 
             const nameTd = document.createElement('td');
             nameTd.className = 'lg-cell-name';
-            nameTd.innerHTML = (row.jersey ? '<span class="lg-jersey">' + row.jersey + '</span>' : '') + '<span class="lg-name-text">' + row.name + '</span>';
+            const nameContent = document.createElement('span');
+            nameContent.className = 'lg-name-content';
+            nameContent.innerHTML = (row.jersey ? '<span class="lg-jersey">' + row.jersey + '</span>' : '') + '<span class="lg-name-text">' + row.name + '</span>';
+            if (row.positions.length > 0) {
+              nameContent.innerHTML += '<span class="lg-pos-tag">' + row.positions.join(',') + '</span>';
+            }
+            nameTd.appendChild(nameContent);
             if (isAdmin) {
               const clrBtn = document.createElement('button');
               clrBtn.className = 'lg-rm-btn';
               clrBtn.textContent = '⌫';
               clrBtn.title = 'Clear positions';
-              clrBtn.style.marginRight = '2px';
               clrBtn.onclick = () => clearPlayerLineup(ri);
               nameTd.appendChild(clrBtn);
               const rmBtn = document.createElement('button');
@@ -574,12 +583,6 @@
               rmBtn.title = 'Remove from lineup';
               rmBtn.onclick = () => { grid.splice(ri, 1); renderGrid(); updateAddSelect(); };
               nameTd.appendChild(rmBtn);
-            }
-            if (row.positions.length > 0) {
-              const posTag = document.createElement('span');
-              posTag.className = 'lg-pos-tag';
-              posTag.textContent = row.positions.join(',');
-              nameTd.appendChild(posTag);
             }
             tr.appendChild(nameTd);
 

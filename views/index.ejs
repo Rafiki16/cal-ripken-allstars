@@ -23,13 +23,17 @@
     <div class="cta-section">
       <% if (parentUser) { %>
         <p class="cta-greeting">Hi, <strong><%= parentUser.display_name %></strong>!</p>
-        <a href="/verify" class="btn btn-primary btn-large">My Players</a>
-        <a href="/messages" class="btn btn-secondary btn-large" style="margin-left:12px;">Team Board</a>
-        <a href="/parent/logout" class="btn btn-secondary btn-large" style="margin-left:12px;">Log Out</a>
+        <div class="cta-buttons">
+          <a href="/verify" class="btn btn-primary btn-large">My Players</a>
+          <a href="/messages" class="btn btn-secondary btn-large">Team Board</a>
+          <a href="/parent/logout" class="btn btn-secondary btn-large">Log Out</a>
+        </div>
       <% } else { %>
-        <a href="/verify" class="btn btn-primary btn-large">Confirm Your Player</a>
-        <a href="/messages" class="btn btn-secondary btn-large" style="margin-left:12px;">Team Board</a>
-        <a href="/parent/login" class="btn btn-secondary btn-large" style="margin-left:12px;">Parent Login</a>
+        <div class="cta-buttons">
+          <a href="/verify" class="btn btn-primary btn-large">Confirm Your Player</a>
+          <a href="/messages" class="btn btn-secondary btn-large">Team Board</a>
+          <a href="/parent/login" class="btn btn-secondary btn-large">Parent Login</a>
+        </div>
         <p class="cta-hint">Parents: verify your child's participation using your registered phone number</p>
       <% } %>
     </div>

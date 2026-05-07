@@ -330,6 +330,8 @@ async function init() {
       removeAdmin: async (id) => pool.query('DELETE FROM admins WHERE id = $1', [id]),
       getRsvp: async (eventId, playerId) => (await pool.query('SELECT * FROM rsvps WHERE team_event_id = $1 AND player_id = $2', [eventId, playerId])).rows[0] || null,
       getRsvpsForEvent: async (eventId) => (await pool.query('SELECT r.*, p.player_name, p.parent_name FROM rsvps r JOIN players p ON r.player_id = p.id WHERE r.team_event_id = $1 ORDER BY p.player_name', [eventId])).rows,
+      getRsvpCountsAll: async () => (await pool.query("SELECT team_event_id, status, COUNT(*)::int as cnt FROM rsvps GROUP BY team_event_id, status")).rows,
+      clearGameScore: async (id) => pool.query('UPDATE team_events SET our_score = NULL, opponent_score = NULL WHERE id = $1', [id]),
       upsertRsvp: async (eventId, playerId, status) => pool.query(
         'INSERT INTO rsvps (team_event_id, player_id, status, responded_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (team_event_id, player_id) DO UPDATE SET status = $3, responded_at = NOW()',
         [eventId, playerId, status]
@@ -658,6 +660,8 @@ async function init() {
       removeAdmin: async (id) => sqliteDb.prepare('DELETE FROM admins WHERE id = ?').run(id),
       getRsvp: async (eventId, playerId) => sqliteDb.prepare('SELECT * FROM rsvps WHERE team_event_id = ? AND player_id = ?').get(eventId, playerId) || null,
       getRsvpsForEvent: async (eventId) => sqliteDb.prepare('SELECT r.*, p.player_name, p.parent_name FROM rsvps r JOIN players p ON r.player_id = p.id WHERE r.team_event_id = ? ORDER BY p.player_name').all(eventId),
+      getRsvpCountsAll: async () => sqliteDb.prepare("SELECT team_event_id, status, COUNT(*) as cnt FROM rsvps GROUP BY team_event_id, status").all(),
+      clearGameScore: async (id) => sqliteDb.prepare('UPDATE team_events SET our_score = NULL, opponent_score = NULL WHERE id = ?').run(id),
       upsertRsvp: async (eventId, playerId, status) => {
         const existing = sqliteDb.prepare('SELECT id FROM rsvps WHERE team_event_id = ? AND player_id = ?').get(eventId, playerId);
         if (existing) {
@@ -750,6 +754,8 @@ module.exports = {
   removeAdmin: (...args) => impl.removeAdmin(...args),
   getRsvp: (...args) => impl.getRsvp(...args),
   getRsvpsForEvent: (...args) => impl.getRsvpsForEvent(...args),
+  getRsvpCountsAll: (...args) => impl.getRsvpCountsAll(...args),
+  clearGameScore: (...args) => impl.clearGameScore(...args),
   upsertRsvp: (...args) => impl.upsertRsvp(...args),
   hasReminderBeenSent: (...args) => impl.hasReminderBeenSent(...args),
   logReminder: (...args) => impl.logReminder(...args),

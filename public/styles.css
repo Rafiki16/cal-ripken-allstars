@@ -132,7 +132,21 @@ header h1 {
   padding: 32px 20px;
   background: linear-gradient(135deg, var(--red), var(--red-dark));
   border-radius: 16px;
+  margin-top: 24px;
   margin-bottom: 32px;
+}
+
+.cta-greeting {
+  color: #fff;
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+
+.cta-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .cta-hint {
@@ -1266,10 +1280,12 @@ main { flex: 1; padding-bottom: 40px; }
 .lg-th-sit { width: 40px; }
 .lg-table td { padding: 4px; border-bottom: 1px solid var(--gray-100); text-align: center; font-size: 14px; font-weight: 600; }
 .lg-cell-order { color: var(--gray-400); font-size: 13px; font-weight: 700; width: 36px; }
-.lg-cell-name { text-align: left !important; font-weight: 600; font-size: 13px; position: relative; white-space: nowrap; }
+.lg-cell-name { text-align: left !important; font-weight: 600; font-size: 13px; white-space: nowrap; }
 .lg-name-text { margin-right: 4px; }
 .lg-pos-tag { display: inline-block; font-size: 10px; font-weight: 500; color: var(--gray-400); margin-left: 4px; }
-.lg-rm-btn { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--gray-400); font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1; }
+.lg-cell-name { display: flex; align-items: center; gap: 2px; }
+.lg-name-content { flex: 1; min-width: 0; display: flex; align-items: center; }
+.lg-rm-btn { background: none; border: none; color: var(--gray-400); font-size: 16px; cursor: pointer; padding: 0 3px; line-height: 1; flex-shrink: 0; }
 .lg-rm-btn:hover { color: #dc2626; }
 .lg-cell { position: relative; }
 .lg-inp { width: 100%; max-width: 42px; padding: 6px 0; border: 1px solid var(--gray-200); border-radius: 4px; text-align: center; font-size: 15px; font-weight: 700; font-family: inherit; background: white; margin: 0 auto; display: block; box-sizing: border-box; }

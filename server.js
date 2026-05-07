@@ -713,8 +713,16 @@ app.get('/admin', requireAdmin, async (req, res) => {
   const allEvents = await db.getAllEvents();
   const teamEvents = await db.getAllTeamEvents();
   const savedLocations = await db.getAllSavedLocations();
+  const rsvpRows = await db.getRsvpCountsAll();
+  const rsvpCounts = {};
+  rsvpRows.forEach(r => {
+    if (!rsvpCounts[r.team_event_id]) rsvpCounts[r.team_event_id] = { yes: 0, no: 0, maybe: 0 };
+    if (r.status === 'yes') rsvpCounts[r.team_event_id].yes = r.cnt;
+    else if (r.status === 'no') rsvpCounts[r.team_event_id].no = r.cnt;
+    else if (r.status === 'maybe') rsvpCounts[r.team_event_id].maybe = r.cnt;
+  });
   res.render('admin', {
-    players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents, savedLocations,
+    players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents, savedLocations, rsvpCounts,
     adminUser: req.session.admin,
     success: req.query.success || null,
     error: req.query.error || null,
@@ -909,6 +917,12 @@ app.post('/admin/remove-saved-location', requireAdmin, async (req, res) => {
 app.post('/admin/update-score', requireAdmin, async (req, res) => {
   const { event_id, our_score, opponent_score } = req.body;
   await db.updateGameScore(Number(event_id), parseInt(our_score) || 0, parseInt(opponent_score) || 0);
+  res.redirect('/event/' + event_id);
+});
+
+app.post('/admin/clear-score', requireAdmin, async (req, res) => {
+  const { event_id } = req.body;
+  await db.clearGameScore(Number(event_id));
   res.redirect('/event/' + event_id);
 });
 
