@@ -5,7 +5,11 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
+const XLSX = require('xlsx');
 const db = require('./db');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -980,6 +984,46 @@ app.post('/event/:id/drill/:drillId/update', requireAdmin, async (req, res) => {
 app.post('/event/:id/drill/:drillId/delete', requireAdmin, async (req, res) => {
   await db.removeDrill(Number(req.params.drillId));
   res.redirect('/event/' + req.params.id);
+});
+
+app.post('/event/:id/drill/parse-excel', requireAdmin, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.json({ error: 'No file uploaded' });
+  try {
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetNames = wb.SheetNames;
+    const sheets = {};
+    for (const name of sheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
+      if (rows.length > 0) sheets[name] = { columns: Object.keys(rows[0]), preview: rows.slice(0, 5) };
+    }
+    res.json({ sheets });
+  } catch (e) {
+    res.json({ error: 'Could not parse file. Make sure it is a valid .xlsx or .xls file.' });
+  }
+});
+
+app.post('/event/:id/drill/import', requireAdmin, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.redirect('/event/' + req.params.id);
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/admin');
+  const { sheet, col_name, col_desc, col_duration } = req.body;
+  const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const ws = wb.Sheets[sheet || wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const existing = await db.getDrills(event.id);
+  let order = existing.length;
+  for (const row of rows) {
+    const name = String(row[col_name] || '').trim();
+    if (!name) continue;
+    await db.addDrill({
+      team_event_id: event.id,
+      drill_name: name,
+      description: col_desc ? String(row[col_desc] || '').trim() || null : null,
+      duration_minutes: col_duration ? (parseInt(row[col_duration]) || 10) : 10,
+      sort_order: order++,
+    });
+  }
+  res.redirect('/event/' + event.id);
 });
 
 // --- Tournament Sub-Events ---

@@ -273,6 +273,161 @@
               <button type="submit" class="btn btn-confirm">Add</button>
             </div>
           </form>
+
+          <!-- Import from Excel -->
+          <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-200);">
+            <h4 class="ed-admin-title">Import from Excel</h4>
+            <div id="import-upload">
+              <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; padding:8px 16px; border:2px dashed var(--gray-300); border-radius:8px; font-size:13px; color:var(--gray-500); transition:border-color .2s;" onmouseover="this.style.borderColor='var(--navy)'" onmouseout="this.style.borderColor='var(--gray-300)'">
+                <span style="font-size:18px;">&#128196;</span> Choose .xlsx or .xls file
+                <input type="file" accept=".xlsx,.xls,.csv" id="import-file" style="display:none;">
+              </label>
+              <span id="import-filename" style="font-size:12px; color:var(--gray-500); margin-left:8px;"></span>
+              <div id="import-error" style="color:#dc2626; font-size:13px; margin-top:8px; display:none;"></div>
+            </div>
+
+            <div id="import-mapper" style="display:none; margin-top:12px;">
+              <div id="import-sheet-pick" style="margin-bottom:12px; display:none;">
+                <label style="font-size:13px; font-weight:600; color:var(--navy);">Sheet:</label>
+                <select id="import-sheet" class="form-input" style="width:auto; display:inline-block; margin-left:4px;"></select>
+              </div>
+
+              <p style="font-size:13px; color:var(--gray-500); margin:0 0 10px;">Map your spreadsheet columns to practice plan fields:</p>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label style="width:120px; font-size:13px; font-weight:600; color:var(--navy);">Drill Name *</label>
+                  <select id="map-name" class="form-input" style="flex:1;"></select>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label style="width:120px; font-size:13px; font-weight:600; color:var(--navy);">Description</label>
+                  <select id="map-desc" class="form-input" style="flex:1;"><option value="">(skip)</option></select>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label style="width:120px; font-size:13px; font-weight:600; color:var(--navy);">Duration (min)</label>
+                  <select id="map-dur" class="form-input" style="flex:1;"><option value="">(skip &mdash; default 10 min)</option></select>
+                </div>
+              </div>
+
+              <div id="import-preview" style="margin-top:12px; overflow-x:auto;"></div>
+
+              <button type="button" id="import-submit" class="btn btn-confirm" style="margin-top:12px;">Import Drills</button>
+              <button type="button" id="import-cancel" class="btn btn-secondary" style="margin-top:12px; margin-left:8px;">Cancel</button>
+            </div>
+          </div>
+
+          <script>
+          (function() {
+            let parsedData = null, selectedFile = null;
+            const fileInput = document.getElementById('import-file');
+            const mapper = document.getElementById('import-mapper');
+            const sheetPick = document.getElementById('import-sheet-pick');
+            const sheetSel = document.getElementById('import-sheet');
+            const mapName = document.getElementById('map-name');
+            const mapDesc = document.getElementById('map-desc');
+            const mapDur = document.getElementById('map-dur');
+            const preview = document.getElementById('import-preview');
+            const errDiv = document.getElementById('import-error');
+
+            fileInput.addEventListener('change', async function() {
+              const file = this.files[0];
+              if (!file) return;
+              selectedFile = file;
+              document.getElementById('import-filename').textContent = file.name;
+              errDiv.style.display = 'none';
+              const form = new FormData();
+              form.append('file', file);
+              const resp = await fetch('/event/<%= event.id %>/drill/parse-excel', { method: 'POST', body: form });
+              const data = await resp.json();
+              if (data.error) { errDiv.textContent = data.error; errDiv.style.display = 'block'; mapper.style.display = 'none'; return; }
+              parsedData = data.sheets;
+              const names = Object.keys(parsedData);
+              if (names.length === 0) { errDiv.textContent = 'No data found in file.'; errDiv.style.display = 'block'; return; }
+              sheetSel.innerHTML = '';
+              names.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = n; sheetSel.appendChild(o); });
+              sheetPick.style.display = names.length > 1 ? 'block' : 'none';
+              mapper.style.display = 'block';
+              populateMapping(names[0]);
+            });
+
+            sheetSel.addEventListener('change', function() { populateMapping(this.value); });
+
+            function populateMapping(sheetName) {
+              const sheet = parsedData[sheetName];
+              if (!sheet) return;
+              const cols = sheet.columns;
+
+              mapName.innerHTML = '';
+              mapDesc.innerHTML = '<option value="">(skip)</option>';
+              mapDur.innerHTML = '<option value="">(skip — default 10 min)</option>';
+
+              cols.forEach(c => {
+                const cl = c.toLowerCase();
+                const oN = document.createElement('option'); oN.value = c; oN.textContent = c; mapName.appendChild(oN);
+                const oD = document.createElement('option'); oD.value = c; oD.textContent = c; mapDesc.appendChild(oD);
+                const oDu = document.createElement('option'); oDu.value = c; oDu.textContent = c; mapDur.appendChild(oDu);
+              });
+
+              cols.forEach(c => {
+                const cl = c.toLowerCase();
+                if (cl.includes('name') || cl.includes('drill') || cl.includes('title') || cl.includes('activity')) mapName.value = c;
+                if (cl.includes('desc') || cl.includes('note') || cl.includes('detail') || cl.includes('focus')) mapDesc.value = c;
+                if (cl.includes('dur') || cl.includes('min') || cl.includes('time') || cl.includes('length')) mapDur.value = c;
+              });
+
+              renderPreview(sheet);
+              mapName.onchange = mapDesc.onchange = mapDur.onchange = function() { renderPreview(sheet); };
+            }
+
+            function renderPreview(sheet) {
+              const rows = sheet.preview;
+              const nameCol = mapName.value, descCol = mapDesc.value, durCol = mapDur.value;
+              let html = '<table style="width:100%; font-size:12px; border-collapse:collapse;">';
+              html += '<thead><tr style="background:var(--gray-50);"><th style="padding:4px 8px; text-align:left; border-bottom:2px solid var(--gray-200);">Drill Name</th>';
+              html += '<th style="padding:4px 8px; text-align:left; border-bottom:2px solid var(--gray-200);">Description</th>';
+              html += '<th style="padding:4px 8px; text-align:left; border-bottom:2px solid var(--gray-200);">Duration</th></tr></thead><tbody>';
+              rows.forEach(r => {
+                const name = nameCol ? (r[nameCol] || '') : '';
+                const desc = descCol ? (r[descCol] || '') : '';
+                const dur = durCol ? (r[durCol] || '') : '10';
+                html += '<tr><td style="padding:4px 8px; border-bottom:1px solid var(--gray-100);">' + escHtml(String(name)) + '</td>';
+                html += '<td style="padding:4px 8px; border-bottom:1px solid var(--gray-100); color:var(--gray-500);">' + escHtml(String(desc)) + '</td>';
+                html += '<td style="padding:4px 8px; border-bottom:1px solid var(--gray-100);">' + escHtml(String(dur)) + ' min</td></tr>';
+              });
+              if (rows.length >= 5) html += '<tr><td colspan="3" style="padding:4px 8px; color:var(--gray-400); font-style:italic;">...more rows in file</td></tr>';
+              html += '</tbody></table>';
+              preview.innerHTML = html;
+            }
+
+            function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+            document.getElementById('import-submit').addEventListener('click', function() {
+              if (!selectedFile || !mapName.value) return;
+              const form = new FormData();
+              form.append('file', selectedFile);
+              form.append('sheet', sheetSel.value);
+              form.append('col_name', mapName.value);
+              form.append('col_desc', mapDesc.value);
+              form.append('col_duration', mapDur.value);
+              const f = document.createElement('form');
+              f.method = 'POST'; f.action = '/event/<%= event.id %>/drill/import'; f.enctype = 'multipart/form-data'; f.style.display = 'none';
+
+              const dt = new DataTransfer();
+              dt.items.add(selectedFile);
+              const fi = document.createElement('input'); fi.type = 'file'; fi.name = 'file'; fi.files = dt.files; f.appendChild(fi);
+              ['sheet','col_name','col_desc','col_duration'].forEach(k => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = form.get(k); f.appendChild(i); });
+              document.body.appendChild(f);
+              f.submit();
+            });
+
+            document.getElementById('import-cancel').addEventListener('click', function() {
+              mapper.style.display = 'none';
+              fileInput.value = '';
+              document.getElementById('import-filename').textContent = '';
+              parsedData = null; selectedFile = null;
+            });
+          })();
+          </script>
+
           <% if (drills.length > 0) { %>
           <div style="margin-top:12px;">
             <% drills.forEach(drill => { %>
