@@ -1785,6 +1785,7 @@ module.exports = {
   getSetting: (...args) => impl.getSetting(...args),
   setSetting: (...args) => impl.setSetting(...args),
   updateProgramPositions: (...args) => impl.updateProgramPositions(...args),
+  updateAllAssignmentDates: (...args) => impl.updateAllAssignmentDates(...args),
   getConfirmedPlayers: (...args) => impl.getConfirmedPlayers(...args),
   getAllProgramsWithPositions: (...args) => impl.getAllProgramsWithPositions(...args),
   markDayComplete: (...args) => impl.markDayComplete(...args),
