@@ -157,7 +157,10 @@
             <div class="drill-body">
               <div class="drill-name"><%= drill.drill_name %></div>
               <% if (drill.description) { %><div class="drill-desc"><%= drill.description %></div><% } %>
-              <% if (isAdmin && drill.coach_notes) { %><div class="drill-coach-notes"><span class="coach-notes-badge">Coach Notes</span> <%= drill.coach_notes %></div><% } %>
+              <% if (drill.assigned_staff) { %>
+              <div class="drill-staff-tags"><% const drillStaffIds = drill.assigned_staff.split(','); drillStaffIds.forEach(sid => { const s = staffList.find(x => String(x.id) === sid.trim()); if (s) { %><span class="drill-staff-tag"><%= s.name %></span><% } }); %></div>
+              <% } %>
+              <% if (isStaff && drill.coach_notes) { %><div class="drill-coach-notes"><span class="coach-notes-badge">Coach Notes</span> <%= drill.coach_notes %></div><% } %>
             </div>
             <div class="drill-dur"><%= drill.duration_minutes %> min</div>
           </div>
@@ -284,6 +287,16 @@
                 <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Description <span style="font-weight:400;">(visible to parents)</span></label>
                 <textarea name="description" placeholder="What players should expect, what to bring, etc." class="form-input" rows="2" style="width:100%; resize:vertical;"></textarea>
               </div>
+              <% if (staffList.length > 0) { %>
+              <div>
+                <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Assigned Coaches</label>
+                <div class="staff-checkbox-group">
+                  <% staffList.forEach(s => { %>
+                  <label class="staff-checkbox-label"><input type="checkbox" name="assigned_staff" value="<%= s.id %>"> <%= s.name %><% if (s.role) { %> <span style="font-size:11px;color:var(--gray-400);">(<%= s.role %>)</span><% } %></label>
+                  <% }); %>
+                </div>
+              </div>
+              <% } %>
               <div>
                 <label style="font-size:12px; font-weight:600; color:var(--orange, #d97706); display:block; margin-bottom:4px;">Coach Notes <span style="font-weight:400;">(staff only)</span></label>
                 <textarea name="coach_notes" placeholder="Internal coaching notes — only visible to staff and admins" class="form-input" rows="2" style="width:100%; resize:vertical; border-color:var(--orange, #d97706);"></textarea>
@@ -473,6 +486,17 @@
                       <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Description (visible to parents)</label>
                       <textarea name="description" class="form-input" rows="2" style="width:100%; resize:vertical;"><%= drill.description || '' %></textarea>
                     </div>
+                    <% if (staffList.length > 0) { %>
+                    <div>
+                      <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Assigned Coaches</label>
+                      <div class="staff-checkbox-group">
+                        <% const editStaffIds = (drill.assigned_staff || '').split(',').map(s => s.trim()); %>
+                        <% staffList.forEach(s => { %>
+                        <label class="staff-checkbox-label"><input type="checkbox" name="assigned_staff" value="<%= s.id %>" <%= editStaffIds.includes(String(s.id)) ? 'checked' : '' %>> <%= s.name %><% if (s.role) { %> <span style="font-size:11px;color:var(--gray-400);">(<%= s.role %>)</span><% } %></label>
+                        <% }); %>
+                      </div>
+                    </div>
+                    <% } %>
                     <div>
                       <label style="font-size:11px; font-weight:600; color:var(--orange, #d97706);">Coach Notes (staff only)</label>
                       <textarea name="coach_notes" class="form-input" rows="2" style="width:100%; resize:vertical; border-color:var(--orange, #d97706);"><%= drill.coach_notes || '' %></textarea>

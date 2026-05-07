@@ -319,6 +319,7 @@ app.get('/event/:id', async (req, res) => {
   const staffPhone = req.parentUser ? req.parentUser.phone : null;
   const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone)) : false);
   let drills = [], subEvents = [], lineup = [], subLineups = {}, lineupGrid = [], subGrids = {};
+  const staffList = await db.getAllStaff();
   if (event.event_type === 'practice') drills = await db.getDrills(event.id);
   if (event.event_type === 'tournament') {
     subEvents = await db.getSubEvents(event.id);
@@ -333,7 +334,7 @@ app.get('/event/:id', async (req, res) => {
     lineup = await db.getLineupForEvent(event.id);
     lineupGrid = await db.getLineupGrid(event.id, null);
   }
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null });
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -978,6 +979,7 @@ app.post('/event/:id/drill', requireAdmin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/admin');
   const drills = await db.getDrills(event.id);
+  const staffIds = [].concat(req.body.assigned_staff || []).filter(Boolean).join(',');
   await db.addDrill({
     team_event_id: event.id,
     drill_name: (req.body.drill_name || '').trim() || 'New Drill',
@@ -985,17 +987,20 @@ app.post('/event/:id/drill', requireAdmin, async (req, res) => {
     duration_minutes: parseInt(req.body.duration_minutes) || 10,
     sort_order: drills.length,
     coach_notes: (req.body.coach_notes || '').trim() || null,
+    assigned_staff: staffIds || null,
   });
   res.redirect('/event/' + event.id);
 });
 
 app.post('/event/:id/drill/:drillId/update', requireAdmin, async (req, res) => {
+  const staffIds = [].concat(req.body.assigned_staff || []).filter(Boolean).join(',');
   await db.updateDrill(Number(req.params.drillId), {
     drill_name: (req.body.drill_name || '').trim() || 'Drill',
     description: (req.body.description || '').trim() || null,
     duration_minutes: parseInt(req.body.duration_minutes) || 10,
     sort_order: parseInt(req.body.sort_order) || 0,
     coach_notes: (req.body.coach_notes || '').trim() || null,
+    assigned_staff: staffIds || null,
   });
   res.redirect('/event/' + req.params.id);
 });

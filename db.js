@@ -129,6 +129,7 @@ async function init() {
     `);
 
     try { await pool.query('ALTER TABLE practice_drills ADD COLUMN coach_notes TEXT'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE practice_drills ADD COLUMN assigned_staff TEXT'); } catch (e) { /* exists */ }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS site_settings (
@@ -431,8 +432,8 @@ async function init() {
       removeTeamEvent: async (id) => pool.query('DELETE FROM team_events WHERE id = $1', [id]),
       updateBattingAll: async (id, val) => pool.query('UPDATE team_events SET batting_all = $1 WHERE id = $2', [val ? 1 : 0, id]),
       getDrills: async (eventId) => (await pool.query('SELECT * FROM practice_drills WHERE team_event_id = $1 ORDER BY sort_order', [eventId])).rows,
-      addDrill: async (d) => (await pool.query('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order, coach_notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null])).rows[0],
-      updateDrill: async (id, d) => pool.query('UPDATE practice_drills SET drill_name=$1, description=$2, duration_minutes=$3, sort_order=$4, coach_notes=$5 WHERE id=$6', [d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, id]),
+      addDrill: async (d) => (await pool.query('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order, coach_notes, assigned_staff) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id', [d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null])).rows[0],
+      updateDrill: async (id, d) => pool.query('UPDATE practice_drills SET drill_name=$1, description=$2, duration_minutes=$3, sort_order=$4, coach_notes=$5, assigned_staff=$6 WHERE id=$7', [d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, id]),
       removeDrill: async (id) => pool.query('DELETE FROM practice_drills WHERE id = $1', [id]),
       getSubEvents: async (eventId) => (await pool.query('SELECT * FROM tournament_sub_events WHERE team_event_id = $1 ORDER BY start_date, start_time, sort_order', [eventId])).rows,
       getSubEvent: async (id) => (await pool.query('SELECT * FROM tournament_sub_events WHERE id = $1', [id])).rows[0] || null,
@@ -742,6 +743,7 @@ async function init() {
     `);
 
     try { sqliteDb.exec('ALTER TABLE practice_drills ADD COLUMN coach_notes TEXT'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE practice_drills ADD COLUMN assigned_staff TEXT'); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS site_settings (
@@ -1039,10 +1041,10 @@ async function init() {
       updateBattingAll: async (id, val) => sqliteDb.prepare('UPDATE team_events SET batting_all = ? WHERE id = ?').run(val ? 1 : 0, id),
       getDrills: async (eventId) => sqliteDb.prepare('SELECT * FROM practice_drills WHERE team_event_id = ? ORDER BY sort_order').all(eventId),
       addDrill: async (d) => {
-        const r = sqliteDb.prepare('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order, coach_notes) VALUES (?,?,?,?,?,?)').run(d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null);
+        const r = sqliteDb.prepare('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order, coach_notes, assigned_staff) VALUES (?,?,?,?,?,?,?)').run(d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null);
         return { id: r.lastInsertRowid };
       },
-      updateDrill: async (id, d) => sqliteDb.prepare('UPDATE practice_drills SET drill_name=?, description=?, duration_minutes=?, sort_order=?, coach_notes=? WHERE id=?').run(d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, id),
+      updateDrill: async (id, d) => sqliteDb.prepare('UPDATE practice_drills SET drill_name=?, description=?, duration_minutes=?, sort_order=?, coach_notes=? , assigned_staff=? WHERE id=?').run(d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, id),
       removeDrill: async (id) => sqliteDb.prepare('DELETE FROM practice_drills WHERE id = ?').run(id),
       getSubEvents: async (eventId) => sqliteDb.prepare('SELECT * FROM tournament_sub_events WHERE team_event_id = ? ORDER BY start_date, start_time, sort_order').all(eventId),
       getSubEvent: async (id) => sqliteDb.prepare('SELECT * FROM tournament_sub_events WHERE id = ?').get(id) || null,
