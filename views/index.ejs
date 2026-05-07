@@ -21,7 +21,13 @@
 
   <main class="container">
     <div class="cta-section">
-      <% if (parentUser) { %>
+      <% if (parentUser && isFan) { %>
+        <p class="cta-greeting">Hi, <strong><%= parentUser.display_name %></strong>! <span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;">FAN</span></p>
+        <div class="cta-buttons">
+          <a href="/parent/logout" class="btn btn-secondary btn-large">Log Out</a>
+        </div>
+        <p class="cta-hint">Fan accounts can view the team schedule below.</p>
+      <% } else if (parentUser) { %>
         <p class="cta-greeting">Hi, <strong><%= parentUser.display_name %></strong>!</p>
         <div class="cta-buttons">
           <a href="/verify" class="btn btn-primary btn-large">My Players</a>
@@ -40,6 +46,7 @@
       <% } %>
     </div>
 
+    <% if (!isFan) { %>
     <h2 class="section-title">Roster</h2>
 
     <div class="roster-section">
@@ -64,6 +71,7 @@
         <% }); %>
       </div>
     </div>
+    <% } %>
 
     <!-- Calendar -->
     <% if (teamEvents.length > 0) { %>

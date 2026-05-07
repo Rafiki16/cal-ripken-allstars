@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .pending-box { max-width: 420px; margin: 60px auto 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 36px 28px; text-align: center; }
+    .pending-box .icon { font-size: 48px; margin-bottom: 12px; }
+    .pending-box h2 { font-size: 20px; color: var(--navy); margin: 0 0 12px; }
+    .pending-box p { font-size: 14px; color: #6b7280; line-height: 1.6; margin: 0 0 8px; }
+    .pending-box .note { font-size: 12px; color: #9ca3af; margin-top: 16px; }
+    .pending-box .btn-logout { margin-top: 20px; display: inline-block; padding: 8px 20px; font-size: 13px; color: var(--navy); border: 1px solid #d1d5db; border-radius: 8px; text-decoration: none; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1><%= teamName %></h1>
+            <p class="subtitle">Summer 2026 &middot; Major Division</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="pending-box">
+      <div class="icon">&#9203;</div>
+      <h2>Pending Approval</h2>
+      <p>Your fan account has been submitted and is awaiting approval from a team administrator.</p>
+      <p>Once approved, you'll be able to view the team schedule.</p>
+      <p class="note">For the safety of our players, all fan accounts must be verified by a coach or admin before access is granted.</p>
+      <a href="/parent/logout" class="btn-logout">Sign Out</a>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

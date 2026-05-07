@@ -214,6 +214,29 @@ async function init() {
     `);
 
     try { await pool.query('ALTER TABLE parent_accounts ADD COLUMN last_login_at TIMESTAMPTZ'); } catch (e) { /* exists */ }
+    try { await pool.query("ALTER TABLE parent_accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'parent'"); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE parent_accounts ADD COLUMN approved BOOLEAN NOT NULL DEFAULT true'); } catch (e) { /* exists */ }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS player_parents (
+        id SERIAL PRIMARY KEY,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        account_id INTEGER NOT NULL REFERENCES parent_accounts(id) ON DELETE CASCADE,
+        UNIQUE(player_id, account_id)
+      )
+    `);
+
+    // Migrate existing parent_phone links into player_parents join table
+    const { rows: migrationCheck } = await pool.query('SELECT COUNT(*) as c FROM player_parents');
+    if (parseInt(migrationCheck[0].c) === 0) {
+      const { rows: accounts } = await pool.query('SELECT id, phone FROM parent_accounts');
+      for (const acct of accounts) {
+        const { rows: linked } = await pool.query('SELECT id FROM players WHERE parent_phone = $1', [acct.phone]);
+        for (const p of linked) {
+          await pool.query('INSERT INTO player_parents (player_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [p.id, acct.id]);
+        }
+      }
+    }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS team_messages (
@@ -605,6 +628,18 @@ async function init() {
       updateParentLoginTime: async (phone) => pool.query('UPDATE parent_accounts SET last_login_at = NOW() WHERE phone = $1', [phone]),
       deleteParentAccount: async (id) => pool.query('DELETE FROM parent_accounts WHERE id = $1', [id]),
       updatePlayerParentPhone: async (playerId, phone) => pool.query('UPDATE players SET parent_phone = $1 WHERE id = $2', [phone, playerId]),
+      linkPlayerToAccount: async (playerId, accountId) => pool.query('INSERT INTO player_parents (player_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [playerId, accountId]),
+      unlinkPlayerFromAccount: async (playerId, accountId) => pool.query('DELETE FROM player_parents WHERE player_id = $1 AND account_id = $2', [playerId, accountId]),
+      getLinkedPlayersByAccount: async (accountId) => (await pool.query('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = $1 ORDER BY p.player_name', [accountId])).rows,
+      getLinkedAccountsByPlayer: async (playerId) => (await pool.query('SELECT pa.* FROM parent_accounts pa JOIN player_parents pp ON pa.id = pp.account_id WHERE pp.player_id = $1 ORDER BY pa.display_name', [playerId])).rows,
+      getAllPlayerParentLinks: async () => (await pool.query('SELECT pp.*, p.player_name, pa.display_name, pa.phone, pa.role FROM player_parents pp JOIN players p ON pp.player_id = p.id JOIN parent_accounts pa ON pp.account_id = pa.id ORDER BY p.player_name')).rows,
+      updateAccountRole: async (id, role) => pool.query('UPDATE parent_accounts SET role = $1 WHERE id = $2', [role, id]),
+      updateAccountApproved: async (id, approved) => pool.query('UPDATE parent_accounts SET approved = $1 WHERE id = $2', [approved, id]),
+      getPendingFanAccounts: async () => (await pool.query("SELECT pa.*, array_agg(pp.player_id) as player_ids FROM parent_accounts pa LEFT JOIN player_parents pp ON pa.id = pp.account_id WHERE pa.role = 'fan' AND pa.approved = false GROUP BY pa.id ORDER BY pa.created_at DESC")).rows,
+      createParentAccountFull: async (phone, displayName, passwordHash, role, approved) => {
+        const r = await pool.query('INSERT INTO parent_accounts (phone, display_name, password_hash, role, approved) VALUES ($1, $2, $3, $4, $5) RETURNING id', [phone, displayName, passwordHash, role, approved]);
+        return r.rows[0];
+      },
       updateGameScore: async (id, ourScore, opponentScore) => pool.query('UPDATE team_events SET our_score = $1, opponent_score = $2 WHERE id = $3', [ourScore, opponentScore, id]),
       clearLineupGrid: async (eventId, subEventId) => {
         if (eventId) {
@@ -979,6 +1014,28 @@ async function init() {
     `);
 
     try { sqliteDb.exec('ALTER TABLE parent_accounts ADD COLUMN last_login_at TEXT'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec("ALTER TABLE parent_accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'parent'"); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE parent_accounts ADD COLUMN approved INTEGER NOT NULL DEFAULT 1'); } catch (e) { /* exists */ }
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS player_parents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        account_id INTEGER NOT NULL REFERENCES parent_accounts(id) ON DELETE CASCADE,
+        UNIQUE(player_id, account_id)
+      )
+    `);
+
+    const migCount = sqliteDb.prepare('SELECT COUNT(*) as c FROM player_parents').get();
+    if (migCount.c === 0) {
+      const accts = sqliteDb.prepare('SELECT id, phone FROM parent_accounts').all();
+      for (const acct of accts) {
+        const linked = sqliteDb.prepare('SELECT id FROM players WHERE parent_phone = ?').all(acct.phone);
+        for (const p of linked) {
+          sqliteDb.prepare('INSERT OR IGNORE INTO player_parents (player_id, account_id) VALUES (?, ?)').run(p.id, acct.id);
+        }
+      }
+    }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS team_messages (
@@ -1371,6 +1428,22 @@ async function init() {
       updateParentLoginTime: async (phone) => sqliteDb.prepare("UPDATE parent_accounts SET last_login_at = datetime('now') WHERE phone = ?").run(phone),
       deleteParentAccount: async (id) => sqliteDb.prepare('DELETE FROM parent_accounts WHERE id = ?').run(id),
       updatePlayerParentPhone: async (playerId, phone) => sqliteDb.prepare('UPDATE players SET parent_phone = ? WHERE id = ?').run(phone, playerId),
+      linkPlayerToAccount: async (playerId, accountId) => sqliteDb.prepare('INSERT OR IGNORE INTO player_parents (player_id, account_id) VALUES (?, ?)').run(playerId, accountId),
+      unlinkPlayerFromAccount: async (playerId, accountId) => sqliteDb.prepare('DELETE FROM player_parents WHERE player_id = ? AND account_id = ?').run(playerId, accountId),
+      getLinkedPlayersByAccount: async (accountId) => sqliteDb.prepare('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = ? ORDER BY p.player_name').all(accountId),
+      getLinkedAccountsByPlayer: async (playerId) => sqliteDb.prepare('SELECT pa.* FROM parent_accounts pa JOIN player_parents pp ON pa.id = pp.account_id WHERE pp.player_id = ? ORDER BY pa.display_name').all(playerId),
+      getAllPlayerParentLinks: async () => sqliteDb.prepare('SELECT pp.*, p.player_name, pa.display_name, pa.phone, pa.role FROM player_parents pp JOIN players p ON pp.player_id = p.id JOIN parent_accounts pa ON pp.account_id = pa.id ORDER BY p.player_name').all(),
+      updateAccountRole: async (id, role) => sqliteDb.prepare('UPDATE parent_accounts SET role = ? WHERE id = ?').run(role, id),
+      updateAccountApproved: async (id, approved) => sqliteDb.prepare('UPDATE parent_accounts SET approved = ? WHERE id = ?').run(approved ? 1 : 0, id),
+      getPendingFanAccounts: async () => {
+        const fans = sqliteDb.prepare("SELECT * FROM parent_accounts WHERE role = 'fan' AND approved = 0 ORDER BY created_at DESC").all();
+        for (const f of fans) { f.player_ids = sqliteDb.prepare('SELECT player_id FROM player_parents WHERE account_id = ?').all(f.id).map(r => r.player_id); }
+        return fans;
+      },
+      createParentAccountFull: async (phone, displayName, passwordHash, role, approved) => {
+        const r = sqliteDb.prepare('INSERT INTO parent_accounts (phone, display_name, password_hash, role, approved) VALUES (?, ?, ?, ?, ?)').run(phone, displayName, passwordHash, role, approved ? 1 : 0);
+        return { id: r.lastInsertRowid };
+      },
       updateGameScore: async (id, ourScore, opponentScore) => sqliteDb.prepare('UPDATE team_events SET our_score = ?, opponent_score = ? WHERE id = ?').run(ourScore, opponentScore, id),
       clearLineupGrid: async (eventId, subEventId) => {
         if (eventId) {
@@ -1637,6 +1710,15 @@ module.exports = {
   updateParentLoginTime: (...args) => impl.updateParentLoginTime(...args),
   deleteParentAccount: (...args) => impl.deleteParentAccount(...args),
   updatePlayerParentPhone: (...args) => impl.updatePlayerParentPhone(...args),
+  linkPlayerToAccount: (...args) => impl.linkPlayerToAccount(...args),
+  unlinkPlayerFromAccount: (...args) => impl.unlinkPlayerFromAccount(...args),
+  getLinkedPlayersByAccount: (...args) => impl.getLinkedPlayersByAccount(...args),
+  getLinkedAccountsByPlayer: (...args) => impl.getLinkedAccountsByPlayer(...args),
+  getAllPlayerParentLinks: (...args) => impl.getAllPlayerParentLinks(...args),
+  updateAccountRole: (...args) => impl.updateAccountRole(...args),
+  updateAccountApproved: (...args) => impl.updateAccountApproved(...args),
+  getPendingFanAccounts: (...args) => impl.getPendingFanAccounts(...args),
+  createParentAccountFull: (...args) => impl.createParentAccountFull(...args),
   updateGameScore: (...args) => impl.updateGameScore(...args),
   clearLineupGrid: (...args) => impl.clearLineupGrid(...args),
   clearPlayerFromLineupGrid: (...args) => impl.clearPlayerFromLineupGrid(...args),

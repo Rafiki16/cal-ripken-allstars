@@ -783,10 +783,17 @@
       });
     </script>
 
+    <!-- Pending Fan Approvals -->
+    <div class="admin-section" id="pending-fans-section" style="display:none;">
+      <h2 class="profile-section-title" style="color:#dc2626;">Pending Fan Approvals</h2>
+      <p class="section-hint">These fan accounts are waiting for your approval. Fans can only see the schedule. Deny access to any account you don't recognize.</p>
+      <div id="pending-fans-list"></div>
+    </div>
+
     <!-- User Account Management -->
     <div class="admin-section">
-      <h2 class="profile-section-title">Parent Accounts</h2>
-      <p class="section-hint">Manage parent login accounts, reset passwords, link players, or view the site as any parent.</p>
+      <h2 class="profile-section-title">Accounts</h2>
+      <p class="section-hint">Manage parent and fan login accounts, link multiple parents to the same player, reset passwords, or view the site as any user.</p>
 
       <div id="ua-list" style="margin-bottom:16px;"></div>
 
@@ -925,31 +932,71 @@
     </script>
 
     <script>
+    function loadPendingFans() {
+      fetch('/admin/pending-fans').then(r => r.json()).then(function(fans) {
+        var section = document.getElementById('pending-fans-section');
+        if (fans.length === 0) { section.style.display = 'none'; return; }
+        section.style.display = '';
+        var html = '';
+        fans.forEach(function(f) {
+          var ph = f.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+          var pNames = (f.player_names || []).join(', ') || 'None';
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:8px;flex-wrap:wrap;gap:8px;">';
+          html += '<div><strong>' + f.display_name + '</strong> <span style="color:#6b7280;font-size:12px;">(' + ph + ')</span>';
+          html += '<br><span style="font-size:12px;color:#6b7280;">Following: ' + pNames + '</span></div>';
+          html += '<div style="display:flex;gap:6px;">';
+          html += '<button onclick="approveFan(' + f.id + ')" style="background:#059669;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">Approve</button>';
+          html += '<button onclick="denyFan(' + f.id + ',\'' + f.display_name.replace(/'/g, "\\'") + '\')" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">Deny</button>';
+          html += '</div></div>';
+        });
+        document.getElementById('pending-fans-list').innerHTML = html;
+      });
+    }
+    function approveFan(id) {
+      fetch('/admin/accounts/' + id + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(r => r.json()).then(function(d) { if (d.ok) { loadPendingFans(); loadAccounts(); } else alert(d.error); });
+    }
+    function denyFan(id, name) {
+      if (!confirm('Deny and delete the fan request from ' + name + '?')) return;
+      fetch('/admin/accounts/' + id + '/deny', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(r => r.json()).then(function(d) { if (d.ok) { loadPendingFans(); loadAccounts(); } else alert(d.error); });
+    }
+
     function loadAccounts() {
       fetch('/admin/accounts').then(r => r.json()).then(list => {
-        if (list.length === 0) {
-          document.getElementById('ua-list').innerHTML = '<p style="color:#6b7280;font-size:13px;">No parent accounts yet.</p>';
+        var approved = list.filter(function(a) { return a.approved; });
+        if (approved.length === 0) {
+          document.getElementById('ua-list').innerHTML = '<p style="color:#6b7280;font-size:13px;">No accounts yet.</p>';
           return;
         }
         var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-        html += '<tr style="background:#f3f4f6;"><th style="padding:8px;text-align:left;">Name</th><th style="padding:8px;text-align:left;">Phone</th><th style="padding:8px;text-align:left;">Players</th><th style="padding:8px;text-align:left;">Created</th><th style="padding:8px;text-align:right;">Actions</th></tr>';
-        list.forEach(function(a) {
+        html += '<tr style="background:#f3f4f6;"><th style="padding:8px;text-align:left;">Name</th><th style="padding:8px;text-align:left;">Role</th><th style="padding:8px;text-align:left;">Phone</th><th style="padding:8px;text-align:left;">Players</th><th style="padding:8px;text-align:right;">Actions</th></tr>';
+        approved.forEach(function(a) {
           var ph = a.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+          var roleBadge = a.role === 'fan'
+            ? '<span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">FAN</span>'
+            : '<span style="background:#d1fae5;color:#065f46;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">PARENT</span>';
           var pNames = a.players.map(function(p) {
             return '<span style="display:inline-flex;align-items:center;gap:2px;background:#e0e7ff;color:#3730a3;border-radius:4px;padding:2px 6px;font-size:11px;margin:1px;">' + p.name +
               ' <button onclick="unlinkPlayer(' + a.id + ',' + p.id + ')" style="background:none;border:none;color:#6366f1;cursor:pointer;font-size:13px;padding:0;line-height:1;" title="Unlink">&times;</button></span>';
           }).join(' ') || '<span style="color:#9ca3af;font-size:12px;">None</span>';
-          var created = a.created_at ? new Date(a.created_at).toLocaleDateString() : '-';
           html += '<tr style="border-bottom:1px solid #f3f4f6;">';
           html += '<td style="padding:8px;"><strong>' + a.display_name + '</strong></td>';
+          html += '<td style="padding:8px;">' + roleBadge + '</td>';
           html += '<td style="padding:8px;font-family:monospace;font-size:12px;">' + ph + '</td>';
           html += '<td style="padding:8px;">' + pNames + '</td>';
-          html += '<td style="padding:8px;color:#6b7280;font-size:12px;">' + created + '</td>';
           html += '<td style="padding:8px;text-align:right;white-space:nowrap;">';
           html += '<a href="/admin/impersonate/' + a.id + '" style="background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;text-decoration:none;margin-right:4px;" title="View site as this user">View As</a>';
-          html += '<button onclick="makeStaff(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#059669;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Add as staff member">Staff</button>';
+          if (a.role === 'parent') {
+            html += '<button onclick="makeStaff(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#059669;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Add as staff member">Staff</button>';
+          }
+          if (a.role === 'fan') {
+            html += '<button onclick="setRole(' + a.id + ',\'parent\')" style="background:#059669;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Upgrade to parent">Upgrade</button>';
+          } else {
+            html += '<button onclick="setRole(' + a.id + ',\'fan\')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Downgrade to fan">Fan</button>';
+          }
           html += '<button onclick="showLinkPlayer(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#3b82f6;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Link a player">Link</button>';
-          html += '<button onclick="showEditAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\',\'' + a.phone + '\')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Edit">Edit</button>';
+          html += '<button onclick="showEditAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\',\'' + a.phone + '\')" style="background:#6b7280;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Edit">Edit</button>';
           html += '<button onclick="showResetPassword(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#6b7280;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Reset password">PW</button>';
           html += '<button onclick="deleteAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;" title="Delete">&times;</button>';
           html += '</td></tr>';
@@ -1059,6 +1106,15 @@
         });
     }
 
+    function setRole(id, role) {
+      var label = role === 'parent' ? 'Upgrade this account to parent? They will see full team info.' : 'Downgrade this account to fan? They will only see the schedule.';
+      if (!confirm(label)) return;
+      fetch('/admin/accounts/' + id + '/set-role', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: role })
+      }).then(r => r.json()).then(function(d) { if (d.ok) loadAccounts(); else alert(d.error); });
+    }
+
     function deleteAccount(id, name) {
       if (!confirm('Delete the account for ' + name + '? This cannot be undone.')) return;
       fetch('/admin/accounts/' + id + '/delete', { method: 'POST' }).then(r => r.json()).then(function(d) {
@@ -1067,6 +1123,7 @@
     }
 
     loadAccounts();
+    loadPendingFans();
 
     ['ua-reset-modal','ua-link-modal','ua-edit-modal'].forEach(function(mid) {
       document.getElementById(mid).addEventListener('click', function(e) { if (e.target === this) this.style.display = 'none'; });

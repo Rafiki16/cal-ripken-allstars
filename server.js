@@ -116,8 +116,8 @@ app.use(async (req, res, next) => {
     const phone = req.session.impersonatePhone;
     const account = await db.getParentAccountByPhone(phone);
     if (account) {
-      const pPlayers = await db.getPlayersByPhone(phone);
-      req.parentUser = { ...account, player_ids: pPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
+      const linkedPlayers = await db.getLinkedPlayersByAccount(account.id);
+      req.parentUser = { ...account, player_ids: linkedPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
       req.impersonating = true;
     }
   } else {
@@ -126,13 +126,18 @@ app.use(async (req, res, next) => {
     if (phone) {
       const account = await db.getParentAccountByPhone(phone);
       if (account) {
-        const pPlayers = await db.getPlayersByPhone(phone);
-        req.parentUser = { ...account, player_ids: pPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
+        if (account.role === 'fan' && !account.approved) {
+          req.pendingFan = true;
+        } else {
+          const linkedPlayers = await db.getLinkedPlayersByAccount(account.id);
+          req.parentUser = { ...account, player_ids: linkedPlayers.filter(p => p.status === 'confirmed').map(p => p.id) };
+        }
       }
     }
   }
   res.locals.impersonating = req.impersonating || false;
   res.locals.impersonateName = req.parentUser && req.impersonating ? req.parentUser.display_name : null;
+  res.locals.isFan = req.parentUser && req.parentUser.role === 'fan';
   next();
 });
 
@@ -469,7 +474,7 @@ app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
   res.render('rsvp', { event, player, rsvp, token, success: `${player.player_name} is marked as ${status === 'yes' ? 'attending' : status === 'no' ? 'not attending' : 'maybe'}.` });
 });
 
-app.get('/event/:id/practice-timer', requireLogin, async (req, res) => {
+app.get('/event/:id/practice-timer', requireParentOrAdmin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
   const drills = await db.getDrills(event.id);
@@ -521,9 +526,9 @@ app.get('/api/location-search', async (req, res) => {
   }
 });
 
-app.get('/verify', async (req, res) => {
+app.get('/verify', requireParentOrAdmin, async (req, res) => {
   if (req.parentUser) {
-    const players = await db.getPlayersByPhone(req.parentUser.phone);
+    const players = await db.getLinkedPlayersByAccount(req.parentUser.id);
     for (const p of players) {
       p.assignments = await db.getPlayerAssignments(p.id);
     }
@@ -566,7 +571,22 @@ app.post('/respond', async (req, res) => {
   }
 
   const player = await db.getPlayer(Number(player_id));
-  if (!player || player.parent_phone !== normalized) {
+  if (!player) {
+    return res.render('verify', {
+      players: null, phone: '',
+      error: 'Player not found.',
+      success: null, parentUser: req.parentUser || null, hasAccount: false
+    });
+  }
+
+  let authorized = false;
+  if (req.parentUser) {
+    authorized = req.parentUser.player_ids.includes(player.id) || (await db.getLinkedPlayersByAccount(req.parentUser.id)).some(p => p.id === player.id);
+  }
+  if (!authorized && player.parent_phone === normalized) {
+    authorized = true;
+  }
+  if (!authorized) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized. You can only update your own child\'s status.',
@@ -576,7 +596,12 @@ app.post('/respond', async (req, res) => {
 
   await db.updateStatus(Number(player_id), status);
 
-  const players = await db.getPlayersByPhone(normalized);
+  let players;
+  if (req.parentUser) {
+    players = await db.getLinkedPlayersByAccount(req.parentUser.id);
+  } else {
+    players = await db.getPlayersByPhone(normalized);
+  }
   const action = status === 'confirmed' ? 'confirmed' : 'declined';
   const hasAccount = !!(await db.getParentAccountByPhone(normalized));
   res.render('verify', {
@@ -610,7 +635,10 @@ app.post('/parent/register', async (req, res) => {
 
   const displayName = players[0].parent_name;
   const hash = bcrypt.hashSync(password, 10);
-  await db.createParentAccount(phone, displayName, hash);
+  const newAccount = await db.createParentAccountFull(phone, displayName, hash, 'parent', true);
+  for (const p of players) {
+    await db.linkPlayerToAccount(p.id, newAccount.id);
+  }
   setParentCookie(res, phone);
   res.redirect('/?welcome=1');
 });
@@ -635,6 +663,52 @@ app.post('/parent/login', async (req, res) => {
   res.redirect('/');
 });
 
+// --- Fan Registration ---
+
+app.get('/fan/register', async (req, res) => {
+  if (req.parentUser) return res.redirect('/');
+  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  res.render('fan-register', { error: null, players });
+});
+
+app.post('/fan/register', async (req, res) => {
+  const { display_name, phone, password, confirm_password, player_id } = req.body;
+  const normalized = normalizePhone(phone || '');
+  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+
+  if (!display_name || !display_name.trim()) {
+    return res.render('fan-register', { error: 'Name is required.', players });
+  }
+  if (normalized.length !== 10) {
+    return res.render('fan-register', { error: 'Please enter a valid 10-digit phone number.', players });
+  }
+  if (!password || password.length < 6) {
+    return res.render('fan-register', { error: 'Password must be at least 6 characters.', players });
+  }
+  if (password !== confirm_password) {
+    return res.render('fan-register', { error: 'Passwords do not match.', players });
+  }
+  if (!player_id) {
+    return res.render('fan-register', { error: 'Please select which player you are following.', players });
+  }
+
+  const existing = await db.getParentAccountByPhone(normalized);
+  if (existing) {
+    return res.render('fan-register', { error: 'An account already exists for this phone number. Please log in instead.', players });
+  }
+
+  const player = await db.getPlayer(Number(player_id));
+  if (!player) {
+    return res.render('fan-register', { error: 'Invalid player selected.', players });
+  }
+
+  const hash = bcrypt.hashSync(password, 10);
+  const newAccount = await db.createParentAccountFull(normalized, display_name.trim(), hash, 'fan', false);
+  await db.linkPlayerToAccount(player.id, newAccount.id);
+  setParentCookie(res, normalized);
+  res.redirect('/');
+});
+
 app.get('/parent/logout', (req, res) => {
   clearParentCookie(res);
   res.redirect('/');
@@ -655,14 +729,19 @@ const RATING_FIELDS = [
   { key: 'baseball_iq',        label: 'Baseball IQ' },
 ];
 
-app.get('/profile/:id', requireLogin, async (req, res) => {
+app.get('/profile/:id', requireParentOrAdmin, async (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
   const isAdmin = !!req.session.admin;
 
-  if (!isAdmin && phone.length !== 10) return res.redirect('/verify');
+  if (!isAdmin && !req.parentUser) return res.redirect('/verify');
 
   const player = await db.getPlayer(Number(req.params.id));
-  if (!player || (!isAdmin && player.parent_phone !== phone)) {
+  let authorized = isAdmin;
+  if (!authorized && req.parentUser) {
+    const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
+    authorized = linked.some(p => p.id === player?.id);
+  }
+  if (!player || !authorized) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized. You can only edit your own child\'s profile.',
@@ -689,7 +768,12 @@ app.post('/profile/:id', async (req, res) => {
   const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
-  if (!player || (!isAdmin && player.parent_phone !== phone)) {
+  let authorized = isAdmin;
+  if (!authorized && req.parentUser) {
+    const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
+    authorized = linked.some(p => p.id === player?.id);
+  }
+  if (!player || !authorized) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized. You can only edit your own child\'s profile.',
@@ -762,7 +846,12 @@ app.post('/profile/:id/event', async (req, res) => {
   const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
-  if (!player || (!isAdmin && player.parent_phone !== phone)) {
+  let authorized = isAdmin;
+  if (!authorized && req.parentUser) {
+    const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
+    authorized = linked.some(p => p.id === player?.id);
+  }
+  if (!player || !authorized) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized.',
@@ -801,7 +890,12 @@ app.post('/profile/:id/event/delete', async (req, res) => {
   const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
-  if (!player || (!isAdmin && player.parent_phone !== phone)) {
+  let authorized = isAdmin;
+  if (!authorized && req.parentUser) {
+    const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
+    authorized = linked.some(p => p.id === player?.id);
+  }
+  if (!player || !authorized) {
     return res.render('verify', {
       players: null, phone: '',
       error: 'Unauthorized.',
@@ -826,8 +920,16 @@ function requireAdmin(req, res, next) {
 }
 
 function requireLogin(req, res, next) {
+  if (req.pendingFan) return res.render('fan-pending', { teamName: res.locals.teamName });
   if (req.session.admin || req.parentUser) return next();
   res.redirect('/verify');
+}
+
+function requireParentOrAdmin(req, res, next) {
+  if (req.session.admin) return next();
+  if (req.parentUser && req.parentUser.role !== 'fan') return next();
+  if (req.parentUser && req.parentUser.role === 'fan') return res.status(403).send('Fan accounts cannot access this page.');
+  res.redirect('/parent/login');
 }
 
 app.get('/admin/login', async (req, res) => {
@@ -1416,7 +1518,7 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
 
 // --- Team Messages ---
 
-app.get('/messages', requireLogin, async (req, res) => {
+app.get('/messages', requireParentOrAdmin, async (req, res) => {
   const topics = await db.getAllMessages();
   const topicReplies = {};
   for (const t of topics) {
@@ -1542,11 +1644,11 @@ app.post('/admin/scorekeepers/:id/delete', requireAdmin, async (req, res) => {
 
 app.get('/admin/accounts', requireAdmin, async (req, res) => {
   const accounts = await db.getAllParentAccounts();
-  const players = await db.getAllPlayers();
-  const result = accounts.map(a => {
-    const linked = players.filter(p => normalizePhone(p.parent_phone) === normalizePhone(a.phone));
-    return { id: a.id, phone: a.phone, display_name: a.display_name, created_at: a.created_at, players: linked.map(p => ({ id: p.id, name: p.player_name })) };
-  });
+  const result = [];
+  for (const a of accounts) {
+    const linked = await db.getLinkedPlayersByAccount(a.id);
+    result.push({ id: a.id, phone: a.phone, display_name: a.display_name, created_at: a.created_at, role: a.role || 'parent', approved: a.approved !== false && a.approved !== 0, players: linked.map(p => ({ id: p.id, name: p.player_name })) });
+  }
   res.json(result);
 });
 
@@ -1561,11 +1663,11 @@ app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
   if (existing) return res.json({ ok: false, error: 'An account already exists for this phone number.' });
 
   const hash = bcrypt.hashSync(password, 10);
-  await db.createParentAccount(normalized, display_name.trim(), hash);
+  const newAccount = await db.createParentAccountFull(normalized, display_name.trim(), hash, 'parent', true);
 
   if (player_ids && player_ids.length > 0) {
     for (const pid of player_ids) {
-      await db.updatePlayerParentPhone(Number(pid), normalized);
+      await db.linkPlayerToAccount(Number(pid), newAccount.id);
     }
   }
 
@@ -1592,12 +1694,7 @@ app.post('/admin/accounts/:id/update', requireAdmin, async (req, res) => {
     if (normalized.length !== 10) return res.json({ ok: false, error: 'Invalid phone number.' });
     const clash = await db.getParentAccountByPhone(normalized);
     if (clash && clash.id !== id) return res.json({ ok: false, error: 'Phone already in use by another account.' });
-    const oldPhone = account.phone;
     await db.updateParentAccountPhone(id, normalized);
-    const linkedPlayers = await db.getPlayersByPhone(oldPhone);
-    for (const p of linkedPlayers) {
-      await db.updatePlayerParentPhone(p.id, normalized);
-    }
   }
   res.json({ ok: true });
 });
@@ -1616,13 +1713,14 @@ app.post('/admin/accounts/:id/link-player', requireAdmin, async (req, res) => {
   const { player_id } = req.body;
   const account = await db.getParentAccountById(id);
   if (!account) return res.json({ ok: false, error: 'Account not found.' });
-  await db.updatePlayerParentPhone(Number(player_id), account.phone);
+  await db.linkPlayerToAccount(Number(player_id), id);
   res.json({ ok: true });
 });
 
 app.post('/admin/accounts/:id/unlink-player', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
   const { player_id } = req.body;
-  await db.updatePlayerParentPhone(Number(player_id), '');
+  await db.unlinkPlayerFromAccount(Number(player_id), id);
   res.json({ ok: true });
 });
 
@@ -1638,6 +1736,42 @@ app.post('/admin/accounts/:id/make-staff', requireAdmin, async (req, res) => {
   if (existing) return res.json({ ok: false, error: 'Already a staff member.' });
   await db.addStaff({ name: account.display_name, role: 'Parent', phone: account.phone, email: null });
   res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/approve', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const account = await db.getParentAccountById(id);
+  if (!account) return res.json({ ok: false, error: 'Account not found.' });
+  await db.updateAccountApproved(id, true);
+  res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/deny', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const account = await db.getParentAccountById(id);
+  if (!account) return res.json({ ok: false, error: 'Account not found.' });
+  await db.deleteParentAccount(id);
+  res.json({ ok: true });
+});
+
+app.post('/admin/accounts/:id/set-role', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const { role } = req.body;
+  if (!['parent', 'fan'].includes(role)) return res.json({ ok: false, error: 'Invalid role.' });
+  await db.updateAccountRole(id, role);
+  res.json({ ok: true });
+});
+
+app.get('/admin/pending-fans', requireAdmin, async (req, res) => {
+  const pending = await db.getPendingFanAccounts();
+  const players = await db.getAllPlayers();
+  const playerMap = {};
+  for (const p of players) playerMap[p.id] = p.player_name;
+  const result = pending.map(f => ({
+    ...f,
+    player_names: (f.player_ids || []).filter(id => id).map(id => playerMap[id] || 'Unknown')
+  }));
+  res.json(result);
 });
 
 app.get('/admin/impersonate/:id', requireAdmin, async (req, res) => {
@@ -2144,7 +2278,7 @@ app.post('/api/game/:id/chat', async (req, res) => {
   res.json(msg);
 });
 
-app.get('/stats', requireLogin, async (req, res) => {
+app.get('/stats', requireParentOrAdmin, async (req, res) => {
   const isAdmin = req.session && req.session.admin;
   const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
   const parentUser = req.parentUser;
@@ -2238,7 +2372,7 @@ function getMonday(d) {
   return date.toISOString().split('T')[0];
 }
 
-app.get('/programs', async (req, res) => {
+app.get('/programs', requireParentOrAdmin, async (req, res) => {
   const programs = await db.getPublishedPrograms();
   const playerAssignments = {};
   if (req.parentUser) {
@@ -2249,7 +2383,7 @@ app.get('/programs', async (req, res) => {
   res.render('programs', { programs, parentUser: req.parentUser || null, playerAssignments });
 });
 
-app.get('/programs/:id', async (req, res) => {
+app.get('/programs/:id', requireParentOrAdmin, async (req, res) => {
   const program = await db.getProgram(Number(req.params.id));
   if (!program || (!program.published && !req.session.admin)) return res.redirect('/programs');
   const days = await db.getProgramDays(program.id);
