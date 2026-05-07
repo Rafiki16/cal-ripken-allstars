@@ -249,12 +249,47 @@
       </div>
     </div>
 
+    <%
+      var commonStart = '';
+      var commonEnd = '';
+      if (assignments.length > 0) {
+        var starts = assignments.map(function(a) { return a.start_date ? a.start_date.toString().substring(0,10) : ''; }).filter(Boolean);
+        var ends = assignments.map(function(a) { return a.end_date ? a.end_date.toString().substring(0,10) : ''; }).filter(Boolean);
+        if (starts.length > 0 && starts.every(function(s) { return s === starts[0]; })) commonStart = starts[0];
+        if (ends.length > 0 && ends.every(function(s) { return s === ends[0]; })) commonEnd = ends[0];
+      }
+    %>
+
+    <div style="margin:24px 0; padding:20px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:12px;">
+      <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0 0 8px;">Program Date Range</h3>
+      <p style="font-size:12px; color:var(--gray-500); margin:0 0 12px;">Set when this program is active. Dates apply to new assignments and can be applied to existing ones.</p>
+      <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:end;">
+        <div>
+          <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Start Date</label>
+          <input type="date" id="program-start-date" value="<%= commonStart %>" style="padding:6px 10px; border:1px solid var(--gray-200); border-radius:6px; font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">End Date</label>
+          <input type="date" id="program-end-date" value="<%= commonEnd %>" style="padding:6px 10px; border:1px solid var(--gray-200); border-radius:6px; font-size:13px;">
+        </div>
+        <% if (assignments.length > 0) { %>
+        <form method="POST" action="/admin/programs/<%= program.id %>/set-all-dates" id="set-all-dates-form" style="margin:0;">
+          <input type="hidden" name="start_date" id="bulk-start-date" value="<%= commonStart %>">
+          <input type="hidden" name="end_date" id="bulk-end-date" value="<%= commonEnd %>">
+          <button type="submit" class="btn btn-confirm" style="font-size:12px; padding:6px 14px;">Apply to All (<%= assignments.length %>)</button>
+        </form>
+        <% } %>
+      </div>
+    </div>
+
     <div style="margin:24px 0; padding:20px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
         <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0;">Position-Based Assignment</h3>
       </div>
       <p style="font-size:12px; color:var(--gray-500); margin:0 0 12px;">Select positions to auto-assign all confirmed players who play those positions.</p>
       <form method="POST" action="/admin/programs/<%= program.id %>/assign-positions">
+        <input type="hidden" name="start_date" class="sync-start-date" value="<%= commonStart %>">
+        <input type="hidden" name="end_date" class="sync-end-date" value="<%= commonEnd %>">
         <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
           <% const currentPositions = (program.assigned_positions || '').split(',').filter(Boolean); %>
           <% POSITIONS.forEach(pos => { %>
@@ -267,6 +302,8 @@
       </form>
       <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--gray-100);">
         <form method="POST" action="/admin/programs/<%= program.id %>/assign-all" style="display:inline;" onsubmit="return confirm('Assign ALL confirmed players to this program?')">
+          <input type="hidden" name="start_date" class="sync-start-date" value="<%= commonStart %>">
+          <input type="hidden" name="end_date" class="sync-end-date" value="<%= commonEnd %>">
           <button type="submit" class="btn btn-secondary" style="font-size:12px; padding:6px 14px;">Assign All Confirmed Players</button>
         </form>
       </div>
@@ -281,9 +318,15 @@
       <% if (assignments.length > 0) { %>
       <div style="margin-bottom:16px;">
         <% assignments.forEach(a => { %>
-        <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--gray-100);">
-          <span style="font-size:13px; font-weight:600; flex:1;"><%= a.player_name %></span>
-          <span style="font-size:11px; color:var(--gray-400);"><%= a.status %></span>
+        <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--gray-100); flex-wrap:wrap;">
+          <span style="font-size:13px; font-weight:600; flex:1; min-width:120px;"><%= a.player_name %></span>
+          <% if (a.start_date || a.end_date) { %>
+          <span style="font-size:11px; color:var(--gray-400); background:var(--gray-50); padding:2px 8px; border-radius:4px;">
+            <%= a.start_date ? a.start_date.toString().substring(0,10) : 'no start' %> &mdash; <%= a.end_date ? a.end_date.toString().substring(0,10) : 'no end' %>
+          </span>
+          <% } else { %>
+          <span style="font-size:11px; color:var(--gray-300);">no dates</span>
+          <% } %>
           <form method="POST" action="/admin/programs/<%= program.id %>/unassign/<%= a.player_id %>" style="margin:0;">
             <button type="submit" class="btn btn-secondary" style="font-size:11px; padding:2px 8px; color:#dc2626;">Remove</button>
           </form>
@@ -293,6 +336,8 @@
       <% } %>
 
       <form method="POST" action="/admin/programs/<%= program.id %>/assign">
+        <input type="hidden" name="start_date" class="sync-start-date" value="<%= commonStart %>">
+        <input type="hidden" name="end_date" class="sync-end-date" value="<%= commonEnd %>">
         <div style="display:flex; flex-direction:column; gap:8px;">
           <label style="font-size:12px; font-weight:600; color:var(--gray-500);">Assign Players</label>
           <div style="max-height:200px; overflow-y:auto; border:1px solid var(--gray-200); border-radius:8px; padding:8px; background:var(--gray-50);">
@@ -312,6 +357,24 @@
         </div>
       </form>
     </div>
+
+    <script>
+    (function() {
+      var startInput = document.getElementById('program-start-date');
+      var endInput = document.getElementById('program-end-date');
+      if (!startInput || !endInput) return;
+      function syncDates() {
+        document.querySelectorAll('.sync-start-date').forEach(function(el) { el.value = startInput.value; });
+        document.querySelectorAll('.sync-end-date').forEach(function(el) { el.value = endInput.value; });
+        var bulkStart = document.getElementById('bulk-start-date');
+        var bulkEnd = document.getElementById('bulk-end-date');
+        if (bulkStart) bulkStart.value = startInput.value;
+        if (bulkEnd) bulkEnd.value = endInput.value;
+      }
+      startInput.addEventListener('change', syncDates);
+      endInput.addEventListener('change', syncDates);
+    })();
+    </script>
 
     <div style="margin:24px 0; padding:20px; background:#fff4f4; border:1px solid #fecaca; border-radius:12px;">
       <h3 style="font-size:15px; font-weight:700; color:#dc2626; margin:0 0 8px;">Danger Zone</h3>

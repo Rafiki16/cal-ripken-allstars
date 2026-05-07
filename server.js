@@ -2401,8 +2401,9 @@ app.post('/admin/programs/:id/equipment/:eqId/delete', requireAdmin, async (req,
 
 app.post('/admin/programs/:id/assign', requireAdmin, async (req, res) => {
   const playerIds = [].concat(req.body.player_ids || []).filter(Boolean).map(Number);
+  const { start_date, end_date } = req.body;
   for (const pid of playerIds) {
-    await db.assignProgram({ program_id: Number(req.params.id), player_id: pid, send_reminders: 1 });
+    await db.assignProgram({ program_id: Number(req.params.id), player_id: pid, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
   }
   res.redirect('/admin/programs/' + req.params.id + '/edit?success=' + playerIds.length + '+players+assigned');
 });
@@ -2412,18 +2413,25 @@ app.post('/admin/programs/:id/unassign/:playerId', requireAdmin, async (req, res
   res.redirect('/admin/programs/' + req.params.id + '/edit');
 });
 
+app.post('/admin/programs/:id/set-all-dates', requireAdmin, async (req, res) => {
+  const programId = Number(req.params.id);
+  const { start_date, end_date } = req.body;
+  await db.updateAllAssignmentDates(programId, start_date || null, end_date || null);
+  res.redirect('/admin/programs/' + programId + '/edit?success=Dates+updated+for+all+assignments');
+});
+
 app.post('/admin/programs/:id/assign-positions', requireAdmin, async (req, res) => {
   const programId = Number(req.params.id);
   const positions = [].concat(req.body.positions || []).filter(p => POSITIONS.includes(p));
+  const { start_date, end_date } = req.body;
   await db.updateProgramPositions(programId, positions.join(','));
-  // Auto-assign confirmed players whose best_positions match
   const confirmedPlayers = await db.getConfirmedPlayers();
   let count = 0;
   for (const player of confirmedPlayers) {
     if (!player.best_positions) continue;
     const playerPositions = player.best_positions.split(',').map(p => p.trim()).filter(Boolean);
     if (playerPositions.some(pp => positions.includes(pp))) {
-      await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1 });
+      await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
       count++;
     }
   }
@@ -2432,9 +2440,10 @@ app.post('/admin/programs/:id/assign-positions', requireAdmin, async (req, res) 
 
 app.post('/admin/programs/:id/assign-all', requireAdmin, async (req, res) => {
   const programId = Number(req.params.id);
+  const { start_date, end_date } = req.body;
   const confirmedPlayers = await db.getConfirmedPlayers();
   for (const player of confirmedPlayers) {
-    await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1 });
+    await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
   }
   res.redirect('/admin/programs/' + programId + '/edit?success=All+' + confirmedPlayers.length + '+confirmed+players+assigned');
 });
