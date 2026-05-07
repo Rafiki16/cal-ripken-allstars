@@ -270,6 +270,22 @@
 
         <% if (isAdmin) { %>
         <div class="ed-admin-section">
+          <% if (practiceTemplates.length > 0) { %>
+          <div style="margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--gray-200);">
+            <h4 class="ed-admin-title">Load from Template</h4>
+            <form method="POST" action="/event/<%= event.id %>/load-program" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+              <div style="flex:1; min-width:200px;">
+                <select name="program_id" class="form-input" style="width:100%;" required>
+                  <option value="">Select a template...</option>
+                  <% practiceTemplates.forEach(t => { %>
+                  <option value="<%= t.id %>"><%= t.title %></option>
+                  <% }); %>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-secondary" style="white-space:nowrap;">Load Template</button>
+            </form>
+          </div>
+          <% } %>
           <h4 class="ed-admin-title">Add Drill</h4>
           <form method="POST" action="/event/<%= event.id %>/drill" class="drill-form">
             <div style="display:flex; flex-direction:column; gap:8px;">
@@ -458,6 +474,17 @@
             });
           })();
           </script>
+
+          <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--gray-200);">
+            <h4 class="ed-admin-title">Save as Template</h4>
+            <form method="POST" action="/event/<%= event.id %>/save-as-program" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+              <div style="flex:1; min-width:200px;">
+                <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Template Name</label>
+                <input type="text" name="template_name" placeholder="<%= event.title %> Template" class="form-input" style="width:100%;">
+              </div>
+              <button type="submit" class="btn btn-secondary" style="white-space:nowrap;"<%= drills.length === 0 ? ' disabled' : '' %>>Save as Template</button>
+            </form>
+          </div>
 
           <% if (drills.length > 0) { %>
           <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--gray-200);">

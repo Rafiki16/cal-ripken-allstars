@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Programs &middot; Admin &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/admin" class="back-link">&larr; Back to Admin</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Programs</h1>
+            <p class="subtitle">Manage Programs &amp; Templates</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (success) { %>
+    <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (error) { %>
+    <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <div style="margin:24px 0; padding:20px; background:#fff; border:1px solid var(--gray-200); border-radius:12px;">
+      <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0 0 16px;">Create New Program</h3>
+      <form method="POST" action="/admin/programs">
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div>
+            <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Title *</label>
+            <input type="text" name="title" placeholder="e.g. Off-Season Hitting Program" required class="form-input" style="width:100%;">
+          </div>
+          <div>
+            <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Description</label>
+            <textarea name="description" placeholder="Brief description of the program" class="form-input" rows="2" style="width:100%; resize:vertical;"></textarea>
+          </div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:150px;">
+              <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Author</label>
+              <input type="text" name="author" placeholder="Coach name" class="form-input" style="width:100%;">
+            </div>
+            <div style="flex:1; min-width:150px;">
+              <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Type</label>
+              <select name="program_type" class="form-input" style="width:100%;">
+                <option value="at_home">At Home Program</option>
+                <option value="practice_template">Practice Template</option>
+              </select>
+            </div>
+            <div style="flex:1; min-width:150px;">
+              <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Schedule</label>
+              <select name="schedule_type" class="form-input" style="width:100%;">
+                <option value="weekly">Weekly (Mon, Tue...)</option>
+                <option value="sequential">Sequential (Day 1, Day 2...)</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-confirm" style="align-self:flex-start;">Create Program</button>
+        </div>
+      </form>
+    </div>
+
+    <% if (programs.length === 0) { %>
+    <p style="color:var(--gray-500); font-size:14px;">No programs yet. Create one above.</p>
+    <% } else { %>
+    <h2 class="section-title">All Programs</h2>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <% programs.forEach(program => { %>
+      <div style="border:1px solid var(--gray-200); border-radius:10px; padding:14px 16px; background:#fff; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:200px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <h3 style="font-size:14px; font-weight:700; color:var(--navy); margin:0;"><%= program.title %></h3>
+            <span style="font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; background:<%= program.program_type === 'at_home' ? '#dbeafe' : '#fef3c7' %>; color:<%= program.program_type === 'at_home' ? '#1e40af' : '#92400e' %>;"><%= program.program_type === 'at_home' ? 'At Home' : 'Template' %></span>
+            <% if (program.published) { %>
+            <span style="font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; background:#dcfce7; color:#16a34a;">Published</span>
+            <% } else { %>
+            <span style="font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; background:#f3f4f6; color:#6b7280;">Draft</span>
+            <% } %>
+          </div>
+          <% if (program.description) { %>
+          <p style="font-size:12px; color:var(--gray-500); margin:0;"><%= program.description %></p>
+          <% } %>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <a href="/admin/programs/<%= program.id %>/edit" class="btn btn-secondary" style="text-decoration:none; font-size:12px; padding:6px 12px;">Edit</a>
+          <% if (program.published) { %>
+          <a href="/programs/<%= program.id %>" class="btn btn-secondary" style="text-decoration:none; font-size:12px; padding:6px 12px;">View</a>
+          <% } %>
+        </div>
+      </div>
+      <% }); %>
+    </div>
+    <% } %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Programs &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/" class="back-link">&larr; Back to Home</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Programs</h1>
+            <p class="subtitle"><%= teamName %></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (programs.length === 0) { %>
+    <p style="color:var(--gray-500); font-size:14px; margin-top:24px;">No programs available yet.</p>
+    <% } else { %>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:16px; margin-top:24px;">
+      <% programs.forEach(program => { %>
+      <a href="/programs/<%= program.id %>" style="text-decoration:none; color:inherit;">
+        <div style="border:1px solid var(--gray-200); border-radius:12px; padding:20px; background:#fff; transition:box-shadow .2s; cursor:pointer;" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <h3 style="font-size:16px; font-weight:700; color:var(--navy); margin:0; flex:1;"><%= program.title %></h3>
+            <span style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; white-space:nowrap; background:<%= program.program_type === 'at_home' ? '#dbeafe' : '#fef3c7' %>; color:<%= program.program_type === 'at_home' ? '#1e40af' : '#92400e' %>;"><%= program.program_type === 'at_home' ? 'At Home' : 'Practice Template' %></span>
+          </div>
+          <% if (program.description) { %>
+          <p style="font-size:13px; color:var(--gray-500); margin:0 0 8px; line-height:1.4;"><%= program.description %></p>
+          <% } %>
+          <% if (program.author) { %>
+          <div style="font-size:12px; color:var(--gray-400);">By <%= program.author %></div>
+          <% } %>
+          <% if (parentUser) { %>
+            <% parentUser.player_ids.forEach(pid => { %>
+              <% const assigned = playerAssignments[pid] && playerAssignments[pid].some(a => a.program_id === program.id); %>
+              <% if (assigned) { %>
+              <div style="margin-top:8px; font-size:12px; font-weight:600; color:#16a34a;">&#10003; Subscribed</div>
+              <% } %>
+            <% }); %>
+          <% } %>
+        </div>
+      </a>
+      <% }); %>
+    </div>
+    <% } %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+      <p style="margin-top:8px;"><a href="/admin" style="color:#9ca3af;font-size:13px;">Admin</a></p>
+    </div>
+  </footer>
+</body>
+</html>
