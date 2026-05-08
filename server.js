@@ -485,6 +485,10 @@ app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
 });
 
 app.get('/event/:id/practice-timer', requireParentOrAdmin, async (req, res) => {
+  const isAdmin = !!req.session.admin;
+  const staffPhone = req.parentUser ? req.parentUser.phone : null;
+  const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone)) : false);
+  if (!isStaff) return res.redirect('/event/' + req.params.id);
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
   const drills = await db.getDrills(event.id);

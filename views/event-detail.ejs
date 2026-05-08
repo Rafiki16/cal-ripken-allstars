@@ -148,7 +148,9 @@
         <h3 class="ed-section-title">Practice Plan</h3>
 
         <% if (drills.length > 0) { %>
+        <% if (isStaff) { %>
         <a href="/event/<%= event.id %>/practice-timer" class="btn btn-confirm" style="display:inline-block;margin-bottom:16px;text-decoration:none;font-size:15px;padding:10px 24px;">Start Practice</a>
+        <% } %>
         <div id="drill-list" class="drill-list">
           <% drills.forEach((drill, i) => { %>
           <div class="drill-card<%= isAdmin ? ' drill-draggable' : '' %>" data-duration="<%= drill.duration_minutes %>" data-name="<%= drill.drill_name %>" data-id="<%= drill.id %>" id="drill-<%= drill.id %>" <% if (isAdmin) { %>draggable="true"<% } %>>
@@ -169,6 +171,7 @@
 
         <div class="drill-total">Total: <%= drills.reduce((s, d) => s + d.duration_minutes, 0) %> minutes</div>
 
+        <% if (isStaff) { %>
         <!-- Timer UI -->
         <div id="timer-panel" class="timer-panel" style="display:none;">
           <div class="timer-current-label" id="timer-label">—</div>
@@ -264,6 +267,7 @@
           };
         })();
         </script>
+        <% } /* end isStaff timer */ %>
         <% } else if (!isAdmin) { %>
           <p style="color:var(--gray-500); font-size:14px;">No practice plan posted yet.</p>
         <% } %>
