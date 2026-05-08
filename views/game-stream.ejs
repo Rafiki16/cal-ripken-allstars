@@ -76,6 +76,21 @@
     <table class="linescore-stream" id="linescore"></table>
   </div>
 
+  <div class="stats-section" style="max-width:600px;margin:0 auto;padding:0 16px;">
+    <div class="pitcher-bar" id="pitcher-bar" style="display:none;background:#1e293b;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div><span style="color:#94a3b8;font-size:11px;text-transform:uppercase;">Pitching</span><br><strong id="pitcher-display">--</strong></div>
+        <div style="text-align:right;"><span style="color:#94a3b8;font-size:11px;">Pitches</span><br><strong id="pitcher-pc" style="font-size:20px;">0</strong></div>
+        <div style="text-align:right;"><span style="color:#94a3b8;font-size:11px;">Strike%</span><br><strong id="pitcher-kpct">-</strong></div>
+      </div>
+    </div>
+    <h3 style="color:#94a3b8;font-size:13px;text-transform:uppercase;margin:16px 0 8px;">Batting Stats</h3>
+    <table class="linescore-stream" id="batting-stats" style="font-size:11px;">
+      <thead><tr><th style="text-align:left;">#</th><th style="text-align:left;">Player</th><th>AB</th><th>H</th><th>AVG</th><th>RBI</th><th>K</th><th>BB</th></tr></thead>
+      <tbody id="batting-body"></tbody>
+    </table>
+  </div>
+
   <div class="play-feed">
     <h3>Play-by-Play</h3>
     <div id="plays"></div>
@@ -103,7 +118,12 @@
   var RESULT_LABELS = { '1B':'Single','2B':'Double','3B':'Triple','HR':'Home Run','K':'Strikeout','BB':'Walk','HBP':'Hit by Pitch','out':'Out','FC':'Fielder\'s Choice','SAC':'Sacrifice','DP':'Double Play','error':'Error' };
 
   function update() {
-    fetch('/api/game/' + GAME_ID + '/state').then(function(r) { return r.json(); }).then(function(d) {
+    Promise.all([
+      fetch('/api/game/' + GAME_ID + '/state').then(function(r) { return r.json(); }),
+      fetch('/api/game/' + GAME_ID + '/dashboard').then(function(r) { return r.json(); })
+    ]).then(function(results) {
+      var d = results[0];
+      var dash = results[1];
       var g = d.game;
       document.getElementById('us-score').textContent = g.our_score;
       document.getElementById('opp-score').textContent = g.opp_score;
@@ -127,6 +147,33 @@
         document.getElementById('batter-text').textContent = batter ? batter.player_name : '--';
       }
 
+      // Pitcher bar
+      if (g.current_pitcher_us && dash.pitcherStats) {
+        var pRoster = dash.roster.find(function(r) { return r.player_id === g.current_pitcher_us; });
+        var pStats = dash.pitcherStats[g.current_pitcher_us];
+        if (pRoster) {
+          document.getElementById('pitcher-bar').style.display = 'block';
+          document.getElementById('pitcher-display').textContent = pRoster.player_name;
+          document.getElementById('pitcher-pc').textContent = dash.pitchCounts[g.current_pitcher_us] || 0;
+          document.getElementById('pitcher-kpct').textContent = pStats ? pStats.strikePercent + '%' : '-';
+        }
+      }
+
+      // Batting stats table
+      var bHtml = '';
+      var POS_LABELS = {1:'P',2:'C',3:'1B',4:'2B',5:'3B',6:'SS',7:'LF',8:'CF',9:'RF',10:'EH'};
+      dash.roster.forEach(function(r) {
+        var s = dash.batterStats[r.player_id] || { abs:0, hits:0, avg:'-', rbis:0, ks:0, bbs:0 };
+        bHtml += '<tr>';
+        bHtml += '<td style="text-align:left;color:#94a3b8;">' + (r.jersey_number || '-') + '</td>';
+        bHtml += '<td style="text-align:left;">' + r.player_name + ' <span style="color:#475569;font-size:10px;">' + (POS_LABELS[r.current_position] || '') + '</span></td>';
+        bHtml += '<td>' + s.abs + '</td><td>' + s.hits + '</td><td>' + s.avg + '</td>';
+        bHtml += '<td>' + s.rbis + '</td><td>' + s.ks + '</td><td>' + s.bbs + '</td>';
+        bHtml += '</tr>';
+      });
+      document.getElementById('batting-body').innerHTML = bHtml;
+
+      // Play-by-play
       var completed = d.atBats.filter(function(ab) { return ab.result; });
       var playsHtml = '';
       completed.reverse().slice(0, 20).forEach(function(ab) {
@@ -137,6 +184,7 @@
       });
       document.getElementById('plays').innerHTML = playsHtml || '<div class="play-item" style="color:#475569;">No plays yet</div>';
 
+      // Linescore
       var totalInnings = g.total_innings || 6;
       var inningScores = d.inningScores || { us: {}, opp: {} };
       var ls = '<tr><th></th>';
