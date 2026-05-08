@@ -555,7 +555,7 @@ app.get('/api/location-search', async (req, res) => {
   }
 });
 
-app.get('/verify', requireParentOrAdmin, async (req, res) => {
+app.get('/verify', async (req, res) => {
   if (req.parentUser) {
     const players = await db.getLinkedPlayersByAccount(req.parentUser.id);
     for (const p of players) {
