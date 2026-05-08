@@ -805,6 +805,10 @@
             <input type="text" id="ua-name" placeholder="Parent name" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           </div>
           <div style="flex:1;min-width:130px;">
+            <label style="font-size:12px;color:#6b7280;">Username</label>
+            <input type="text" id="ua-username" placeholder="Optional login name" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
+          </div>
+          <div style="flex:1;min-width:130px;">
             <label style="font-size:12px;color:#6b7280;">Phone *</label>
             <input type="tel" id="ua-phone" placeholder="(941) 555-1234" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           </div>
@@ -863,6 +867,10 @@
         <div style="margin-bottom:12px;">
           <label style="font-size:12px;color:#6b7280;font-weight:600;">Name</label>
           <input type="text" id="ua-edit-name" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;color:#6b7280;font-weight:600;">Username <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+          <input type="text" id="ua-edit-username" placeholder="e.g. jsmith" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;">
         </div>
         <div style="margin-bottom:12px;">
           <label style="font-size:12px;color:#6b7280;font-weight:600;">Phone</label>
@@ -970,7 +978,7 @@
           return;
         }
         var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-        html += '<tr style="background:#f3f4f6;"><th style="padding:8px;text-align:left;">Name</th><th style="padding:8px;text-align:left;">Role</th><th style="padding:8px;text-align:left;">Phone</th><th style="padding:8px;text-align:left;">Players</th><th style="padding:8px;text-align:right;">Actions</th></tr>';
+        html += '<tr style="background:#f3f4f6;"><th style="padding:8px;text-align:left;">Name</th><th style="padding:8px;text-align:left;">Role</th><th style="padding:8px;text-align:left;">Login</th><th style="padding:8px;text-align:left;">Players</th><th style="padding:8px;text-align:right;">Actions</th></tr>';
         approved.forEach(function(a) {
           var ph = a.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
           var roleBadge = a.role === 'fan'
@@ -980,10 +988,11 @@
             return '<span style="display:inline-flex;align-items:center;gap:2px;background:#e0e7ff;color:#3730a3;border-radius:4px;padding:2px 6px;font-size:11px;margin:1px;">' + p.name +
               ' <button onclick="unlinkPlayer(' + a.id + ',' + p.id + ')" style="background:none;border:none;color:#6366f1;cursor:pointer;font-size:13px;padding:0;line-height:1;" title="Unlink">&times;</button></span>';
           }).join(' ') || '<span style="color:#9ca3af;font-size:12px;">None</span>';
+          var loginInfo = a.username ? '<strong>' + a.username + '</strong><br><span style="color:#9ca3af;font-size:11px;">' + ph + '</span>' : '<span style="font-family:monospace;font-size:12px;">' + ph + '</span>';
           html += '<tr style="border-bottom:1px solid #f3f4f6;">';
           html += '<td style="padding:8px;"><strong>' + a.display_name + '</strong></td>';
           html += '<td style="padding:8px;">' + roleBadge + '</td>';
-          html += '<td style="padding:8px;font-family:monospace;font-size:12px;">' + ph + '</td>';
+          html += '<td style="padding:8px;">' + loginInfo + '</td>';
           html += '<td style="padding:8px;">' + pNames + '</td>';
           html += '<td style="padding:8px;text-align:right;white-space:nowrap;">';
           html += '<a href="/admin/impersonate/' + a.id + '" style="background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;text-decoration:none;margin-right:4px;" title="View site as this user">View As</a>';
@@ -996,7 +1005,7 @@
             html += '<button onclick="setRole(' + a.id + ',\'fan\')" style="background:#f59e0b;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Downgrade to fan">Fan</button>';
           }
           html += '<button onclick="showLinkPlayer(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#3b82f6;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Link a player">Link</button>';
-          html += '<button onclick="showEditAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\',\'' + a.phone + '\')" style="background:#6b7280;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Edit">Edit</button>';
+          html += '<button onclick="showEditAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\',\'' + a.phone + '\',\'' + (a.username || '').replace(/'/g, "\\'") + '\')" style="background:#6b7280;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Edit">Edit</button>';
           html += '<button onclick="showResetPassword(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#6b7280;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Reset password">PW</button>';
           html += '<button onclick="deleteAccount(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;" title="Delete">&times;</button>';
           html += '</td></tr>';
@@ -1008,6 +1017,7 @@
 
     function createAccount() {
       var name = document.getElementById('ua-name').value.trim();
+      var username = document.getElementById('ua-username').value.trim();
       var phone = document.getElementById('ua-phone').value.trim();
       var password = document.getElementById('ua-password').value.trim();
       var sel = document.getElementById('ua-players');
@@ -1015,10 +1025,11 @@
       if (!name || !phone || !password) return alert('Name, phone, and password are required.');
       fetch('/admin/accounts/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: name, phone: phone, password: password, player_ids: pids })
+        body: JSON.stringify({ display_name: name, username: username || undefined, phone: phone, password: password, player_ids: pids })
       }).then(r => r.json()).then(function(d) {
         if (d.ok) {
           document.getElementById('ua-name').value = '';
+          document.getElementById('ua-username').value = '';
           document.getElementById('ua-phone').value = '';
           document.getElementById('ua-password').value = '';
           sel.selectedIndex = -1;
@@ -1076,19 +1087,21 @@
       }).then(r => r.json()).then(function(d) { if (d.ok) loadAccounts(); });
     }
 
-    function showEditAccount(id, name, phone) {
+    function showEditAccount(id, name, phone, username) {
       document.getElementById('ua-edit-id').value = id;
       document.getElementById('ua-edit-name').value = name;
+      document.getElementById('ua-edit-username').value = username || '';
       document.getElementById('ua-edit-phone').value = phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
       document.getElementById('ua-edit-modal').style.display = 'flex';
     }
     function submitEditAccount() {
       var id = document.getElementById('ua-edit-id').value;
       var name = document.getElementById('ua-edit-name').value.trim();
+      var username = document.getElementById('ua-edit-username').value.trim();
       var phone = document.getElementById('ua-edit-phone').value.trim();
       fetch('/admin/accounts/' + id + '/update', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: name, phone: phone })
+        body: JSON.stringify({ display_name: name, phone: phone, username: username })
       }).then(r => r.json()).then(function(d) {
         if (d.ok) {
           document.getElementById('ua-edit-modal').style.display = 'none';

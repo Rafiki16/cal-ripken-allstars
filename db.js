@@ -216,6 +216,7 @@ async function init() {
     try { await pool.query('ALTER TABLE parent_accounts ADD COLUMN last_login_at TIMESTAMPTZ'); } catch (e) { /* exists */ }
     try { await pool.query("ALTER TABLE parent_accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'parent'"); } catch (e) { /* exists */ }
     try { await pool.query('ALTER TABLE parent_accounts ADD COLUMN approved BOOLEAN NOT NULL DEFAULT true'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE parent_accounts ADD COLUMN username TEXT UNIQUE'); } catch (e) { /* exists */ }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS player_parents (
@@ -619,12 +620,14 @@ async function init() {
       ),
       updateJerseyNumber: async (id, number) => pool.query('UPDATE players SET jersey_number = $1 WHERE id = $2', [number, id]),
       getParentAccountByPhone: async (phone) => (await pool.query('SELECT * FROM parent_accounts WHERE phone = $1', [phone])).rows[0] || null,
+      getParentAccountByUsername: async (username) => (await pool.query('SELECT * FROM parent_accounts WHERE LOWER(username) = LOWER($1)', [username])).rows[0] || null,
       createParentAccount: async (phone, displayName, passwordHash) => pool.query('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES ($1, $2, $3)', [phone, displayName, passwordHash]),
       getAllParentAccounts: async () => (await pool.query('SELECT * FROM parent_accounts ORDER BY display_name')).rows,
       getParentAccountById: async (id) => (await pool.query('SELECT * FROM parent_accounts WHERE id = $1', [id])).rows[0] || null,
       updateParentAccountPassword: async (id, passwordHash) => pool.query('UPDATE parent_accounts SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
       updateParentAccountName: async (id, displayName) => pool.query('UPDATE parent_accounts SET display_name = $1 WHERE id = $2', [displayName, id]),
       updateParentAccountPhone: async (id, phone) => pool.query('UPDATE parent_accounts SET phone = $1 WHERE id = $2', [phone, id]),
+      updateParentAccountUsername: async (id, username) => pool.query('UPDATE parent_accounts SET username = $1 WHERE id = $2', [username || null, id]),
       updateParentLoginTime: async (phone) => pool.query('UPDATE parent_accounts SET last_login_at = NOW() WHERE phone = $1', [phone]),
       deleteParentAccount: async (id) => pool.query('DELETE FROM parent_accounts WHERE id = $1', [id]),
       updatePlayerParentPhone: async (playerId, phone) => pool.query('UPDATE players SET parent_phone = $1 WHERE id = $2', [phone, playerId]),
@@ -1016,6 +1019,7 @@ async function init() {
     try { sqliteDb.exec('ALTER TABLE parent_accounts ADD COLUMN last_login_at TEXT'); } catch (e) { /* exists */ }
     try { sqliteDb.exec("ALTER TABLE parent_accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'parent'"); } catch (e) { /* exists */ }
     try { sqliteDb.exec('ALTER TABLE parent_accounts ADD COLUMN approved INTEGER NOT NULL DEFAULT 1'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE parent_accounts ADD COLUMN username TEXT UNIQUE'); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS player_parents (
@@ -1419,12 +1423,14 @@ async function init() {
       },
       updateJerseyNumber: async (id, number) => sqliteDb.prepare('UPDATE players SET jersey_number = ? WHERE id = ?').run(number, id),
       getParentAccountByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE phone = ?').get(phone) || null,
+      getParentAccountByUsername: async (username) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE LOWER(username) = LOWER(?)').get(username) || null,
       createParentAccount: async (phone, displayName, passwordHash) => sqliteDb.prepare('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES (?, ?, ?)').run(phone, displayName, passwordHash),
       getAllParentAccounts: async () => sqliteDb.prepare('SELECT * FROM parent_accounts ORDER BY display_name').all(),
       getParentAccountById: async (id) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE id = ?').get(id) || null,
       updateParentAccountPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE parent_accounts SET password_hash = ? WHERE id = ?').run(passwordHash, id),
       updateParentAccountName: async (id, displayName) => sqliteDb.prepare('UPDATE parent_accounts SET display_name = ? WHERE id = ?').run(displayName, id),
       updateParentAccountPhone: async (id, phone) => sqliteDb.prepare('UPDATE parent_accounts SET phone = ? WHERE id = ?').run(phone, id),
+      updateParentAccountUsername: async (id, username) => sqliteDb.prepare('UPDATE parent_accounts SET username = ? WHERE id = ?').run(username || null, id),
       updateParentLoginTime: async (phone) => sqliteDb.prepare("UPDATE parent_accounts SET last_login_at = datetime('now') WHERE phone = ?").run(phone),
       deleteParentAccount: async (id) => sqliteDb.prepare('DELETE FROM parent_accounts WHERE id = ?').run(id),
       updatePlayerParentPhone: async (playerId, phone) => sqliteDb.prepare('UPDATE players SET parent_phone = ? WHERE id = ?').run(phone, playerId),
@@ -1701,12 +1707,14 @@ module.exports = {
   logReminder: (...args) => impl.logReminder(...args),
   updateJerseyNumber: (...args) => impl.updateJerseyNumber(...args),
   getParentAccountByPhone: (...args) => impl.getParentAccountByPhone(...args),
+  getParentAccountByUsername: (...args) => impl.getParentAccountByUsername(...args),
   createParentAccount: (...args) => impl.createParentAccount(...args),
   getAllParentAccounts: (...args) => impl.getAllParentAccounts(...args),
   getParentAccountById: (...args) => impl.getParentAccountById(...args),
   updateParentAccountPassword: (...args) => impl.updateParentAccountPassword(...args),
   updateParentAccountName: (...args) => impl.updateParentAccountName(...args),
   updateParentAccountPhone: (...args) => impl.updateParentAccountPhone(...args),
+  updateParentAccountUsername: (...args) => impl.updateParentAccountUsername(...args),
   updateParentLoginTime: (...args) => impl.updateParentLoginTime(...args),
   deleteParentAccount: (...args) => impl.deleteParentAccount(...args),
   updatePlayerParentPhone: (...args) => impl.updatePlayerParentPhone(...args),

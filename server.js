@@ -658,17 +658,24 @@ app.get('/parent/login', (req, res) => {
 });
 
 app.post('/parent/login', async (req, res) => {
-  const phone = normalizePhone(req.body.phone || '');
+  const loginId = (req.body.login_id || '').trim();
   const { password } = req.body;
-  if (phone.length !== 10) {
-    return res.render('parent-login', { error: 'Please enter a valid 10-digit phone number.' });
+  if (!loginId) {
+    return res.render('parent-login', { error: 'Please enter your username or phone number.' });
   }
-  const account = await db.getParentAccountByPhone(phone);
+  const phone = normalizePhone(loginId);
+  let account = null;
+  if (phone.length === 10) {
+    account = await db.getParentAccountByPhone(phone);
+  }
+  if (!account) {
+    account = await db.getParentAccountByUsername(loginId);
+  }
   if (!account || !bcrypt.compareSync(password || '', account.password_hash)) {
-    return res.render('parent-login', { error: 'Invalid phone number or password.' });
+    return res.render('parent-login', { error: 'Invalid username/phone or password.' });
   }
-  await db.updateParentLoginTime(phone);
-  setParentCookie(res, phone);
+  await db.updateParentLoginTime(account.phone);
+  setParentCookie(res, account.phone);
   res.redirect('/');
 });
 
@@ -1656,13 +1663,13 @@ app.get('/admin/accounts', requireAdmin, async (req, res) => {
   const result = [];
   for (const a of accounts) {
     const linked = await db.getLinkedPlayersByAccount(a.id);
-    result.push({ id: a.id, phone: a.phone, display_name: a.display_name, created_at: a.created_at, role: a.role || 'parent', approved: a.approved !== false && a.approved !== 0, players: linked.map(p => ({ id: p.id, name: p.player_name })) });
+    result.push({ id: a.id, phone: a.phone, username: a.username || '', display_name: a.display_name, created_at: a.created_at, role: a.role || 'parent', approved: a.approved !== false && a.approved !== 0, players: linked.map(p => ({ id: p.id, name: p.player_name })) });
   }
   res.json(result);
 });
 
 app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
-  const { phone, display_name, password, player_ids } = req.body;
+  const { phone, display_name, password, player_ids, username } = req.body;
   const normalized = normalizePhone(phone || '');
   if (normalized.length !== 10) return res.json({ ok: false, error: 'Invalid phone number.' });
   if (!display_name || !display_name.trim()) return res.json({ ok: false, error: 'Name is required.' });
@@ -1671,8 +1678,16 @@ app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
   const existing = await db.getParentAccountByPhone(normalized);
   if (existing) return res.json({ ok: false, error: 'An account already exists for this phone number.' });
 
+  if (username && username.trim()) {
+    const usernameClash = await db.getParentAccountByUsername(username.trim());
+    if (usernameClash) return res.json({ ok: false, error: 'Username already taken.' });
+  }
+
   const hash = bcrypt.hashSync(password, 10);
   const newAccount = await db.createParentAccountFull(normalized, display_name.trim(), hash, 'parent', true);
+  if (username && username.trim()) {
+    await db.updateParentAccountUsername(newAccount.id, username.trim());
+  }
 
   if (player_ids && player_ids.length > 0) {
     for (const pid of player_ids) {
@@ -1683,7 +1698,8 @@ app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
   const baseUrl = process.env.BASE_URL || 'https://cal-ripken-allstars.onrender.com';
   const formattedPhone = normalized.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
   const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
-  const smsBody = `${teamName}: Your parent account is ready!\n\nLogin: ${baseUrl}/parent/login\nPhone: ${formattedPhone}\nPassword: ${password}\n\nSign in to view the schedule, RSVPs, and lineups.`;
+  const loginInfo = username && username.trim() ? `Username: ${username.trim()}` : `Phone: ${formattedPhone}`;
+  const smsBody = `${teamName}: Your parent account is ready!\n\nLogin: ${baseUrl}/parent/login\n${loginInfo}\nPassword: ${password}\n\nSign in to view the schedule, RSVPs, and lineups.`;
   await sendSMS(normalized, smsBody);
 
   res.json({ ok: true, smsSent: !!(twilioClient && twilioFrom) });
@@ -1691,7 +1707,7 @@ app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
 
 app.post('/admin/accounts/:id/update', requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  const { display_name, phone } = req.body;
+  const { display_name, phone, username } = req.body;
   const account = await db.getParentAccountById(id);
   if (!account) return res.json({ ok: false, error: 'Account not found.' });
 
@@ -1704,6 +1720,15 @@ app.post('/admin/accounts/:id/update', requireAdmin, async (req, res) => {
     const clash = await db.getParentAccountByPhone(normalized);
     if (clash && clash.id !== id) return res.json({ ok: false, error: 'Phone already in use by another account.' });
     await db.updateParentAccountPhone(id, normalized);
+  }
+  if (username !== undefined) {
+    if (username && username.trim()) {
+      const clash = await db.getParentAccountByUsername(username.trim());
+      if (clash && clash.id !== id) return res.json({ ok: false, error: 'Username already taken.' });
+      await db.updateParentAccountUsername(id, username.trim());
+    } else {
+      await db.updateParentAccountUsername(id, null);
+    }
   }
   res.json({ ok: true });
 });
