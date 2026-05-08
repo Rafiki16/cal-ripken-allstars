@@ -97,6 +97,7 @@ async function init() {
       )
     `);
     try { await pool.query('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+    await pool.query("UPDATE admins SET password_hash = '$2b$10$hb.3b.Gksd0k8bvUpKLASeobpoRFX/NK6TBgpz3WU2yqy30jDANza' WHERE username = 'matt@mt26.com'");
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS team_events (
