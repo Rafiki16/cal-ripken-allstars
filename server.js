@@ -2247,6 +2247,66 @@ app.post('/api/game/:id/substitute', requireScoreKeeper, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/game/:id/dead-ball', requireScoreKeeper, async (req, res) => {
+  const gameId = Number(req.params.id);
+  const game = await db.getLiveGame(gameId);
+  if (!game || game.status !== 'active') return res.status(400).json({ error: 'Game not active' });
+
+  const { type, runner_from, runner_out } = req.body;
+  const prevState = JSON.stringify({
+    outs: game.outs, our_score: game.our_score, opp_score: game.opp_score,
+    runner_first: game.runner_first, runner_second: game.runner_second, runner_third: game.runner_third,
+    current_half: game.current_half, current_inning: game.current_inning
+  });
+
+  const weAreBatting = (game.home_away === 'home' && game.current_half === 'bot') || (game.home_away === 'away' && game.current_half === 'top');
+  const updates = {};
+  let rf = game.runner_first, rs = game.runner_second, rt = game.runner_third;
+
+  if (type === 'SB' || type === 'WP' || type === 'PB' || type === 'balk') {
+    if (type === 'SB' && runner_from) {
+      if (runner_from === 'first') { rs = rf; rf = null; }
+      else if (runner_from === 'second') { rt = rs; rs = null; }
+      else if (runner_from === 'third') {
+        if (weAreBatting) updates.our_score = game.our_score + 1;
+        else updates.opp_score = game.opp_score + 1;
+        rt = null;
+      }
+    } else if (type !== 'SB') {
+      if (rt) {
+        if (weAreBatting) updates.our_score = (updates.our_score !== undefined ? updates.our_score : game.our_score) + 1;
+        else updates.opp_score = (updates.opp_score !== undefined ? updates.opp_score : game.opp_score) + 1;
+        rt = null;
+      }
+      if (rs) { rt = rs; rs = null; }
+      if (rf) { rs = rf; rf = null; }
+    }
+  } else if (type === 'pickoff' && runner_out) {
+    if (runner_out === 'first') rf = null;
+    else if (runner_out === 'second') rs = null;
+    else if (runner_out === 'third') rt = null;
+    const newOuts = game.outs + 1;
+    if (newOuts >= 3) {
+      const nextHalf = game.current_half === 'top' ? 'bot' : 'top';
+      const nextInning = game.current_half === 'bot' ? game.current_inning + 1 : game.current_inning;
+      updates.outs = 0;
+      updates.current_half = nextHalf;
+      updates.current_inning = nextInning;
+      rf = null; rs = null; rt = null;
+    } else {
+      updates.outs = newOuts;
+    }
+  }
+
+  updates.runner_first = rf;
+  updates.runner_second = rs;
+  updates.runner_third = rt;
+
+  await db.pushUndo(gameId, 'dead_ball', JSON.stringify({ type }), prevState);
+  await db.updateGameState(gameId, updates);
+  res.json({ ok: true });
+});
+
 app.post('/api/game/:id/swap-positions', requireScoreKeeper, async (req, res) => {
   const gameId = Number(req.params.id);
   const { roster_id_a, roster_id_b } = req.body;

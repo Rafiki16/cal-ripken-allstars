@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/styles.css">
   <style>
     * { box-sizing: border-box; }
-    body { margin:0; padding:0; background:#0f172a; color:#e2e8f0; font-family:Arial,sans-serif; }
+    body { margin:0; padding:0; background:#0f172a; color:#e2e8f0; font-family:Arial,sans-serif; padding-bottom:50px; }
     .score-header { background:#1a2744; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; }
     .score-header .teams { font-size:14px; }
     .score-header .score-big { font-size:32px; font-weight:bold; color:#d4a843; }
@@ -20,16 +20,20 @@
     .count-dot.active-ball { background:#22c55e; border-color:#22c55e; }
     .count-dot.active-strike { background:#ef4444; border-color:#ef4444; }
     .count-dot.active-out { background:#f59e0b; border-color:#f59e0b; }
-    .batter-info { padding:12px 16px; background:#1e293b; border-bottom:1px solid #334155; text-align:center; }
+    .batter-info { padding:8px 16px; background:#1e293b; border-bottom:1px solid #334155; text-align:center; }
     .batter-info .batter-name { font-size:18px; font-weight:bold; }
     .batter-info .batter-detail { font-size:12px; color:#94a3b8; }
-    .bases-diamond { display:flex; justify-content:center; padding:16px 0; }
-    .diamond-svg { width:120px; height:120px; }
-    .base { fill:none; stroke:#475569; stroke-width:2; }
+    .batter-info .on-deck { font-size:11px; color:#64748b; margin-top:2px; }
+    .pitcher-info { text-align:center; padding:4px 16px; font-size:12px; color:#94a3b8; background:#0f172a; cursor:pointer; }
+    .pitcher-info:active { background:#1e293b; }
+    .bases-diamond { display:flex; justify-content:center; padding:12px 0; }
+    .diamond-svg { width:110px; height:110px; }
+    .base { fill:none; stroke:#475569; stroke-width:2; cursor:pointer; }
     .base.occupied { fill:#d4a843; stroke:#d4a843; }
-    .pitch-buttons { padding:12px 16px; }
-    .pitch-row { display:flex; gap:8px; margin-bottom:8px; }
-    .pitch-btn { flex:1; padding:14px 8px; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; color:#fff; }
+    .base:active { opacity:0.7; }
+    .pitch-buttons { padding:8px 16px; }
+    .pitch-row { display:flex; gap:6px; margin-bottom:6px; }
+    .pitch-btn { flex:1; padding:14px 6px; border:none; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; color:#fff; }
     .pitch-btn.ball { background:#16a34a; }
     .pitch-btn.strike-c { background:#dc2626; }
     .pitch-btn.strike-s { background:#b91c1c; }
@@ -38,6 +42,12 @@
     .pitch-btn.hbp { background:#7c3aed; }
     .pitch-btn.undo-btn { background:#475569; }
     .pitch-btn:active { opacity:0.8; transform:scale(0.97); }
+    .dead-ball-row { display:flex; gap:6px; margin-bottom:6px; }
+    .db-btn { flex:1; padding:10px 4px; border:2px solid #475569; background:transparent; color:#94a3b8; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; text-align:center; }
+    .db-btn:active { background:#334155; border-color:#94a3b8; }
+    .action-row { display:flex; gap:6px; }
+    .action-btn { flex:1; padding:12px 6px; border:none; border-radius:8px; font-size:13px; font-weight:bold; cursor:pointer; color:#fff; }
+    .action-btn:active { opacity:0.8; }
     .result-panel { display:none; padding:16px; background:#1e293b; border-top:1px solid #334155; }
     .result-panel.visible { display:block; }
     .result-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
@@ -48,13 +58,11 @@
     .hit-type-row { display:flex; gap:8px; margin-bottom:8px; }
     .hit-type-btn { flex:1; padding:10px; border:2px solid #475569; background:transparent; color:#e2e8f0; border-radius:6px; font-size:12px; cursor:pointer; text-align:center; }
     .hit-type-btn.selected { border-color:#3b82f6; background:#3b82f6; color:#fff; }
-    .runner-controls { padding:12px 16px; background:#0f172a; }
     .runner-row { display:flex; justify-content:space-between; align-items:center; padding:6px 0; }
     .submit-result { width:100%; padding:14px; background:#16a34a; color:#fff; border:none; border-radius:8px; font-size:16px; font-weight:bold; cursor:pointer; margin-top:12px; }
-    .submit-result:hover { background:#15803d; }
-    .score-footer { position:fixed; bottom:0; left:0; right:0; background:#1a2744; padding:8px 16px; display:flex; justify-content:space-between; align-items:center; font-size:12px; }
+    .submit-result:active { background:#15803d; }
+    .score-footer { position:fixed; bottom:0; left:0; right:0; background:#1a2744; padding:8px 16px; display:flex; justify-content:space-between; align-items:center; font-size:12px; z-index:50; }
     .score-footer a { color:#d4a843; text-decoration:none; }
-    .pitcher-info { text-align:center; padding:4px; font-size:12px; color:#94a3b8; background:#0f172a; }
     .num-input { width:60px; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:8px; border-radius:6px; text-align:center; font-size:16px; }
     .rbi-outs-row { display:flex; gap:16px; margin-top:10px; }
     .rbi-outs-row > div { flex:1; display:flex; align-items:center; gap:8px; }
@@ -62,12 +70,37 @@
     .fielder-input { width:100%; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:10px; border-radius:6px; font-size:16px; }
     .hard-contact-btn { width:100%; padding:10px; border:2px solid #475569; background:transparent; color:#e2e8f0; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer; margin-top:8px; }
     .hard-contact-btn.selected { border-color:#f59e0b; background:#f59e0b; color:#1a2744; }
+    .panel { display:none; padding:16px; background:#1e293b; border-top:1px solid #334155; }
+    .panel.visible { display:block; }
+    .panel h3 { margin:0 0 12px; color:#d4a843; font-size:15px; }
+    .panel-close { width:100%; padding:10px; background:#475569; color:#fff; border:none; border-radius:8px; margin-top:8px; cursor:pointer; font-size:14px; }
     .pos-slot { padding:8px 10px; background:#0f172a; border-radius:6px; display:flex; justify-content:space-between; align-items:center; font-size:13px; }
     .pos-slot .pos-label { color:#d4a843; font-weight:bold; min-width:28px; }
     .pos-slot .pos-name { color:#e2e8f0; }
     .pos-slot .pos-empty { color:#475569; font-style:italic; }
     .bench-chip { padding:8px 12px; background:#0f172a; border:1px solid #475569; border-radius:6px; font-size:12px; color:#94a3b8; cursor:pointer; }
     .bench-chip:active { background:#334155; }
+    .manage-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; padding:8px 0; border-bottom:1px solid #334155; }
+    .manage-row:last-child { border-bottom:none; }
+    .manage-label { font-size:12px; color:#94a3b8; min-width:80px; }
+    .manage-value { flex:1; font-size:14px; font-weight:bold; }
+    .adj-btn { width:36px; height:36px; border:none; border-radius:6px; font-size:18px; font-weight:bold; cursor:pointer; color:#fff; display:flex; align-items:center; justify-content:center; }
+    .adj-btn:active { opacity:0.7; }
+    .adj-plus { background:#16a34a; }
+    .adj-minus { background:#dc2626; }
+    .manage-text-input { background:#334155; border:1px solid #475569; color:#e2e8f0; padding:8px 10px; border-radius:6px; font-size:14px; flex:1; }
+    .manage-select { background:#334155; border:1px solid #475569; color:#e2e8f0; padding:8px 10px; border-radius:6px; font-size:14px; flex:1; }
+    .manage-action-btn { padding:8px 16px; border:none; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer; color:#fff; }
+    .manage-action-btn:active { opacity:0.7; }
+    .lineup-table { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+    .lineup-table th { text-align:left; color:#94a3b8; font-size:11px; text-transform:uppercase; padding:4px 6px; border-bottom:1px solid #334155; }
+    .lineup-table td { padding:5px 6px; border-bottom:1px solid #1e293b; }
+    .lineup-table .current-batter { background:#334155; }
+    .runner-manage-popup { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:100; }
+    .runner-manage-card { background:#1e293b; border-radius:12px; padding:20px; width:280px; max-width:90vw; }
+    .runner-manage-card h4 { margin:0 0 12px; color:#d4a843; font-size:14px; }
+    .rmc-btn { width:100%; padding:12px; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer; color:#fff; margin-bottom:6px; }
+    .rmc-btn:active { opacity:0.8; }
   </style>
 </head>
 <body>
@@ -97,18 +130,19 @@
   <div class="batter-info">
     <div class="batter-name" id="batter-name">--</div>
     <div class="batter-detail" id="batter-detail"></div>
+    <div class="on-deck" id="on-deck-info"></div>
   </div>
 
-  <div class="pitcher-info">
-    Pitching: <span id="pitcher-name">--</span> | Pitch count: <span id="pitch-count">0</span>
+  <div class="pitcher-info" onclick="openManagePanel('pitcher')">
+    Pitching: <span id="pitcher-name">--</span> | Pitch count: <span id="pitch-count">0</span> &nbsp;<span style="color:#475569;">tap to change</span>
   </div>
 
   <div class="bases-diamond">
     <svg class="diamond-svg" viewBox="0 0 120 120">
       <polygon id="base-home" class="base" points="60,110 50,100 60,90 70,100" />
-      <polygon id="base-first" class="base" points="100,60 90,50 80,60 90,70" />
-      <polygon id="base-second" class="base" points="60,20 50,10 60,0 70,10" />
-      <polygon id="base-third" class="base" points="20,60 30,50 40,60 30,70" />
+      <polygon id="base-first" class="base" points="100,60 90,50 80,60 90,70" onclick="manageRunner('first')" />
+      <polygon id="base-second" class="base" points="60,20 50,10 60,0 70,10" onclick="manageRunner('second')" />
+      <polygon id="base-third" class="base" points="20,60 30,50 40,60 30,70" onclick="manageRunner('third')" />
       <line x1="60" y1="90" x2="90" y2="60" stroke="#475569" stroke-width="1" />
       <line x1="90" y1="60" x2="60" y2="10" stroke="#475569" stroke-width="1" />
       <line x1="60" y1="10" x2="30" y2="60" stroke="#475569" stroke-width="1" />
@@ -127,15 +161,42 @@
       <button class="pitch-btn in-play" onclick="recordPitch('in_play')">In Play</button>
       <button class="pitch-btn hbp" onclick="recordPitch('hbp')">HBP</button>
     </div>
-    <div class="pitch-row">
-      <button class="pitch-btn undo-btn" onclick="undoLast()">Undo (<span id="undo-count">0</span>)</button>
-      <button class="pitch-btn" style="background:#0ea5e9;flex:1;" onclick="toggleSubPanel()">Subs</button>
+    <div class="dead-ball-row">
+      <button class="db-btn" onclick="deadBallAction('SB')">SB</button>
+      <button class="db-btn" onclick="deadBallAction('WP')">WP</button>
+      <button class="db-btn" onclick="deadBallAction('PB')">PB</button>
+      <button class="db-btn" onclick="deadBallAction('balk')">Balk</button>
+      <button class="db-btn" onclick="deadBallAction('pickoff')">Pickoff</button>
+    </div>
+    <div class="action-row">
+      <button class="action-btn" style="background:#475569;" onclick="undoLast()">Undo (<span id="undo-count">0</span>)</button>
+      <button class="action-btn" style="background:#0ea5e9;" onclick="togglePanel('sub')">Subs</button>
+      <button class="action-btn" style="background:#8b5cf6;" onclick="togglePanel('manage')">Manage</button>
     </div>
   </div>
 
-  <div id="sub-panel" style="display:none;padding:16px;background:#1e293b;border-top:1px solid #334155;">
-    <h3 style="margin:0 0 12px;color:#d4a843;">Defensive Lineup</h3>
-    <div id="position-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:16px;"></div>
+  <!-- Dead-ball runner picker popup -->
+  <div id="db-popup" class="runner-manage-popup" style="display:none;">
+    <div class="runner-manage-card">
+      <h4 id="db-popup-title">Select Runner</h4>
+      <div id="db-popup-options"></div>
+      <button class="rmc-btn" style="background:#475569;margin-top:4px;" onclick="closeDbPopup()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Runner management popup (tap base) -->
+  <div id="runner-popup" class="runner-manage-popup" style="display:none;">
+    <div class="runner-manage-card">
+      <h4 id="runner-popup-title">Runner on 1st</h4>
+      <div id="runner-popup-options"></div>
+      <button class="rmc-btn" style="background:#475569;margin-top:4px;" onclick="closeRunnerPopup()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Subs panel -->
+  <div id="sub-panel" class="panel">
+    <h3>Defensive Lineup</h3>
+    <div id="position-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;"></div>
     <h4 style="margin:8px 0;color:#94a3b8;font-size:12px;text-transform:uppercase;">Bench</h4>
     <div id="bench-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;"></div>
     <div id="sub-action" style="display:none;margin-top:12px;background:#0f172a;border-radius:8px;padding:12px;">
@@ -146,9 +207,78 @@
         <button onclick="cancelSub()" style="padding:10px 12px;background:#475569;color:#fff;border:none;border-radius:6px;cursor:pointer;">Cancel</button>
       </div>
     </div>
-    <button onclick="toggleSubPanel()" style="width:100%;padding:10px;background:#475569;color:#fff;border:none;border-radius:8px;margin-top:8px;cursor:pointer;">Close</button>
+    <h4 style="margin:12px 0 4px;color:#94a3b8;font-size:12px;text-transform:uppercase;">Batting Order</h4>
+    <table class="lineup-table" id="batting-order-table">
+      <thead><tr><th>#</th><th>Player</th><th>Pos</th></tr></thead>
+      <tbody id="batting-order-body"></tbody>
+    </table>
+    <button class="panel-close" onclick="togglePanel('sub')">Close</button>
   </div>
 
+  <!-- Manage panel -->
+  <div id="manage-panel" class="panel">
+    <h3>Game Management</h3>
+
+    <div style="color:#94a3b8;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Our Pitcher</div>
+    <div class="manage-row">
+      <select id="our-pitcher-select" class="manage-select"></select>
+      <button class="manage-action-btn" style="background:#2563eb;" onclick="setOurPitcher()">Set</button>
+    </div>
+
+    <div style="color:#94a3b8;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Opponent Pitcher</div>
+    <div class="manage-row">
+      <input type="text" id="opp-pitcher-input" class="manage-text-input" placeholder="Opponent pitcher name">
+      <button class="manage-action-btn" style="background:#2563eb;" onclick="setOppPitcher()">Set</button>
+    </div>
+
+    <div style="color:#94a3b8;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Score Adjustment</div>
+    <div class="manage-row">
+      <span class="manage-label">Us</span>
+      <span class="manage-value" id="manage-our-score">0</span>
+      <button class="adj-btn adj-minus" onclick="adjustScore('us',-1)">&minus;</button>
+      <button class="adj-btn adj-plus" onclick="adjustScore('us',1)">+</button>
+    </div>
+    <div class="manage-row">
+      <span class="manage-label">Opponent</span>
+      <span class="manage-value" id="manage-opp-score">0</span>
+      <button class="adj-btn adj-minus" onclick="adjustScore('opp',-1)">&minus;</button>
+      <button class="adj-btn adj-plus" onclick="adjustScore('opp',1)">+</button>
+    </div>
+
+    <div style="color:#94a3b8;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Inning Control</div>
+    <div class="manage-row">
+      <span class="manage-value" id="manage-inning-display">Top 1</span>
+      <button class="manage-action-btn" style="background:#d97706;" onclick="forceNextHalf()">Next Half</button>
+    </div>
+
+    <div style="color:#94a3b8;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Manual Runners</div>
+    <div class="manage-row">
+      <span class="manage-label" style="min-width:24px;">1B</span>
+      <input type="text" id="manage-r1" class="manage-text-input" placeholder="empty">
+      <button class="manage-action-btn" style="background:#475569;" onclick="setManualRunner('first')">Set</button>
+    </div>
+    <div class="manage-row">
+      <span class="manage-label" style="min-width:24px;">2B</span>
+      <input type="text" id="manage-r2" class="manage-text-input" placeholder="empty">
+      <button class="manage-action-btn" style="background:#475569;" onclick="setManualRunner('second')">Set</button>
+    </div>
+    <div class="manage-row">
+      <span class="manage-label" style="min-width:24px;">3B</span>
+      <input type="text" id="manage-r3" class="manage-text-input" placeholder="empty">
+      <button class="manage-action-btn" style="background:#475569;" onclick="setManualRunner('third')">Set</button>
+    </div>
+
+    <div style="color:#94a3b8;font-size:11px;text-transform:uppercase;margin-bottom:6px;">Outs Override</div>
+    <div class="manage-row">
+      <span class="manage-value" id="manage-outs-display">0</span>
+      <button class="adj-btn adj-minus" onclick="adjustOuts(-1)">&minus;</button>
+      <button class="adj-btn adj-plus" onclick="adjustOuts(1)">+</button>
+    </div>
+
+    <button class="panel-close" onclick="togglePanel('manage')">Close</button>
+  </div>
+
+  <!-- In-play result panel -->
   <div class="result-panel" id="result-panel">
     <h3 style="margin:0 0 12px;color:#d4a843;">Ball In Play Result</h3>
     <div class="result-grid">
@@ -222,6 +352,7 @@
   var state = null;
   var selectedResult = null;
   var selectedHitType = null;
+  var openPanel = null;
 
   function api(url, opts) {
     opts = opts || {};
@@ -240,6 +371,8 @@
     }
     el.innerHTML = html;
   }
+
+  var POS_LABELS = {1:'P',2:'C',3:'1B',4:'2B',5:'3B',6:'SS',7:'LF',8:'CF',9:'RF',10:'EH'};
 
   function updateDisplay() {
     if (!state) return;
@@ -265,6 +398,10 @@
     }
     document.getElementById('batter-detail').textContent = weAreBatting ? 'Batting' : 'Opponent batting';
 
+    var nextIdx = (batterIdx + 1) % roster.length;
+    var nextBatter = roster[nextIdx];
+    document.getElementById('on-deck-info').textContent = nextBatter ? 'On deck: ' + nextBatter.player_name : '';
+
     var pitcherName = weAreBatting ? g.opp_pitcher_name : '';
     var pitchCount = 0;
     if (!weAreBatting && g.current_pitcher_us) {
@@ -283,8 +420,26 @@
     if (g.runner_first) document.getElementById('runner-1b').value = g.runner_first;
     if (g.runner_second) document.getElementById('runner-2b').value = g.runner_second;
     if (g.runner_third) document.getElementById('runner-3b').value = g.runner_third;
+
+    document.getElementById('manage-our-score').textContent = g.our_score;
+    document.getElementById('manage-opp-score').textContent = g.opp_score;
+    document.getElementById('manage-inning-display').textContent = (g.current_half === 'top' ? 'Top ' : 'Bot ') + g.current_inning;
+    document.getElementById('manage-outs-display').textContent = g.outs;
+    document.getElementById('manage-r1').value = g.runner_first || '';
+    document.getElementById('manage-r2').value = g.runner_second || '';
+    document.getElementById('manage-r3').value = g.runner_third || '';
+    document.getElementById('opp-pitcher-input').value = g.opp_pitcher_name || '';
+
+    var pitcherSelect = document.getElementById('our-pitcher-select');
+    var curPitcher = g.current_pitcher_us;
+    var pitcherHtml = '<option value="">-- None --</option>';
+    state.roster.forEach(function(r) {
+      pitcherHtml += '<option value="' + r.player_id + '"' + (r.player_id === curPitcher ? ' selected' : '') + '>' + r.player_name + '</option>';
+    });
+    pitcherSelect.innerHTML = pitcherHtml;
   }
 
+  // --- Pitch recording ---
   function recordPitch(result) {
     api('/api/game/' + GAME_ID + '/pitch', {
       method: 'POST',
@@ -300,6 +455,7 @@
     });
   }
 
+  // --- In-play result ---
   function selectResult(r) {
     selectedResult = r;
     document.querySelectorAll('.result-btn').forEach(function(b) { b.classList.remove('selected'); });
@@ -309,7 +465,11 @@
     document.getElementById('error-section').style.display = r === 'error' ? 'block' : 'none';
 
     if (r === 'HR') {
-      document.getElementById('rbi-count').value = 1;
+      var rbis = 1;
+      if (state && state.game.runner_first) rbis++;
+      if (state && state.game.runner_second) rbis++;
+      if (state && state.game.runner_third) rbis++;
+      document.getElementById('rbi-count').value = rbis;
       document.getElementById('outs-on-play').value = 0;
       document.getElementById('runner-1b').value = '';
       document.getElementById('runner-2b').value = '';
@@ -322,12 +482,22 @@
       document.getElementById('outs-on-play').value = 0;
     }
 
-    if (r === '1B' && state) {
+    if (state) {
       var g = state.game;
       var batter = state.currentAB ? state.currentAB.batter_name : 'Batter';
-      document.getElementById('runner-1b').value = batter;
-      if (g.runner_first) document.getElementById('runner-2b').value = g.runner_first;
-      if (g.runner_second) document.getElementById('runner-3b').value = g.runner_second;
+      if (r === '1B') {
+        document.getElementById('runner-1b').value = batter;
+        document.getElementById('runner-2b').value = g.runner_first || '';
+        document.getElementById('runner-3b').value = g.runner_second || '';
+      } else if (r === '2B') {
+        document.getElementById('runner-1b').value = '';
+        document.getElementById('runner-2b').value = batter;
+        document.getElementById('runner-3b').value = g.runner_first || '';
+      } else if (r === '3B') {
+        document.getElementById('runner-1b').value = '';
+        document.getElementById('runner-2b').value = '';
+        document.getElementById('runner-3b').value = batter;
+      }
     }
   }
 
@@ -388,15 +558,205 @@
     api('/api/game/' + GAME_ID + '/undo', { method: 'POST' }).then(function() { pollState(); });
   }
 
-  var POS_LABELS = {1:'P',2:'C',3:'1B',4:'2B',5:'3B',6:'SS',7:'LF',8:'CF',9:'RF',10:'EH'};
-  var subPanelOpen = false;
-  var pendingSub = null;
+  // --- Dead-ball events ---
+  var pendingDeadBall = null;
 
-  function toggleSubPanel() {
-    subPanelOpen = !subPanelOpen;
-    document.getElementById('sub-panel').style.display = subPanelOpen ? 'block' : 'none';
-    if (subPanelOpen) renderSubPanel();
+  function deadBallAction(type) {
+    if (!state) return;
+    var g = state.game;
+
+    if (type === 'SB') {
+      var runners = [];
+      if (g.runner_third) runners.push({ base: 'third', name: g.runner_third, label: '3rd → Home' });
+      if (g.runner_second) runners.push({ base: 'second', name: g.runner_second, label: '2nd → 3rd' });
+      if (g.runner_first) runners.push({ base: 'first', name: g.runner_first, label: '1st → 2nd' });
+      if (runners.length === 0) return alert('No runners on base');
+      if (runners.length === 1) {
+        api('/api/game/' + GAME_ID + '/dead-ball', { method: 'POST', body: JSON.stringify({ type: 'SB', runner_from: runners[0].base }) }).then(function() { pollState(); });
+        return;
+      }
+      showDbPopup('Stolen Base — which runner?', runners.map(function(r) {
+        return { label: r.name + ' (' + r.label + ')', action: function() { closeDbPopup(); api('/api/game/' + GAME_ID + '/dead-ball', { method: 'POST', body: JSON.stringify({ type: 'SB', runner_from: r.base }) }).then(function() { pollState(); }); } };
+      }));
+    } else if (type === 'WP' || type === 'PB' || type === 'balk') {
+      if (!g.runner_first && !g.runner_second && !g.runner_third) return alert('No runners on base');
+      api('/api/game/' + GAME_ID + '/dead-ball', { method: 'POST', body: JSON.stringify({ type: type }) }).then(function() { pollState(); });
+    } else if (type === 'pickoff') {
+      var runners = [];
+      if (g.runner_first) runners.push({ base: 'first', name: g.runner_first });
+      if (g.runner_second) runners.push({ base: 'second', name: g.runner_second });
+      if (g.runner_third) runners.push({ base: 'third', name: g.runner_third });
+      if (runners.length === 0) return alert('No runners on base');
+      if (runners.length === 1) {
+        api('/api/game/' + GAME_ID + '/dead-ball', { method: 'POST', body: JSON.stringify({ type: 'pickoff', runner_out: runners[0].base }) }).then(function() { pollState(); });
+        return;
+      }
+      showDbPopup('Pickoff — which runner is out?', runners.map(function(r) {
+        return { label: r.name + ' (on ' + r.base + ')', action: function() { closeDbPopup(); api('/api/game/' + GAME_ID + '/dead-ball', { method: 'POST', body: JSON.stringify({ type: 'pickoff', runner_out: r.base }) }).then(function() { pollState(); }); } };
+      }));
+    }
   }
+
+  function showDbPopup(title, options) {
+    document.getElementById('db-popup-title').textContent = title;
+    var html = '';
+    options.forEach(function(opt, i) {
+      html += '<button class="rmc-btn" style="background:#2563eb;" onclick="dbPopupActions[' + i + ']()">' + opt.label + '</button>';
+    });
+    window.dbPopupActions = options.map(function(o) { return o.action; });
+    document.getElementById('db-popup-options').innerHTML = html;
+    document.getElementById('db-popup').style.display = 'flex';
+  }
+
+  function closeDbPopup() {
+    document.getElementById('db-popup').style.display = 'none';
+  }
+
+  // --- Runner management (tap base) ---
+  function manageRunner(base) {
+    if (!state) return;
+    var g = state.game;
+    var runner = base === 'first' ? g.runner_first : base === 'second' ? g.runner_second : g.runner_third;
+    var baseLabel = base === 'first' ? '1st' : base === 'second' ? '2nd' : '3rd';
+
+    if (runner) {
+      var opts = [];
+      if (base === 'first') opts.push({ label: 'Advance to 2nd', action: function() { moveRunner('first', 'second'); } });
+      if (base === 'first') opts.push({ label: 'Advance to 3rd', action: function() { moveRunner('first', 'third'); } });
+      if (base === 'second') opts.push({ label: 'Advance to 3rd', action: function() { moveRunner('second', 'third'); } });
+      opts.push({ label: 'Score (advance home)', action: function() { moveRunner(base, 'home'); } });
+      opts.push({ label: 'Remove runner (out/error)', action: function() { removeRunner(base); } });
+
+      showRunnerPopup(runner + ' on ' + baseLabel, opts);
+    } else {
+      var namePrompt = prompt('Place runner on ' + baseLabel + ' (enter name):');
+      if (namePrompt && namePrompt.trim()) {
+        var updates = {};
+        updates['runner_' + base] = namePrompt.trim();
+        api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify(updates) }).then(function() { pollState(); });
+      }
+    }
+  }
+
+  function moveRunner(from, to) {
+    closeRunnerPopup();
+    if (!state) return;
+    var g = state.game;
+    var runner = from === 'first' ? g.runner_first : from === 'second' ? g.runner_second : g.runner_third;
+    var updates = {};
+    updates['runner_' + from] = null;
+    if (to === 'home') {
+      var weAreBatting = (g.home_away === 'home' && g.current_half === 'bot') || (g.home_away === 'away' && g.current_half === 'top');
+      if (weAreBatting) updates.our_score = g.our_score + 1;
+      else updates.opp_score = g.opp_score + 1;
+    } else {
+      updates['runner_' + to] = runner;
+    }
+    api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify(updates) }).then(function() { pollState(); });
+  }
+
+  function removeRunner(base) {
+    closeRunnerPopup();
+    var updates = {};
+    updates['runner_' + base] = null;
+    api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify(updates) }).then(function() { pollState(); });
+  }
+
+  function showRunnerPopup(title, options) {
+    document.getElementById('runner-popup-title').textContent = title;
+    var html = '';
+    options.forEach(function(opt, i) {
+      html += '<button class="rmc-btn" style="background:#2563eb;" onclick="runnerPopupActions[' + i + ']()">' + opt.label + '</button>';
+    });
+    window.runnerPopupActions = options.map(function(o) { return o.action; });
+    document.getElementById('runner-popup-options').innerHTML = html;
+    document.getElementById('runner-popup').style.display = 'flex';
+  }
+
+  function closeRunnerPopup() {
+    document.getElementById('runner-popup').style.display = 'none';
+  }
+
+  // --- Panel toggling ---
+  function togglePanel(name) {
+    var panels = ['sub', 'manage'];
+    if (openPanel === name) {
+      document.getElementById(name + '-panel').classList.remove('visible');
+      openPanel = null;
+      return;
+    }
+    panels.forEach(function(p) { document.getElementById(p + '-panel').classList.remove('visible'); });
+    document.getElementById(name + '-panel').classList.add('visible');
+    openPanel = name;
+    if (name === 'sub') renderSubPanel();
+    if (name === 'manage') updateManagePanel();
+  }
+
+  function openManagePanel(section) {
+    togglePanel('manage');
+  }
+
+  function updateManagePanel() {
+    if (!state) return;
+    var g = state.game;
+    document.getElementById('manage-our-score').textContent = g.our_score;
+    document.getElementById('manage-opp-score').textContent = g.opp_score;
+    document.getElementById('manage-inning-display').textContent = (g.current_half === 'top' ? 'Top ' : 'Bot ') + g.current_inning;
+    document.getElementById('manage-outs-display').textContent = g.outs;
+  }
+
+  // --- Manage: pitchers ---
+  function setOurPitcher() {
+    var val = document.getElementById('our-pitcher-select').value;
+    api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify({ current_pitcher_us: val ? Number(val) : null }) }).then(function() { pollState(); });
+  }
+
+  function setOppPitcher() {
+    var val = document.getElementById('opp-pitcher-input').value.trim();
+    api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify({ opp_pitcher_name: val || null }) }).then(function() { pollState(); });
+  }
+
+  // --- Manage: score ---
+  function adjustScore(team, delta) {
+    if (!state) return;
+    var g = state.game;
+    var key = team === 'us' ? 'our_score' : 'opp_score';
+    var newVal = Math.max(0, (team === 'us' ? g.our_score : g.opp_score) + delta);
+    var updates = {};
+    updates[key] = newVal;
+    api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify(updates) }).then(function() { pollState(); });
+  }
+
+  // --- Manage: inning ---
+  function forceNextHalf() {
+    if (!state) return;
+    var g = state.game;
+    var nextHalf = g.current_half === 'top' ? 'bot' : 'top';
+    var nextInning = g.current_half === 'bot' ? g.current_inning + 1 : g.current_inning;
+    api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify({
+      current_half: nextHalf, current_inning: nextInning, outs: 0, balls: 0, strikes: 0,
+      runner_first: null, runner_second: null, runner_third: null
+    }) }).then(function() { pollState(); });
+  }
+
+  // --- Manage: manual runners ---
+  function setManualRunner(base) {
+    var inputId = base === 'first' ? 'manage-r1' : base === 'second' ? 'manage-r2' : 'manage-r3';
+    var val = document.getElementById(inputId).value.trim();
+    var updates = {};
+    updates['runner_' + base] = val || null;
+    api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify(updates) }).then(function() { pollState(); });
+  }
+
+  // --- Manage: outs ---
+  function adjustOuts(delta) {
+    if (!state) return;
+    var newOuts = Math.max(0, Math.min(3, state.game.outs + delta));
+    api('/api/game/' + GAME_ID + '/update-state', { method: 'POST', body: JSON.stringify({ outs: newOuts }) }).then(function() { pollState(); });
+  }
+
+  // --- Substitution panel ---
+  var pendingSub = null;
 
   function renderSubPanel() {
     if (!state) return;
@@ -429,6 +789,22 @@
       });
     }
     benchList.innerHTML = benchHtml;
+
+    var g = state.game;
+    var weAreBatting = (g.home_away === 'home' && g.current_half === 'bot') || (g.home_away === 'away' && g.current_half === 'top');
+    var battingRoster = weAreBatting ? state.roster : state.oppRoster;
+    var batterIdx = weAreBatting ? g.current_batter_us : g.current_batter_opp;
+    var boHtml = '';
+    battingRoster.forEach(function(r, i) {
+      var isCurrent = (i === batterIdx % battingRoster.length);
+      var pos = r.current_position ? POS_LABELS[r.current_position] || '' : '';
+      boHtml += '<tr' + (isCurrent ? ' class="current-batter"' : '') + '>';
+      boHtml += '<td style="color:#94a3b8;">' + (i + 1) + '</td>';
+      boHtml += '<td>' + (isCurrent ? '<strong style="color:#d4a843;">' : '') + r.player_name + (isCurrent ? ' ◀</strong>' : '') + '</td>';
+      boHtml += '<td style="color:#64748b;">' + pos + '</td>';
+      boHtml += '</tr>';
+    });
+    document.getElementById('batting-order-body').innerHTML = boHtml;
   }
 
   function startSub(playerId, playerName) {
@@ -472,6 +848,7 @@
     document.getElementById('sub-action').style.display = 'none';
   }
 
+  // --- State polling ---
   function pollState() {
     return api('/api/game/' + GAME_ID + '/state').then(function(data) {
       state = data;
