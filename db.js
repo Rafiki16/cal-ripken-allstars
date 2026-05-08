@@ -96,6 +96,7 @@ async function init() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    try { await pool.query('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS team_events (
@@ -593,6 +594,8 @@ async function init() {
       countAdmins: async () => parseInt((await pool.query('SELECT COUNT(*) as c FROM admins')).rows[0].c),
       createAdmin: async (username, passwordHash) => pool.query('INSERT INTO admins (username, password_hash) VALUES ($1, $2)', [username, passwordHash]),
       updateAdminPassword: async (id, passwordHash) => pool.query('UPDATE admins SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
+      updateAdminEmail: async (id, email) => pool.query('UPDATE admins SET email = $1 WHERE id = $2', [email, id]),
+      getAdminByEmail: async (email) => (await pool.query('SELECT * FROM admins WHERE LOWER(email) = LOWER($1)', [email])).rows[0] || null,
       removeAdmin: async (id) => pool.query('DELETE FROM admins WHERE id = $1', [id]),
       getRsvp: async (eventId, playerId) => (await pool.query('SELECT * FROM rsvps WHERE team_event_id = $1 AND player_id = $2', [eventId, playerId])).rows[0] || null,
       getRsvpsForEvent: async (eventId) => (await pool.query('SELECT r.*, p.player_name, p.parent_name FROM rsvps r JOIN players p ON r.player_id = p.id WHERE r.team_event_id = $1 ORDER BY p.player_name', [eventId])).rows,
@@ -899,6 +902,7 @@ async function init() {
         created_at TEXT DEFAULT (datetime('now'))
       )
     `);
+    try { sqliteDb.exec('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS team_events (
@@ -1394,6 +1398,8 @@ async function init() {
       countAdmins: async () => sqliteDb.prepare('SELECT COUNT(*) as c FROM admins').get().c,
       createAdmin: async (username, passwordHash) => sqliteDb.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(username, passwordHash),
       updateAdminPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(passwordHash, id),
+      updateAdminEmail: async (id, email) => sqliteDb.prepare('UPDATE admins SET email = ? WHERE id = ?').run(email, id),
+      getAdminByEmail: async (email) => sqliteDb.prepare('SELECT * FROM admins WHERE LOWER(email) = LOWER(?)').get(email) || null,
       removeAdmin: async (id) => sqliteDb.prepare('DELETE FROM admins WHERE id = ?').run(id),
       getRsvp: async (eventId, playerId) => sqliteDb.prepare('SELECT * FROM rsvps WHERE team_event_id = ? AND player_id = ?').get(eventId, playerId) || null,
       getRsvpsForEvent: async (eventId) => sqliteDb.prepare('SELECT r.*, p.player_name, p.parent_name FROM rsvps r JOIN players p ON r.player_id = p.id WHERE r.team_event_id = ? ORDER BY p.player_name').all(eventId),
@@ -1697,6 +1703,8 @@ module.exports = {
   countAdmins: (...args) => impl.countAdmins(...args),
   createAdmin: (...args) => impl.createAdmin(...args),
   updateAdminPassword: (...args) => impl.updateAdminPassword(...args),
+  updateAdminEmail: (...args) => impl.updateAdminEmail(...args),
+  getAdminByEmail: (...args) => impl.getAdminByEmail(...args),
   removeAdmin: (...args) => impl.removeAdmin(...args),
   getRsvp: (...args) => impl.getRsvp(...args),
   getRsvpsForEvent: (...args) => impl.getRsvpsForEvent(...args),

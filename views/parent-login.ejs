@@ -36,6 +36,9 @@
   </header>
 
   <main class="container">
+    <% if (success) { %>
+      <div class="alert" style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;padding:12px;border-radius:8px;margin-bottom:16px;text-align:center;"><%= success %></div>
+    <% } %>
     <% if (error) { %>
       <div class="alert alert-error"><%= error %></div>
     <% } %>
@@ -57,6 +60,7 @@
         </div>
         <button type="submit" class="btn btn-primary">Sign In</button>
       </form>
+      <p style="text-align:center;margin-top:12px;"><a href="/forgot-password?type=parent" style="color:#6b7280;font-size:13px;">Forgot password?</a></p>
     </div>
 
     <div class="login-footer">
