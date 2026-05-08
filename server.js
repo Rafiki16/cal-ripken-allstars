@@ -985,14 +985,6 @@ app.post('/admin/login', async (req, res) => {
   res.redirect('/admin');
 });
 
-app.get('/admin/emergency-reset-xK9mQ7', async (req, res) => {
-  const admins = await db.getAllAdmins();
-  if (admins.length === 0) return res.send('No admins found');
-  const hash = bcrypt.hashSync('RipkenAllStars2026!', 10);
-  await db.updateAdminPassword(admins[0].id, hash);
-  res.send('Password reset for admin: ' + admins[0].username + '. New password: RipkenAllStars2026! — Please change it immediately.');
-});
-
 app.get('/admin/setup', async (req, res) => {
   const count = await db.countAdmins();
   if (count > 0) return res.redirect('/admin/login');
