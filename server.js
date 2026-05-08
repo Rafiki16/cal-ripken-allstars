@@ -643,28 +643,85 @@ app.post('/respond', async (req, res) => {
 
 // --- Parent Account Routes ---
 
+app.get('/parent/register', (req, res) => {
+  if (req.parentUser) return res.redirect('/');
+  res.render('parent-register', { error: null, phone: '', username: '' });
+});
+
 app.post('/parent/register', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
   const { password, confirm_password } = req.body;
+  const username = (req.body.username || '').trim();
+
+  // If coming from the new registration page (has username field)
+  const fromRegPage = !!req.body.username;
+
+  const renderError = (msg) => {
+    if (fromRegPage) {
+      return res.render('parent-register', { error: msg, phone: req.body.phone || '', username });
+    }
+    // Legacy verify page flow
+    return res.render('verify', { players, phone, error: msg, success: null, parentUser: req.parentUser || null, hasAccount: false });
+  };
+
+  if (phone.length !== 10) {
+    if (fromRegPage) {
+      return res.render('parent-register', { error: 'Please enter a valid 10-digit phone number.', phone: req.body.phone || '', username });
+    }
+    return res.redirect('/verify');
+  }
+
   const players = await db.getPlayersByPhone(phone);
-  if (players.length === 0) return res.redirect('/verify');
+  if (players.length === 0) {
+    if (fromRegPage) {
+      return res.render('parent-register', { error: 'No players found for that phone number. Please use the number your coach has on file.', phone: req.body.phone || '', username });
+    }
+    return res.redirect('/verify');
+  }
 
   const existing = await db.getParentAccountByPhone(phone);
   if (existing) {
-    const hasAccount = true;
-    return res.render('verify', { players, phone, error: 'An account already exists for this phone number. Use the login page.', success: null, parentUser: req.parentUser || null, hasAccount });
+    if (fromRegPage) {
+      return res.render('parent-register', { error: 'An account already exists for this phone number. Please log in instead.', phone: req.body.phone || '', username });
+    }
+    return res.render('verify', { players, phone, error: 'An account already exists for this phone number. Use the login page.', success: null, parentUser: req.parentUser || null, hasAccount: true });
+  }
+
+  // Username validation (required on registration page, optional from verify page)
+  if (fromRegPage) {
+    if (!username || username.length < 3) {
+      return renderError('Username must be at least 3 characters.');
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return renderError('Username can only contain letters, numbers, and underscores.');
+    }
+    const existingUsername = await db.getParentAccountByUsername(username);
+    if (existingUsername) {
+      return renderError('That username is already taken. Please choose another.');
+    }
+    // Also check admin usernames to avoid collision
+    const adminMatch = await db.getAdminByUsername(username);
+    if (adminMatch) {
+      return renderError('That username is already taken. Please choose another.');
+    }
   }
 
   if (!password || password.length < 6) {
-    return res.render('verify', { players, phone, error: 'Password must be at least 6 characters.', success: null, parentUser: req.parentUser || null, hasAccount: false });
+    return renderError('Password must be at least 6 characters.');
   }
   if (password !== confirm_password) {
-    return res.render('verify', { players, phone, error: 'Passwords do not match.', success: null, parentUser: req.parentUser || null, hasAccount: false });
+    return renderError('Passwords do not match.');
   }
 
   const displayName = players[0].parent_name;
   const hash = bcrypt.hashSync(password, 10);
   const newAccount = await db.createParentAccountFull(phone, displayName, hash, 'parent', true);
+
+  // Set username if provided
+  if (username) {
+    await db.updateParentAccountUsername(newAccount.id, username);
+  }
+
   for (const p of players) {
     await db.linkPlayerToAccount(p.id, newAccount.id);
   }
@@ -958,7 +1015,7 @@ function requireAdmin(req, res, next) {
 function requireLogin(req, res, next) {
   if (req.pendingFan) return res.render('fan-pending', { teamName: res.locals.teamName });
   if (req.session.admin || req.parentUser) return next();
-  res.redirect('/verify');
+  res.redirect('/parent/login');
 }
 
 function requireParentOrAdmin(req, res, next) {
