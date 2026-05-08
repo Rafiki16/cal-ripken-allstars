@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+require('express-async-errors');
 const path = require('path');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
@@ -2878,6 +2879,9 @@ app.get('/api/stats', async (req, res) => {
 app.use((err, req, res, next) => {
   console.error('Express error:', err);
   if (res.headersSent) return next(err);
+  if (req.headers['content-type'] === 'application/json' || req.xhr) {
+    return res.status(500).json({ ok: false, error: 'Server error. Please try again.' });
+  }
   res.status(500).send('Something went wrong. Please go back and try again.');
 });
 
