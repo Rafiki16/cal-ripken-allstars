@@ -62,6 +62,12 @@
     .fielder-input { width:100%; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:10px; border-radius:6px; font-size:16px; }
     .hard-contact-btn { width:100%; padding:10px; border:2px solid #475569; background:transparent; color:#e2e8f0; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer; margin-top:8px; }
     .hard-contact-btn.selected { border-color:#f59e0b; background:#f59e0b; color:#1a2744; }
+    .pos-slot { padding:8px 10px; background:#0f172a; border-radius:6px; display:flex; justify-content:space-between; align-items:center; font-size:13px; }
+    .pos-slot .pos-label { color:#d4a843; font-weight:bold; min-width:28px; }
+    .pos-slot .pos-name { color:#e2e8f0; }
+    .pos-slot .pos-empty { color:#475569; font-style:italic; }
+    .bench-chip { padding:8px 12px; background:#0f172a; border:1px solid #475569; border-radius:6px; font-size:12px; color:#94a3b8; cursor:pointer; }
+    .bench-chip:active { background:#334155; }
   </style>
 </head>
 <body>
@@ -123,7 +129,24 @@
     </div>
     <div class="pitch-row">
       <button class="pitch-btn undo-btn" onclick="undoLast()">Undo (<span id="undo-count">0</span>)</button>
+      <button class="pitch-btn" style="background:#0ea5e9;flex:1;" onclick="toggleSubPanel()">Subs</button>
     </div>
+  </div>
+
+  <div id="sub-panel" style="display:none;padding:16px;background:#1e293b;border-top:1px solid #334155;">
+    <h3 style="margin:0 0 12px;color:#d4a843;">Defensive Lineup</h3>
+    <div id="position-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:16px;"></div>
+    <h4 style="margin:8px 0;color:#94a3b8;font-size:12px;text-transform:uppercase;">Bench</h4>
+    <div id="bench-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;"></div>
+    <div id="sub-action" style="display:none;margin-top:12px;background:#0f172a;border-radius:8px;padding:12px;">
+      <div style="color:#94a3b8;font-size:12px;margin-bottom:8px;" id="sub-action-text"></div>
+      <div style="display:flex;gap:8px;">
+        <select id="sub-position-select" class="fielder-input" style="flex:1;font-size:14px;"></select>
+        <button onclick="confirmSub()" style="padding:10px 16px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Confirm</button>
+        <button onclick="cancelSub()" style="padding:10px 12px;background:#475569;color:#fff;border:none;border-radius:6px;cursor:pointer;">Cancel</button>
+      </div>
+    </div>
+    <button onclick="toggleSubPanel()" style="width:100%;padding:10px;background:#475569;color:#fff;border:none;border-radius:8px;margin-top:8px;cursor:pointer;">Close</button>
   </div>
 
   <div class="result-panel" id="result-panel">
@@ -262,13 +285,6 @@
     if (g.runner_third) document.getElementById('runner-3b').value = g.runner_third;
   }
 
-  function pollState() {
-    api('/api/game/' + GAME_ID + '/state').then(function(data) {
-      state = data;
-      updateDisplay();
-    });
-  }
-
   function recordPitch(result) {
     api('/api/game/' + GAME_ID + '/pitch', {
       method: 'POST',
@@ -370,6 +386,97 @@
 
   function undoLast() {
     api('/api/game/' + GAME_ID + '/undo', { method: 'POST' }).then(function() { pollState(); });
+  }
+
+  var POS_LABELS = {1:'P',2:'C',3:'1B',4:'2B',5:'3B',6:'SS',7:'LF',8:'CF',9:'RF',10:'EH'};
+  var subPanelOpen = false;
+  var pendingSub = null;
+
+  function toggleSubPanel() {
+    subPanelOpen = !subPanelOpen;
+    document.getElementById('sub-panel').style.display = subPanelOpen ? 'block' : 'none';
+    if (subPanelOpen) renderSubPanel();
+  }
+
+  function renderSubPanel() {
+    if (!state) return;
+    var roster = state.roster;
+    var posGrid = document.getElementById('position-grid');
+    var benchList = document.getElementById('bench-list');
+    var posHtml = '';
+    for (var p = 1; p <= 10; p++) {
+      var player = roster.find(function(r) { return r.current_position === p && r.is_active !== 0; });
+      posHtml += '<div class="pos-slot">';
+      posHtml += '<span class="pos-label">' + POS_LABELS[p] + '</span>';
+      if (player) {
+        posHtml += '<span class="pos-name">' + (player.jersey_number ? '#' + player.jersey_number + ' ' : '') + player.player_name + '</span>';
+      } else {
+        posHtml += '<span class="pos-empty">empty</span>';
+      }
+      posHtml += '</div>';
+    }
+    posGrid.innerHTML = posHtml;
+
+    var bench = roster.filter(function(r) { return r.is_active === 0 || (!r.current_position && r.is_active !== 0); });
+    var benchHtml = '';
+    if (bench.length === 0) {
+      benchHtml = '<span style="color:#475569;font-size:12px;">No bench players</span>';
+    } else {
+      bench.forEach(function(r) {
+        benchHtml += '<div class="bench-chip" onclick="startSub(' + r.player_id + ',\'' + r.player_name.replace(/'/g, "\\'") + '\')">';
+        benchHtml += (r.jersey_number ? '#' + r.jersey_number + ' ' : '') + r.player_name;
+        benchHtml += '</div>';
+      });
+    }
+    benchList.innerHTML = benchHtml;
+  }
+
+  function startSub(playerId, playerName) {
+    pendingSub = { playerId: playerId, playerName: playerName };
+    document.getElementById('sub-action').style.display = 'block';
+    document.getElementById('sub-action-text').textContent = 'Sub in ' + playerName + ' at position:';
+    var sel = document.getElementById('sub-position-select');
+    var optHtml = '';
+    for (var p = 1; p <= 10; p++) {
+      var cur = state.roster.find(function(r) { return r.current_position === p && r.is_active !== 0; });
+      optHtml += '<option value="' + p + '">' + POS_LABELS[p] + (cur ? ' (replacing ' + cur.player_name + ')' : ' (empty)') + '</option>';
+    }
+    sel.innerHTML = optHtml;
+  }
+
+  function confirmSub() {
+    if (!pendingSub) return;
+    var pos = Number(document.getElementById('sub-position-select').value);
+    var currentPlayer = state.roster.find(function(r) { return r.current_position === pos && r.is_active !== 0; });
+    var playerOutId = currentPlayer ? currentPlayer.player_id : null;
+    var outEntry = currentPlayer || null;
+    var inEntry = state.roster.find(function(r) { return r.player_id === pendingSub.playerId; });
+    var battingOrder = outEntry ? outEntry.batting_order : (inEntry ? inEntry.batting_order : null);
+
+    api('/api/game/' + GAME_ID + '/substitute', {
+      method: 'POST',
+      body: JSON.stringify({
+        player_in_id: pendingSub.playerId,
+        player_out_id: playerOutId,
+        position: pos,
+        batting_order: battingOrder
+      })
+    }).then(function() {
+      cancelSub();
+      pollState().then(function() { renderSubPanel(); });
+    });
+  }
+
+  function cancelSub() {
+    pendingSub = null;
+    document.getElementById('sub-action').style.display = 'none';
+  }
+
+  function pollState() {
+    return api('/api/game/' + GAME_ID + '/state').then(function(data) {
+      state = data;
+      updateDisplay();
+    });
   }
 
   pollState();

@@ -1995,6 +1995,54 @@ app.post('/api/game/:id/roster-update', requireScoreKeeper, async (req, res) => 
   res.json({ ok: true });
 });
 
+app.post('/api/game/:id/substitute', requireScoreKeeper, async (req, res) => {
+  const gameId = Number(req.params.id);
+  const game = await db.getLiveGame(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  const { player_in_id, player_out_id, position, batting_order } = req.body;
+  const roster = await db.getGameRoster(gameId);
+
+  if (player_out_id) {
+    const outEntry = roster.find(r => r.player_id === player_out_id);
+    if (outEntry) {
+      await db.updateRosterEntry(outEntry.id, { is_active: 0, exited_inning: game.current_inning, current_position: null });
+    }
+  }
+
+  if (player_in_id) {
+    const inEntry = roster.find(r => r.player_id === player_in_id);
+    if (inEntry) {
+      const updates = { is_active: 1, entered_inning: game.current_inning };
+      if (position) updates.current_position = Number(position);
+      if (batting_order !== undefined) updates.batting_order = Number(batting_order);
+      await db.updateRosterEntry(inEntry.id, updates);
+    }
+  }
+
+  if (position && !player_in_id && !player_out_id) {
+    const { roster_id } = req.body;
+    if (roster_id) {
+      await db.updateRosterEntry(Number(roster_id), { current_position: Number(position) });
+    }
+  }
+
+  res.json({ ok: true });
+});
+
+app.post('/api/game/:id/swap-positions', requireScoreKeeper, async (req, res) => {
+  const gameId = Number(req.params.id);
+  const { roster_id_a, roster_id_b } = req.body;
+  const roster = await db.getGameRoster(gameId);
+  const a = roster.find(r => r.id === Number(roster_id_a));
+  const b = roster.find(r => r.id === Number(roster_id_b));
+  if (a && b) {
+    const posA = a.current_position;
+    await db.updateRosterEntry(a.id, { current_position: b.current_position });
+    await db.updateRosterEntry(b.id, { current_position: posA });
+  }
+  res.json({ ok: true });
+});
+
 app.get('/game/:id/coach', async (req, res) => {
   const game = await db.getLiveGame(Number(req.params.id));
   if (!game) return res.status(404).send('Game not found');
