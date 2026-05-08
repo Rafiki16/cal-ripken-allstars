@@ -46,6 +46,19 @@
       </form>
     </div>
 
+    <!-- Recovery Email -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Recovery Email</h2>
+      <p class="section-hint">Used for password reset. Without this, you cannot recover your account.</p>
+      <form method="POST" action="/admin/update-email" class="add-player-form">
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" name="email" value="<%= adminEmail %>" class="form-input" placeholder="your@email.com">
+        </div>
+        <button type="submit" class="btn btn-confirm">Save Email</button>
+      </form>
+    </div>
+
     <!-- Change Password -->
     <div class="admin-section">
       <h2 class="profile-section-title">Change Password</h2>

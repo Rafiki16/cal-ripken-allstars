@@ -82,6 +82,21 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
 
 const PARENT_AUTH_SECRET = process.env.SESSION_SECRET || 'allstars-parent-2026';
 
+const resetCodes = new Map();
+function generateResetCode(key, type) {
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  resetCodes.set(type + ':' + key.toLowerCase(), { code, expires: Date.now() + 15 * 60 * 1000 });
+  return code;
+}
+function verifyResetCode(key, type, code) {
+  const entry = resetCodes.get(type + ':' + key.toLowerCase());
+  if (!entry) return false;
+  if (Date.now() > entry.expires) { resetCodes.delete(type + ':' + key.toLowerCase()); return false; }
+  if (entry.code !== code) return false;
+  resetCodes.delete(type + ':' + key.toLowerCase());
+  return true;
+}
+
 function createParentToken(phone) {
   const sig = crypto.createHmac('sha256', PARENT_AUTH_SECRET).update(phone).digest('hex').slice(0, 16);
   return phone + '.' + sig;
@@ -659,14 +674,14 @@ app.post('/parent/register', async (req, res) => {
 
 app.get('/parent/login', (req, res) => {
   if (req.parentUser) return res.redirect('/');
-  res.render('parent-login', { error: null });
+  res.render('parent-login', { error: null, success: req.query.reset ? 'Password reset successfully. Please log in.' : null });
 });
 
 app.post('/parent/login', async (req, res) => {
   const loginId = (req.body.login_id || '').trim();
   const { password } = req.body;
   if (!loginId) {
-    return res.render('parent-login', { error: 'Please enter your username or phone number.' });
+    return res.render('parent-login', { error: 'Please enter your username or phone number.', success: null });
   }
   const phone = normalizePhone(loginId);
   let account = null;
@@ -677,7 +692,7 @@ app.post('/parent/login', async (req, res) => {
     account = await db.getParentAccountByUsername(loginId);
   }
   if (!account || !bcrypt.compareSync(password || '', account.password_hash)) {
-    return res.render('parent-login', { error: 'Invalid username/phone or password.' });
+    return res.render('parent-login', { error: 'Invalid username/phone or password.', success: null });
   }
   await db.updateParentLoginTime(account.phone);
   setParentCookie(res, account.phone);
@@ -957,14 +972,14 @@ app.get('/admin/login', async (req, res) => {
   if (req.session.admin) return res.redirect('/admin');
   const count = await db.countAdmins();
   if (count === 0) return res.redirect('/admin/setup');
-  res.render('admin-login', { error: null });
+  res.render('admin-login', { error: null, success: req.query.reset ? 'Password reset successfully. Please log in.' : null });
 });
 
 app.post('/admin/login', async (req, res) => {
   const { username, password } = req.body;
   const admin = await db.getAdminByUsername((username || '').trim().toLowerCase());
   if (!admin || !bcrypt.compareSync(password || '', admin.password_hash)) {
-    return res.render('admin-login', { error: 'Invalid username or password.' });
+    return res.render('admin-login', { error: 'Invalid username or password.', success: null });
   }
   req.session.admin = { id: admin.id, username: admin.username };
   res.redirect('/admin');
@@ -1010,6 +1025,85 @@ app.post('/admin/setup', async (req, res) => {
 
 app.get('/admin/logout', (req, res) => {
   req.session.destroy(() => res.redirect('/'));
+});
+
+// --- Forgot Password ---
+
+app.get('/forgot-password', (req, res) => {
+  const type = req.query.type || 'parent';
+  res.render('forgot-password', { step: 'request', type, error: null, identifier: '' });
+});
+
+app.post('/forgot-password/send', async (req, res) => {
+  const { type, identifier } = req.body;
+  const id = (identifier || '').trim();
+  if (!id) return res.render('forgot-password', { step: 'request', type, error: 'Please enter your information.', identifier: '' });
+
+  const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+
+  if (type === 'admin') {
+    const admin = await db.getAdminByEmail(id) || await db.getAdminByUsername(id.toLowerCase());
+    if (!admin) return res.render('forgot-password', { step: 'request', type, error: 'No account found.', identifier: id });
+    if (!admin.email) return res.render('forgot-password', { step: 'request', type, error: 'No email on file for this account. Contact another admin.', identifier: id });
+    const code = generateResetCode(admin.email, 'admin');
+    if (smtpTransport) {
+      await smtpTransport.sendMail({
+        from: `"${teamName}" <${process.env.SMTP_USER}>`,
+        to: admin.email,
+        subject: `${teamName} — Password Reset Code`,
+        text: `Your password reset code is: ${code}\n\nThis code expires in 15 minutes.\n\nIf you didn't request this, ignore this email.`
+      });
+    }
+    return res.render('forgot-password', { step: 'verify', type, error: null, identifier: admin.email });
+  }
+
+  const phone = normalizePhone(id);
+  let account = null;
+  if (phone.length === 10) account = await db.getParentAccountByPhone(phone);
+  if (!account) account = await db.getParentAccountByUsername(id);
+  if (!account) return res.render('forgot-password', { step: 'request', type, error: 'No account found.', identifier: id });
+
+  const code = generateResetCode(account.phone, 'parent');
+  await sendSMS(account.phone, `${teamName}: Your password reset code is ${code}. It expires in 15 minutes.`);
+  return res.render('forgot-password', { step: 'verify', type, error: null, identifier: account.phone });
+});
+
+app.post('/forgot-password/verify', async (req, res) => {
+  const { type, identifier, code } = req.body;
+  if (!verifyResetCode(identifier, type, (code || '').trim())) {
+    return res.render('forgot-password', { step: 'verify', type, error: 'Invalid or expired code. Please try again.', identifier });
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  resetCodes.set('reset-token:' + token, { identifier, type, expires: Date.now() + 15 * 60 * 1000 });
+  res.render('forgot-password', { step: 'reset', type, error: null, identifier, token });
+});
+
+app.post('/forgot-password/reset', async (req, res) => {
+  const { token, password, confirm_password, type } = req.body;
+  const entry = resetCodes.get('reset-token:' + token);
+  if (!entry || Date.now() > entry.expires) {
+    return res.render('forgot-password', { step: 'request', type: type || 'parent', error: 'Reset session expired. Please start over.', identifier: '' });
+  }
+
+  if (!password || password.length < 6) {
+    return res.render('forgot-password', { step: 'reset', type: entry.type, error: 'Password must be at least 6 characters.', identifier: entry.identifier, token });
+  }
+  if (password !== confirm_password) {
+    return res.render('forgot-password', { step: 'reset', type: entry.type, error: 'Passwords do not match.', identifier: entry.identifier, token });
+  }
+
+  const hash = bcrypt.hashSync(password, 10);
+  if (entry.type === 'admin') {
+    const admin = await db.getAdminByEmail(entry.identifier);
+    if (admin) await db.updateAdminPassword(admin.id, hash);
+    resetCodes.delete('reset-token:' + token);
+    return res.redirect('/admin/login?reset=1');
+  }
+
+  const account = await db.getParentAccountByPhone(entry.identifier);
+  if (account) await db.updateParentAccountPassword(account.id, hash);
+  resetCodes.delete('reset-token:' + token);
+  res.redirect('/parent/login?reset=1');
 });
 
 // --- Admin Dashboard ---
@@ -1479,8 +1573,10 @@ app.post('/admin/jersey-number', requireAdmin, async (req, res) => {
 
 app.get('/admin/settings', requireAdmin, async (req, res) => {
   const admins = await db.getAllAdmins();
+  const currentAdmin = await db.getAdminById(req.session.admin.id);
   res.render('admin-settings', {
     adminUser: req.session.admin,
+    adminEmail: currentAdmin ? currentAdmin.email || '' : '',
     admins,
     teamName: res.locals.teamName,
     success: req.query.success || null,
@@ -1510,6 +1606,12 @@ app.post('/admin/change-password', requireAdmin, async (req, res) => {
   const hash = bcrypt.hashSync(new_password, 10);
   await db.updateAdminPassword(admin.id, hash);
   res.redirect('/admin/settings?success=' + encodeURIComponent('Password updated.'));
+});
+
+app.post('/admin/update-email', requireAdmin, async (req, res) => {
+  const email = (req.body.email || '').trim();
+  await db.updateAdminEmail(req.session.admin.id, email || null);
+  res.redirect('/admin/settings?success=' + encodeURIComponent(email ? 'Email updated.' : 'Email removed.'));
 });
 
 app.post('/admin/add-admin', requireAdmin, async (req, res) => {
