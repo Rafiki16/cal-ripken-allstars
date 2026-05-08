@@ -55,11 +55,13 @@
     .score-footer { position:fixed; bottom:0; left:0; right:0; background:#1a2744; padding:8px 16px; display:flex; justify-content:space-between; align-items:center; font-size:12px; }
     .score-footer a { color:#d4a843; text-decoration:none; }
     .pitcher-info { text-align:center; padding:4px; font-size:12px; color:#94a3b8; background:#0f172a; }
-    .num-input { width:50px; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:4px; border-radius:4px; text-align:center; }
-    .rbi-row { display:flex; align-items:center; gap:12px; margin-top:8px; }
-    .outs-row { display:flex; align-items:center; gap:12px; margin-top:8px; }
-    .fielder-input { width:100%; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:8px; border-radius:4px; margin-top:4px; }
-    .hard-contact-toggle { display:flex; align-items:center; gap:8px; margin-top:8px; }
+    .num-input { width:60px; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:8px; border-radius:6px; text-align:center; font-size:16px; }
+    .rbi-outs-row { display:flex; gap:16px; margin-top:10px; }
+    .rbi-outs-row > div { flex:1; display:flex; align-items:center; gap:8px; }
+    .rbi-outs-row label { color:#94a3b8; font-size:13px; white-space:nowrap; }
+    .fielder-input { width:100%; background:#334155; border:1px solid #475569; color:#e2e8f0; padding:10px; border-radius:6px; font-size:16px; }
+    .hard-contact-btn { width:100%; padding:10px; border:2px solid #475569; background:transparent; color:#e2e8f0; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer; margin-top:8px; }
+    .hard-contact-btn.selected { border-color:#f59e0b; background:#f59e0b; color:#1a2744; }
   </style>
 </head>
 <body>
@@ -146,39 +148,38 @@
         <button class="hit-type-btn" onclick="selectHitType('fly')">Fly</button>
         <button class="hit-type-btn" onclick="selectHitType('popup')">Popup</button>
       </div>
-      <div class="hard-contact-toggle">
-        <label style="color:#94a3b8;font-size:13px;"><input type="checkbox" id="hard-contact"> Hard contact</label>
-      </div>
+      <button type="button" class="hard-contact-btn" id="hard-contact-btn" onclick="toggleHardContact()">Hard Contact</button>
     </div>
 
     <div class="result-section" id="error-section" style="display:none;">
       <h4>Error By (Position #)</h4>
-      <input type="number" id="error-pos" class="fielder-input" placeholder="Position number (1-9)" min="1" max="9" style="width:120px;">
+      <input type="number" id="error-pos" class="num-input" placeholder="1-9" min="1" max="9" style="width:80px;">
     </div>
 
-    <div class="rbi-row">
-      <label style="color:#94a3b8;font-size:13px;">RBIs:</label>
-      <input type="number" id="rbi-count" class="num-input" value="0" min="0" max="4">
-    </div>
-
-    <div class="outs-row">
-      <label style="color:#94a3b8;font-size:13px;">Outs on play:</label>
-      <input type="number" id="outs-on-play" class="num-input" value="0" min="0" max="3">
+    <div class="rbi-outs-row">
+      <div>
+        <label>RBIs:</label>
+        <input type="number" id="rbi-count" class="num-input" value="0" min="0" max="4">
+      </div>
+      <div>
+        <label>Outs on play:</label>
+        <input type="number" id="outs-on-play" class="num-input" value="0" min="0" max="3">
+      </div>
     </div>
 
     <div class="result-section">
       <h4>Runners After Play</h4>
       <div class="runner-row">
-        <span style="color:#94a3b8;">1B:</span>
-        <input type="text" id="runner-1b" class="fielder-input" placeholder="Runner name (empty = no one)" style="width:200px;">
+        <span style="color:#94a3b8;min-width:28px;">1B:</span>
+        <input type="text" id="runner-1b" class="fielder-input" placeholder="Runner name (empty = no one)">
       </div>
       <div class="runner-row">
-        <span style="color:#94a3b8;">2B:</span>
-        <input type="text" id="runner-2b" class="fielder-input" placeholder="Runner name" style="width:200px;">
+        <span style="color:#94a3b8;min-width:28px;">2B:</span>
+        <input type="text" id="runner-2b" class="fielder-input" placeholder="Runner name">
       </div>
       <div class="runner-row">
-        <span style="color:#94a3b8;">3B:</span>
-        <input type="text" id="runner-3b" class="fielder-input" placeholder="Runner name" style="width:200px;">
+        <span style="color:#94a3b8;min-width:28px;">3B:</span>
+        <input type="text" id="runner-3b" class="fielder-input" placeholder="Runner name">
       </div>
     </div>
 
@@ -320,12 +321,18 @@
     event.target.classList.add('selected');
   }
 
+  var hardContact = false;
+  function toggleHardContact() {
+    hardContact = !hardContact;
+    document.getElementById('hard-contact-btn').classList.toggle('selected', hardContact);
+  }
+
   function submitResult() {
     if (!selectedResult) return alert('Select a result first');
     var body = {
       result: selectedResult,
       hit_type: selectedHitType || null,
-      is_hard_contact: document.getElementById('hard-contact').checked,
+      is_hard_contact: hardContact,
       rbi_count: parseInt(document.getElementById('rbi-count').value) || 0,
       outs_on_play: parseInt(document.getElementById('outs-on-play').value) || 0,
       error_position: document.getElementById('error-pos').value ? parseInt(document.getElementById('error-pos').value) : null,
@@ -351,7 +358,8 @@
     document.getElementById('pitch-panel').style.display = 'block';
     document.querySelectorAll('.result-btn').forEach(function(b) { b.classList.remove('selected'); });
     document.querySelectorAll('.hit-type-btn').forEach(function(b) { b.classList.remove('selected'); });
-    document.getElementById('hard-contact').checked = false;
+    hardContact = false;
+    document.getElementById('hard-contact-btn').classList.remove('selected');
     document.getElementById('rbi-count').value = 0;
     document.getElementById('outs-on-play').value = 0;
     document.getElementById('error-pos').value = '';
