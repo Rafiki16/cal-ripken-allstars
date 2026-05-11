@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title><%= quiz.title %> Results &middot; Admin &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/admin/quizzes" class="back-link">&larr; Back to Quizzes</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1><%= quiz.title %></h1>
+            <p class="subtitle">Quiz Results &amp; Grades</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div style="display:flex; gap:16px; margin-bottom:20px; flex-wrap:wrap;">
+      <div style="background:#fff; border:1px solid var(--gray-200); border-radius:10px; padding:14px 20px; flex:1; min-width:120px;">
+        <div style="font-size:12px; color:var(--gray-500); font-weight:600;">Assigned</div>
+        <div style="font-size:24px; font-weight:700; color:var(--navy);"><%= assignments.length %></div>
+      </div>
+      <div style="background:#fff; border:1px solid var(--gray-200); border-radius:10px; padding:14px 20px; flex:1; min-width:120px;">
+        <div style="font-size:12px; color:var(--gray-500); font-weight:600;">Completed</div>
+        <div style="font-size:24px; font-weight:700; color:var(--navy);"><%= new Set(attempts.map(a => a.player_id)).size %></div>
+      </div>
+      <div style="background:#fff; border:1px solid var(--gray-200); border-radius:10px; padding:14px 20px; flex:1; min-width:120px;">
+        <div style="font-size:12px; color:var(--gray-500); font-weight:600;">Avg Score</div>
+        <div style="font-size:24px; font-weight:700; color:var(--navy);">
+          <% if (attempts.length > 0) { %>
+          <%= Math.round(attempts.reduce((s,a) => s + (a.score/a.total)*100, 0) / attempts.length) %>%
+          <% } else { %>
+          --
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+    <% if (attempts.length === 0) { %>
+    <p style="color:var(--gray-500); font-size:14px; text-align:center; padding:24px;">No attempts yet.</p>
+    <% } else { %>
+    <h2 class="section-title">All Attempts</h2>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <% attempts.forEach(attempt => { %>
+      <% const pct = Math.round((attempt.score / attempt.total) * 100); %>
+      <a href="/quiz/attempt/<%= attempt.id %>" style="text-decoration:none; border:1px solid var(--gray-200); border-radius:10px; padding:12px 16px; background:#fff; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:150px;">
+          <div style="font-size:14px; font-weight:600; color:var(--navy);"><%= attempt.player_name %></div>
+          <div style="font-size:11px; color:var(--gray-500);"><%= new Date(attempt.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:14px; font-weight:700; color:<%= pct >= 80 ? '#16a34a' : pct >= 60 ? '#ca8a04' : '#dc2626' %>;"><%= attempt.score %>/<%= attempt.total %></span>
+          <span style="font-size:12px; font-weight:600; padding:3px 10px; border-radius:20px; background:<%= pct >= 80 ? '#dcfce7' : pct >= 60 ? '#fef9c3' : '#fee2e2' %>; color:<%= pct >= 80 ? '#16a34a' : pct >= 60 ? '#a16207' : '#dc2626' %>;"><%= pct %>%</span>
+        </div>
+      </a>
+      <% }); %>
+    </div>
+    <% } %>
+
+    <% if (assignments.length > 0) { %>
+    <h2 class="section-title" style="margin-top:24px;">Assigned Players</h2>
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+      <% const attemptedIds = new Set(attempts.map(a => a.player_id)); %>
+      <% assignments.forEach(a => { %>
+      <span style="font-size:12px; padding:4px 10px; border-radius:6px; background:<%= attemptedIds.has(a.player_id) ? '#dcfce7' : '#f3f4f6' %>; color:<%= attemptedIds.has(a.player_id) ? '#16a34a' : '#6b7280' %>; font-weight:500;">
+        <%= a.player_name %> <%= attemptedIds.has(a.player_id) ? '&#10003;' : '' %>
+      </span>
+      <% }); %>
+    </div>
+    <% } %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

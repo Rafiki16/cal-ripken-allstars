@@ -878,7 +878,12 @@ app.get('/profile/:id', requireParentOrAdmin, async (req, res) => {
     }
     programData.push({ assignment: a, days, completions });
   }
-  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData, error: null, success: null });
+  const quizAssignments = await db.getPlayerQuizAssignments(player.id);
+  const quizAttemptData = {};
+  for (const qa of quizAssignments) {
+    quizAttemptData[qa.quiz_id] = await db.getQuizAttempts(qa.quiz_id, player.id);
+  }
+  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData, quizAssignments, quizAttemptData, error: null, success: null });
 });
 
 app.post('/profile/:id', async (req, res) => {
@@ -954,8 +959,12 @@ app.post('/profile/:id', async (req, res) => {
   }
 
   const events = await db.getPlayerEvents(updated.id);
+  const quizAssignments2 = await db.getPlayerQuizAssignments(updated.id);
+  const quizAttemptData2 = {};
+  for (const qa of quizAssignments2) { quizAttemptData2[qa.quiz_id] = await db.getQuizAttempts(qa.quiz_id, updated.id); }
   res.render('profile', {
     player: updated, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
+    quizAssignments: quizAssignments2, quizAttemptData: quizAttemptData2,
     error: null,
     success: `${player.player_name}'s profile has been saved.`
   });
@@ -984,6 +993,7 @@ app.post('/profile/:id/event', async (req, res) => {
     const events = await db.getPlayerEvents(player.id);
     return res.render('profile', {
       player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
+      quizAssignments: [], quizAttemptData: {},
       error: 'Start date is required.',
       success: null
     });
@@ -1000,6 +1010,7 @@ app.post('/profile/:id/event', async (req, res) => {
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
     player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
+    quizAssignments: [], quizAttemptData: {},
     error: null,
     success: 'Availability event added.'
   });
@@ -1027,6 +1038,7 @@ app.post('/profile/:id/event/delete', async (req, res) => {
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
     player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
+    quizAssignments: [], quizAttemptData: {},
     error: null,
     success: 'Event removed.'
   });
@@ -1737,8 +1749,16 @@ app.get('/messages', requireParentOrAdmin, async (req, res) => {
   for (const t of topics) {
     topicReplies[t.id] = await db.getTopicReplies(t.id);
   }
+  const allMsgIds = topics.map(t => t.id);
+  for (const replies of Object.values(topicReplies)) {
+    for (const r of replies) allMsgIds.push(r.id);
+  }
+  const reactions = await db.getReactionsForMessages(allMsgIds);
   const isAdmin = !!req.session.admin;
-  res.render('messages', { topics, topicReplies, isAdmin, parentUser: req.parentUser || null, error: req.query.error || null, success: req.query.success || null });
+  let currentUserName = null;
+  if (isAdmin) currentUserName = req.session.admin.username;
+  else if (req.parentUser) currentUserName = req.parentUser.display_name;
+  res.render('messages', { topics, topicReplies, reactions, currentUserName, isAdmin, parentUser: req.parentUser || null, error: req.query.error || null, success: req.query.success || null });
 });
 
 app.post('/messages', async (req, res) => {
@@ -1789,6 +1809,21 @@ app.post('/messages/delete', requireAdmin, async (req, res) => {
 
 app.post('/messages/pin', requireAdmin, async (req, res) => {
   await db.togglePinMessage(Number(req.body.message_id));
+  res.redirect('/messages');
+});
+
+app.post('/messages/react', async (req, res) => {
+  const isAdmin = !!req.session.admin;
+  const messageId = Number(req.body.message_id);
+  const reactionType = req.body.reaction_type;
+  if (!['up', 'down'].includes(reactionType)) return res.redirect('/messages');
+
+  let authorName;
+  if (isAdmin) authorName = req.session.admin.username;
+  else if (req.parentUser) authorName = req.parentUser.display_name;
+  else return res.redirect('/messages');
+
+  await db.toggleReaction(messageId, authorName, reactionType);
   res.redirect('/messages');
 });
 
@@ -3421,6 +3456,256 @@ app.post('/event/:id/load-program', requireAdmin, async (req, res) => {
     }
   }
   res.redirect('/event/' + event.id);
+});
+
+// --- Position Quizzes ---
+
+app.post('/admin/seed-quizzes', requireAdmin, async (req, res) => {
+  const quizData = [
+    {
+      title: '1B Position Quiz',
+      position: '1B',
+      description: 'Test your knowledge of first base fundamentals from the Perry Hill Infield System.',
+      questions: [
+        { q: 'What is the proper starting position for a first baseman before the pitch?', a: 'Behind the bag, even with it', b: 'On the bag in a stretch position', c: 'Several steps behind the bag toward second', d: 'In foul territory near the line', correct: 'a' },
+        { q: 'On a ground ball to another infielder, when should the first baseman go to the bag?', a: 'Immediately when the ball is hit', b: 'After the ball is fielded', c: 'When the throw is in the air', d: 'Only on routine grounders', correct: 'a' },
+        { q: 'What footwork does Perry Hill teach for receiving throws at first base?', a: 'Always use the right foot on the bag', b: 'Always use the left foot on the bag', c: 'Use whichever foot the throw dictates', d: 'Both feet on the bag', correct: 'c' },
+        { q: 'On a ball in the dirt, what should the first baseman prioritize?', a: 'Keeping the foot on the bag at all costs', b: 'Blocking the ball and keeping it in front', c: 'Swiping at the ball with the glove', d: 'Coming off the bag to catch it cleanly', correct: 'b' },
+        { q: 'When holding a runner on first, where should your right foot be?', a: 'On top of the bag', b: 'Against the outfield side of the bag', c: 'Against the home plate side of the bag', d: 'Behind the bag in foul territory', correct: 'b' },
+        { q: 'On a bunt toward the first base side, when does the first baseman charge?', a: 'On every bunt', b: 'Only when the pitcher cannot get it', c: 'When the ball is bunted hard toward them', d: 'The first baseman never charges bunts', correct: 'a' },
+        { q: 'What is the 3-1 play?', a: 'First baseman throws to first, pitcher covers', b: 'First baseman fields bunt, throws to first with pitcher covering', c: 'Third baseman throws to first baseman', d: 'A pickoff play with the catcher', correct: 'b' },
+        { q: 'On a pop fly near the dugout, what should the first baseman do with their glove hand?', a: 'Use it to feel for the railing/fence', b: 'Keep it on the glove', c: 'Wave off other fielders', d: 'Put it behind their back', correct: 'a' },
+        { q: 'With a runner on first and a ground ball to you, when do you flip to the pitcher covering first?', a: 'Always underhand', b: 'Always overhand', c: 'Underhand from close range, overhand from distance', d: 'Never flip, always take it yourself', correct: 'c' },
+        { q: 'What is the proper stretch position when receiving a throw at first?', a: 'Stretch as far as possible every time', b: 'Only stretch what is needed for that throw', c: 'Never stretch, just stand on the bag', d: 'Stretch and jump toward the throw', correct: 'b' },
+      ]
+    },
+    {
+      title: '2B Position Quiz',
+      position: '2B',
+      description: 'Test your knowledge of second base fundamentals from the Perry Hill Infield System.',
+      questions: [
+        { q: 'What does Perry Hill call the second baseman\'s starting depth?', a: 'Deep behind the baseline', b: 'Even with the bag', c: 'Double-play depth unless situation dictates otherwise', d: 'Always shallow on the grass', correct: 'c' },
+        { q: 'On a double play ball hit to shortstop, what is the second baseman\'s footwork at the bag?', a: 'Come across the bag from the outfield side', b: 'Straddle the bag and throw', c: 'Touch the back corner and get out of the way', d: 'It depends on where the feed comes from', correct: 'd' },
+        { q: 'What is the "inside move" at second base on a double play?', a: 'Cheating toward the bag before the pitch', b: 'Receiving the ball on the inside (home plate side) of the bag', c: 'Moving to the infield grass before a bunt', d: 'A pickoff move from the pitcher', correct: 'b' },
+        { q: 'On a ground ball up the middle, what is the second baseman\'s priority?', a: 'Get in front of it and block', b: 'Backhand it and flip to short', c: 'Catch it cleanly, set feet, make a strong throw', d: 'Dive for everything', correct: 'c' },
+        { q: 'When turning a double play, what should the second baseman do with their eyes?', a: 'Watch the runner coming from first', b: 'Look at the bag', c: 'Watch the ball into the glove, then find first base', d: 'Close their eyes and throw', correct: 'c' },
+        { q: 'On a steal attempt at second, who covers the bag with a right-handed hitter?', a: 'Always the shortstop', b: 'Always the second baseman', c: 'Depends on the pre-pitch sign', d: 'Whoever is closer', correct: 'c' },
+        { q: 'What is the relay position for the second baseman on a ball hit to right field?', a: 'Line up between the right fielder and home plate', b: 'Line up between right fielder and third base', c: 'Go to the cutoff spot between right fielder and the base the throw is going to', d: 'Always back up first base', correct: 'c' },
+        { q: 'On a pop fly to shallow right field, who has priority?', a: 'The right fielder', b: 'The second baseman', c: 'The first baseman', d: 'Whoever calls it first', correct: 'a' },
+        { q: 'When fielding a slow roller, what should the second baseman do?', a: 'Charge hard, bare-hand, throw on the run', b: 'Wait for it to come to them', c: 'Charge hard and field it with two hands when possible', d: 'Let the first baseman get it', correct: 'c' },
+        { q: 'What is the proper tag technique on a steal at second base?', a: 'Catch and sweep tag in one motion', b: 'Catch the ball first, then apply the tag', c: 'Block the base with your body', d: 'Stand behind the bag and reach forward', correct: 'a' },
+      ]
+    },
+    {
+      title: 'SS Position Quiz',
+      position: 'SS',
+      description: 'Test your knowledge of shortstop fundamentals from the Perry Hill Infield System.',
+      questions: [
+        { q: 'What is the shortstop\'s pre-pitch ready position?', a: 'Standing straight up', b: 'Athletic stance with weight on balls of feet, slight movement', c: 'Deep crouch with hands on knees', d: 'Leaning toward second base', correct: 'b' },
+        { q: 'On a double play ball hit to the second baseman, what does the shortstop do at the bag?', a: 'Always go behind the bag', b: 'Always straddle the bag', c: 'Adjust footwork based on the feed location', d: 'Just touch the bag and get off', correct: 'c' },
+        { q: 'What is the "Six Fs" concept Perry Hill teaches?', a: 'Six fundamental fielding drills', b: 'Feet, Field, Funnel, Footwork, Fire, Follow', c: 'A conditioning routine', d: 'Six types of double plays', correct: 'b' },
+        { q: 'On a backhand play in the hole, what should the shortstop focus on?', a: 'Getting in front of the ball every time', b: 'Planting the right foot and making a strong throw', c: 'Flipping to the second baseman', d: 'Diving and throwing from the ground', correct: 'b' },
+        { q: 'On a ball hit up the middle, what is the shortstop\'s first responsibility?', a: 'Cover second base', b: 'Back up the second baseman', c: 'Field the ball if possible', d: 'Call for the center fielder', correct: 'c' },
+        { q: 'Where should the shortstop position themselves for a cutoff on a ball to left-center?', a: 'Near second base', b: 'In a direct line between the outfielder and the target base', c: 'On the mound', d: 'In shallow left field', correct: 'b' },
+        { q: 'When turning a double play from a ball hit directly to the shortstop, what is preferred?', a: 'Always go to second first', b: 'Tag the runner and throw to first', c: 'Feed to second baseman unless the ball is hit close to the bag', d: 'Throw to first for one out', correct: 'c' },
+        { q: 'On a pop fly to shallow left field, who has priority?', a: 'The left fielder always', b: 'The shortstop', c: 'The third baseman', d: 'The outfielder coming in has priority over the infielder going out', correct: 'd' },
+        { q: 'What is the shortstop\'s role with a runner on second and a bunt?', a: 'Cover third base', b: 'Cover second base', c: 'Charge the bunt', d: 'Back up the pitcher', correct: 'b' },
+        { q: 'On a routine ground ball, where should the shortstop\'s throw go?', a: 'Chest height to the first baseman', b: 'At the first baseman\'s face', c: 'To the glove side of the first baseman, around chest height', d: 'Low to the ground so they can scoop it', correct: 'c' },
+      ]
+    },
+    {
+      title: '3B Position Quiz',
+      position: '3B',
+      description: 'Test your knowledge of third base fundamentals from the Perry Hill Infield System.',
+      questions: [
+        { q: 'What is the third baseman\'s standard depth?', a: 'On the grass, close to the bag', b: 'Deep behind the bag, near the outfield grass', c: 'Even with the bag, depending on the situation', d: 'Always at double-play depth', correct: 'c' },
+        { q: 'On a bunt with a runner on first, what is the third baseman\'s primary job?', a: 'Stay at the bag', b: 'Charge the bunt aggressively', c: 'Read the bunt and either charge or hold depending on speed', d: 'Cover shortstop position', correct: 'b' },
+        { q: 'What is the proper technique for a backhand play at third?', a: 'Dive for everything', b: 'Step with the left foot, backhand, plant right foot, throw', c: 'Spin and throw off balance', d: 'Use two hands every time', correct: 'b' },
+        { q: 'On a slow roller to third, what is the footwork?', a: 'Charge, field outside the left foot, crow hop, throw', b: 'Wait for it, throw from a stand-still', c: 'Charge, bare hand, throw on the run', d: 'Let the shortstop get it', correct: 'c' },
+        { q: 'When holding a runner on third, where should the third baseman be?', a: 'On the bag in foul territory', b: 'Behind the runner straddling the line', c: 'In front of the bag in fair territory', d: 'Several feet off the bag toward shortstop', correct: 'c' },
+        { q: 'On a ground ball to the shortstop with runners on first and second, what does the third baseman do?', a: 'Cover third base for the force', b: 'Back up shortstop', c: 'Go to the mound', d: 'Cut off the throw', correct: 'a' },
+        { q: 'What makes a good tag play at third base?', a: 'Catch the ball, bring glove down in front of the bag', b: 'Block the bag with your body', c: 'Swipe tag across the runner', d: 'Stand behind the bag', correct: 'a' },
+        { q: 'On a line drive hit right at the third baseman, what is the priority?', a: 'Knock it down', b: 'Catch it with soft hands, check the runner', c: 'Dive out of the way', d: 'Barehand it', correct: 'b' },
+        { q: 'On a double play ball to third with a runner on first, where does the throw go?', a: 'Always to first base', b: 'Always to second base', c: 'Step on third if close enough, otherwise throw to second for the DP', d: 'Hold the ball', correct: 'c' },
+        { q: 'What is the third baseman\'s communication responsibility on pop flies?', a: 'Never call for any ball', b: 'Call off the catcher and pitcher on pop flies in the area', c: 'Only catch balls in foul territory', d: 'Defer to the shortstop on everything', correct: 'b' },
+      ]
+    },
+    {
+      title: 'General Infield Quiz',
+      position: 'IF',
+      description: 'Test your general infield knowledge from the Perry Hill Infield System.',
+      questions: [
+        { q: 'What does "Funnel" mean in the Six Fs?', a: 'Throwing with a funnel grip', b: 'Bringing the ball from glove to center of body to throwing position', c: 'Fielding with a wide stance', d: 'Running in a curved path to the ball', correct: 'b' },
+        { q: 'According to Perry Hill, what is the most important quality of a good infielder?', a: 'Speed', b: 'Arm strength', c: 'Soft hands and good footwork', d: 'Size', correct: 'c' },
+        { q: 'What does "read hop" mean?', a: 'Reading the pitcher\'s delivery', b: 'Judging whether to field a short hop or long hop', c: 'Hopping over the ball', d: 'Counting hops before the ball arrives', correct: 'b' },
+        { q: 'When fielding a ground ball, where should your eyes be?', a: 'On the runner', b: 'On the target', c: 'On the ball into the glove', d: 'On the coach', correct: 'c' },
+        { q: 'What is the purpose of a "crow hop" after fielding?', a: 'To show off', b: 'To generate momentum and get the feet aligned for a strong throw', c: 'To avoid the runner', d: 'To delay the throw', correct: 'b' },
+        { q: 'On a ground ball with no one on base, what is the priority?', a: 'Throw as hard as possible', b: 'Get the out at first with a clean, accurate throw', c: 'Hurry and throw off balance', d: 'Look the runner back', correct: 'b' },
+        { q: 'What does Perry Hill teach about pre-pitch movement?', a: 'Stand completely still', b: 'Take a small creep step forward as the pitch is delivered', c: 'Jump right before the pitch', d: 'Move side to side', correct: 'b' },
+        { q: 'On a rundown play, how many throws should it take?', a: 'As many as needed', b: 'No more than two', c: 'Exactly one', d: 'Three to four', correct: 'b' },
+        { q: 'What is the correct arm slot for an infielder\'s throw?', a: 'Always overhand', b: 'Always sidearm', c: 'The natural arm slot that generates accuracy', d: 'Underhand only', correct: 'c' },
+        { q: 'When should infielders communicate on fly balls?', a: 'Only the captain calls', b: 'Always — call "mine" or "you" early and loud', c: 'Never, just go get it', d: 'Only in the outfield', correct: 'b' },
+      ]
+    },
+  ];
+
+  for (const quiz of quizData) {
+    const existing = await db.getQuizzesByPosition(quiz.position);
+    if (existing.some(q => q.title === quiz.title)) continue;
+    const created = await db.createQuiz({ title: quiz.title, position: quiz.position, description: quiz.description });
+    for (let i = 0; i < quiz.questions.length; i++) {
+      const q = quiz.questions[i];
+      await db.addQuizQuestion({
+        quiz_id: created.id,
+        question_text: q.q,
+        option_a: q.a,
+        option_b: q.b,
+        option_c: q.c || null,
+        option_d: q.d || null,
+        correct_answer: q.correct,
+        sort_order: i
+      });
+    }
+  }
+  res.redirect('/admin/quizzes?success=' + encodeURIComponent('Position quizzes seeded successfully!'));
+});
+
+app.get('/admin/quizzes', requireAdmin, async (req, res) => {
+  const quizzes = await db.getAllQuizzes();
+  const players = await db.getAllPlayers();
+  const quizStats = {};
+  for (const q of quizzes) {
+    const assignments = await db.getQuizAssignments(q.id);
+    const attempts = await db.getAllQuizAttempts(q.id);
+    quizStats[q.id] = { assigned: assignments.length, attempted: new Set(attempts.map(a => a.player_id)).size, attempts: attempts.length };
+  }
+  res.render('admin-quizzes', {
+    quizzes, players, quizStats, POSITIONS,
+    success: req.query.success || null, error: req.query.error || null
+  });
+});
+
+app.post('/admin/quizzes/assign', requireAdmin, async (req, res) => {
+  const quizId = Number(req.body.quiz_id);
+  const quiz = await db.getQuiz(quizId);
+  if (!quiz) return res.redirect('/admin/quizzes?error=Quiz not found');
+
+  const players = await db.getAllPlayers();
+  const targetPos = quiz.position === 'IF' ? ['1B','2B','3B','SS'] : [quiz.position];
+  let assigned = 0;
+  for (const p of players) {
+    const posSource = p.coach_assigned_positions || p.best_positions || '';
+    const playerPositions = posSource.split(',').map(s => s.trim()).filter(Boolean);
+    if (quiz.position === 'IF' || targetPos.some(tp => playerPositions.includes(tp))) {
+      await db.assignQuiz(quizId, p.id);
+      assigned++;
+    }
+  }
+  res.redirect('/admin/quizzes?success=' + encodeURIComponent(`Assigned "${quiz.title}" to ${assigned} players.`));
+});
+
+app.post('/admin/quizzes/assign-all', requireAdmin, async (req, res) => {
+  const quizId = Number(req.body.quiz_id);
+  const quiz = await db.getQuiz(quizId);
+  if (!quiz) return res.redirect('/admin/quizzes?error=Quiz not found');
+  const players = await db.getAllPlayers();
+  for (const p of players) {
+    await db.assignQuiz(quizId, p.id);
+  }
+  res.redirect('/admin/quizzes?success=' + encodeURIComponent(`Assigned "${quiz.title}" to all ${players.length} players.`));
+});
+
+app.get('/admin/quizzes/:id/results', requireAdmin, async (req, res) => {
+  const quiz = await db.getQuiz(Number(req.params.id));
+  if (!quiz) return res.redirect('/admin/quizzes');
+  const questions = await db.getQuizQuestions(quiz.id);
+  const attempts = await db.getAllQuizAttempts(quiz.id);
+  const assignments = await db.getQuizAssignments(quiz.id);
+  res.render('admin-quiz-results', { quiz, questions, attempts, assignments });
+});
+
+app.get('/quiz/attempt/:id', async (req, res) => {
+  const attempt = await db.getQuizAttempt(Number(req.params.id));
+  if (!attempt) return res.status(404).send('Attempt not found');
+  const questions = await db.getQuizQuestions(attempt.quiz_id);
+  let answers = {};
+  try { answers = JSON.parse(attempt.answers_json || '{}'); } catch(e) {}
+  const isAdmin = !!req.session.admin;
+  res.render('quiz-result', { attempt, questions, answers, isAdmin });
+});
+
+app.get('/quiz/:quizId/take/:playerId', async (req, res) => {
+  const quizId = Number(req.params.quizId);
+  const playerId = Number(req.params.playerId);
+  const quiz = await db.getQuiz(quizId);
+  const player = await db.getPlayer(playerId);
+  if (!quiz || !player) return res.status(404).send('Quiz or player not found');
+
+  const attempts = await db.getQuizAttempts(quizId, playerId);
+  let blocked = false;
+  let blockedUntil = null;
+  if (attempts.length >= 2) {
+    const lastAttempt = new Date(attempts[0].completed_at);
+    const unlockTime = new Date(lastAttempt.getTime() + 48 * 60 * 60 * 1000);
+    if (new Date() < unlockTime) {
+      blocked = true;
+      blockedUntil = unlockTime;
+    }
+  }
+
+  const questions = await db.getQuizQuestions(quizId);
+  res.render('quiz-take', { quiz, player, questions, attempts, blocked, blockedUntil });
+});
+
+app.post('/quiz/:quizId/submit/:playerId', async (req, res) => {
+  const quizId = Number(req.params.quizId);
+  const playerId = Number(req.params.playerId);
+  const quiz = await db.getQuiz(quizId);
+  const player = await db.getPlayer(playerId);
+  if (!quiz || !player) return res.status(404).send('Not found');
+
+  const attempts = await db.getQuizAttempts(quizId, playerId);
+  if (attempts.length >= 2) {
+    const lastAttempt = new Date(attempts[0].completed_at);
+    const unlockTime = new Date(lastAttempt.getTime() + 48 * 60 * 60 * 1000);
+    if (new Date() < unlockTime) return res.status(403).send('You must wait 48 hours before your next attempt.');
+  }
+
+  const questions = await db.getQuizQuestions(quizId);
+  const answers = {};
+  let score = 0;
+  for (const q of questions) {
+    const answer = req.body['q_' + q.id] || '';
+    answers[q.id] = answer;
+    if (answer === q.correct_answer) score++;
+  }
+
+  const attempt = await db.addQuizAttempt({
+    quiz_id: quizId,
+    player_id: playerId,
+    score,
+    total: questions.length,
+    answers_json: JSON.stringify(answers)
+  });
+
+  const pct = Math.round((score / questions.length) * 100);
+  const resultUrl = `https://cal-ripken-allstars.onrender.com/quiz/attempt/${attempt.id}`;
+  const smsBody = `Quiz Result: ${player.player_name} scored ${score}/${questions.length} (${pct}%) on "${quiz.title}"\n${resultUrl}`;
+
+  try {
+    const staff = await db.getAllStaff();
+    const adminPlayers = await db.getPlayersByPhone('9413026510');
+    const phones = new Set();
+    phones.add('9413026510');
+    for (const s of staff) {
+      if (s.phone && s.phone.length === 10) phones.add(s.phone);
+    }
+    for (const phone of phones) {
+      try { await sendSMS(phone, smsBody); } catch(e) { console.error('Quiz SMS error:', e.message); }
+    }
+  } catch(e) { console.error('Quiz notification error:', e.message); }
+
+  res.redirect('/quiz/attempt/' + attempt.id);
 });
 
 // --- Staff View (read-only) ---

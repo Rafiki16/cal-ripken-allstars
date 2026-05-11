@@ -195,6 +195,40 @@
       </div>
     </form>
 
+    <!-- Assigned Quizzes -->
+    <% if (quizAssignments && quizAssignments.length > 0) { %>
+    <div class="profile-section">
+      <h2 class="profile-section-title">Position Quizzes</h2>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <% quizAssignments.forEach(qa => { %>
+        <% const attempts = (quizAttemptData || {})[qa.quiz_id] || []; %>
+        <div style="border:1px solid var(--gray-200); border-radius:10px; padding:12px 16px; background:#fff; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:150px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <strong style="font-size:14px; color:var(--navy);"><%= qa.title %></strong>
+              <span style="font-size:10px; font-weight:600; padding:2px 6px; border-radius:4px; background:#dbeafe; color:#1e40af;"><%= qa.position %></span>
+            </div>
+            <% if (attempts.length > 0) { %>
+            <% const best = Math.max(...attempts.map(a => a.score)); %>
+            <div style="font-size:12px; color:var(--gray-500); margin-top:2px;">
+              Best: <strong><%= best %>/<%= attempts[0].total %></strong> (<%= Math.round((best/attempts[0].total)*100) %>%) &middot; <%= attempts.length %> attempt<%= attempts.length !== 1 ? 's' : '' %>
+            </div>
+            <% } else { %>
+            <div style="font-size:12px; color:#ca8a04; margin-top:2px;">Not yet taken</div>
+            <% } %>
+          </div>
+          <a href="/quiz/<%= qa.quiz_id %>/take/<%= player.id %>" class="btn btn-confirm" style="text-decoration:none; font-size:12px; padding:6px 16px;">
+            <%= attempts.length > 0 ? 'Retake' : 'Take Quiz' %>
+          </a>
+          <% if (attempts.length > 0) { %>
+          <a href="/quiz/attempt/<%= attempts[0].id %>" class="btn btn-secondary" style="text-decoration:none; font-size:12px; padding:6px 12px;">Last Result</a>
+          <% } %>
+        </div>
+        <% }); %>
+      </div>
+    </div>
+    <% } %>
+
     <!-- Programs Enrolled -->
     <% if (programData && programData.length > 0) { %>
     <% programData.forEach((pd, pi) => { %>

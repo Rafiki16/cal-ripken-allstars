@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>Quiz Result &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .result-q { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:8px; border:1px solid var(--gray-200); }
+    .result-q.correct { border-left:4px solid #16a34a; }
+    .result-q.wrong { border-left:4px solid #dc2626; }
+    .result-q h4 { font-size:13px; font-weight:600; color:var(--navy); margin:0 0 8px; }
+    .result-answer { font-size:13px; margin:2px 0; }
+    .result-answer.picked { font-weight:600; }
+    .result-answer.is-correct { color:#16a34a; }
+    .result-answer.is-wrong { color:#dc2626; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <% if (isAdmin) { %>
+        <a href="/admin/quizzes/<%= attempt.quiz_id %>/results" class="back-link">&larr; Back to Results</a>
+        <% } %>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Quiz Result</h1>
+            <p class="subtitle"><%= attempt.player_name %> &mdash; <%= attempt.quiz_title %></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% const pct = Math.round((attempt.score / attempt.total) * 100); %>
+    <div style="text-align:center; margin:20px 0 24px;">
+      <div style="display:inline-block; width:120px; height:120px; border-radius:50%; border:6px solid <%= pct >= 80 ? '#16a34a' : pct >= 60 ? '#ca8a04' : '#dc2626' %>; display:flex; align-items:center; justify-content:center; flex-direction:column;">
+        <div style="font-size:32px; font-weight:800; color:<%= pct >= 80 ? '#16a34a' : pct >= 60 ? '#ca8a04' : '#dc2626' %>;"><%= pct %>%</div>
+        <div style="font-size:13px; color:var(--gray-500);"><%= attempt.score %>/<%= attempt.total %></div>
+      </div>
+      <div style="margin-top:12px; font-size:18px; font-weight:700; color:<%= pct >= 80 ? '#16a34a' : pct >= 60 ? '#ca8a04' : '#dc2626' %>;">
+        <% if (pct >= 90) { %>Excellent!<% } else if (pct >= 80) { %>Great Job!<% } else if (pct >= 70) { %>Good Effort<% } else if (pct >= 60) { %>Keep Studying<% } else { %>Needs Work<% } %>
+      </div>
+      <div style="font-size:12px; color:var(--gray-500); margin-top:4px;">
+        <%= new Date(attempt.completed_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %>
+      </div>
+    </div>
+
+    <h2 class="section-title">Question Review</h2>
+    <% questions.forEach((q, i) => { %>
+    <% const playerAnswer = answers[q.id] || ''; %>
+    <% const isCorrect = playerAnswer === q.correct_answer; %>
+    <div class="result-q <%= isCorrect ? 'correct' : 'wrong' %>">
+      <h4>Q<%= i + 1 %>. <%= q.question_text %> <span style="float:right; font-size:12px;"><%= isCorrect ? '&#10003;' : '&#10007;' %></span></h4>
+      <% const options = { a: q.option_a, b: q.option_b, c: q.option_c, d: q.option_d }; %>
+      <% Object.entries(options).forEach(([key, val]) => { %>
+        <% if (val) { %>
+        <div class="result-answer<%= playerAnswer === key ? ' picked' : '' %><%= key === q.correct_answer ? ' is-correct' : (playerAnswer === key ? ' is-wrong' : '') %>">
+          <%= key.toUpperCase() %>. <%= val %>
+          <% if (key === q.correct_answer) { %> &#10003;<% } %>
+          <% if (playerAnswer === key && !isCorrect) { %> (your answer)<% } %>
+        </div>
+        <% } %>
+      <% }); %>
+    </div>
+    <% }); %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

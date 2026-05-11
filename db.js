@@ -298,6 +298,17 @@ async function init() {
     try { await pool.query('ALTER TABLE team_messages ADD COLUMN parent_id INTEGER REFERENCES team_messages(id) ON DELETE CASCADE'); } catch (e) { /* exists */ }
 
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS board_reactions (
+        id SERIAL PRIMARY KEY,
+        message_id INTEGER NOT NULL REFERENCES team_messages(id) ON DELETE CASCADE,
+        author_name TEXT NOT NULL,
+        reaction_type TEXT NOT NULL CHECK (reaction_type IN ('up', 'down')),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(message_id, author_name, reaction_type)
+      )
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS score_keepers (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
@@ -528,6 +539,53 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quizzes (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        position TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quiz_questions (
+        id SERIAL PRIMARY KEY,
+        quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        question_text TEXT NOT NULL,
+        option_a TEXT NOT NULL,
+        option_b TEXT NOT NULL,
+        option_c TEXT,
+        option_d TEXT,
+        correct_answer TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quiz_assignments (
+        id SERIAL PRIMARY KEY,
+        quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        assigned_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(quiz_id, player_id)
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quiz_attempts (
+        id SERIAL PRIMARY KEY,
+        quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        score INTEGER NOT NULL,
+        total INTEGER NOT NULL,
+        answers_json TEXT,
+        started_at TIMESTAMPTZ DEFAULT NOW(),
+        completed_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -699,6 +757,27 @@ async function init() {
       addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES ($1,$2,$3,$4)', [m.author_name, m.author_type, m.message, m.parent_id || null]),
       removeMessage: async (id) => pool.query('DELETE FROM team_messages WHERE id = $1', [id]),
       togglePinMessage: async (id) => pool.query('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = $1', [id]),
+      toggleReaction: async (messageId, authorName, reactionType) => {
+        const existing = await pool.query('SELECT id FROM board_reactions WHERE message_id = $1 AND author_name = $2 AND reaction_type = $3', [messageId, authorName, reactionType]);
+        if (existing.rows.length > 0) {
+          await pool.query('DELETE FROM board_reactions WHERE id = $1', [existing.rows[0].id]);
+        } else {
+          await pool.query('DELETE FROM board_reactions WHERE message_id = $1 AND author_name = $2', [messageId, authorName]);
+          await pool.query('INSERT INTO board_reactions (message_id, author_name, reaction_type) VALUES ($1, $2, $3)', [messageId, authorName, reactionType]);
+        }
+      },
+      getReactionsForMessages: async (messageIds) => {
+        if (!messageIds.length) return {};
+        const placeholders = messageIds.map((_, i) => `$${i + 1}`).join(',');
+        const rows = (await pool.query(`SELECT message_id, reaction_type, COUNT(*) as cnt, array_agg(author_name) as authors FROM board_reactions WHERE message_id IN (${placeholders}) GROUP BY message_id, reaction_type`, messageIds)).rows;
+        const result = {};
+        for (const r of rows) {
+          if (!result[r.message_id]) result[r.message_id] = { up: 0, down: 0, upAuthors: [], downAuthors: [] };
+          result[r.message_id][r.reaction_type] = parseInt(r.cnt);
+          result[r.message_id][r.reaction_type + 'Authors'] = r.authors || [];
+        }
+        return result;
+      },
       getAllSavedLocations: async () => (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
       addSavedLocation: async (name, address) => pool.query('INSERT INTO saved_locations (location_name, address) VALUES ($1, $2)', [name, address]),
       removeSavedLocation: async (id) => pool.query('DELETE FROM saved_locations WHERE id = $1', [id]),
@@ -878,6 +957,20 @@ async function init() {
       addProgramEquipment: async (e) => (await pool.query('INSERT INTO program_equipment (program_id, item_name, is_required, buy_url, sort_order) VALUES ($1,$2,$3,$4,$5) RETURNING id', [e.program_id, e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0])).rows[0],
       updateProgramEquipment: async (id, e) => pool.query('UPDATE program_equipment SET item_name=$1, is_required=$2, buy_url=$3, sort_order=$4 WHERE id=$5', [e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0, id]),
       removeProgramEquipment: async (id) => pool.query('DELETE FROM program_equipment WHERE id = $1', [id]),
+
+      getAllQuizzes: async () => (await pool.query('SELECT * FROM quizzes ORDER BY position, title')).rows,
+      getQuiz: async (id) => (await pool.query('SELECT * FROM quizzes WHERE id = $1', [id])).rows[0] || null,
+      getQuizzesByPosition: async (pos) => (await pool.query('SELECT * FROM quizzes WHERE position = $1 ORDER BY title', [pos])).rows,
+      createQuiz: async (q) => (await pool.query('INSERT INTO quizzes (title, position, description) VALUES ($1,$2,$3) RETURNING id', [q.title, q.position, q.description || null])).rows[0],
+      getQuizQuestions: async (quizId) => (await pool.query('SELECT * FROM quiz_questions WHERE quiz_id = $1 ORDER BY sort_order', [quizId])).rows,
+      addQuizQuestion: async (q) => (await pool.query('INSERT INTO quiz_questions (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id', [q.quiz_id, q.question_text, q.option_a, q.option_b, q.option_c || null, q.option_d || null, q.correct_answer, q.sort_order || 0])).rows[0],
+      assignQuiz: async (quizId, playerId) => { try { await pool.query('INSERT INTO quiz_assignments (quiz_id, player_id) VALUES ($1,$2)', [quizId, playerId]); } catch(e) { /* duplicate */ } },
+      getQuizAssignments: async (quizId) => (await pool.query('SELECT qa.*, p.player_name, p.parent_phone FROM quiz_assignments qa JOIN players p ON qa.player_id = p.id WHERE qa.quiz_id = $1 ORDER BY p.player_name', [quizId])).rows,
+      getPlayerQuizAssignments: async (playerId) => (await pool.query('SELECT qa.*, q.title, q.position, q.description FROM quiz_assignments qa JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.player_id = $1 ORDER BY qa.assigned_at DESC', [playerId])).rows,
+      getQuizAttempts: async (quizId, playerId) => (await pool.query('SELECT * FROM quiz_attempts WHERE quiz_id = $1 AND player_id = $2 ORDER BY completed_at DESC', [quizId, playerId])).rows,
+      getAllQuizAttempts: async (quizId) => (await pool.query('SELECT qa.*, p.player_name FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id WHERE qa.quiz_id = $1 ORDER BY qa.completed_at DESC', [quizId])).rows,
+      addQuizAttempt: async (a) => (await pool.query('INSERT INTO quiz_attempts (quiz_id, player_id, score, total, answers_json) VALUES ($1,$2,$3,$4,$5) RETURNING id', [a.quiz_id, a.player_id, a.score, a.total, a.answers_json || null])).rows[0],
+      getQuizAttempt: async (id) => (await pool.query('SELECT qa.*, p.player_name, q.title as quiz_title, q.position as quiz_position FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = $1', [id])).rows[0] || null,
     };
   } else {
     const Database = require('better-sqlite3');
@@ -1103,6 +1196,17 @@ async function init() {
     try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN our_score INTEGER'); } catch (e) { /* exists */ }
     try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN opponent_score INTEGER'); } catch (e) { /* exists */ }
     try { sqliteDb.exec('ALTER TABLE team_messages ADD COLUMN parent_id INTEGER REFERENCES team_messages(id) ON DELETE CASCADE'); } catch (e) { /* exists */ }
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS board_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id INTEGER NOT NULL REFERENCES team_messages(id) ON DELETE CASCADE,
+        author_name TEXT NOT NULL,
+        reaction_type TEXT NOT NULL CHECK (reaction_type IN ('up', 'down')),
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(message_id, author_name, reaction_type)
+      )
+    `);
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS score_keepers (
@@ -1335,6 +1439,53 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS quizzes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        position TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS quiz_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        question_text TEXT NOT NULL,
+        option_a TEXT NOT NULL,
+        option_b TEXT NOT NULL,
+        option_c TEXT,
+        option_d TEXT,
+        correct_answer TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS quiz_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        assigned_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(quiz_id, player_id)
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS quiz_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+        score INTEGER NOT NULL,
+        total INTEGER NOT NULL,
+        answers_json TEXT,
+        started_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -1512,6 +1663,27 @@ async function init() {
       addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES (?,?,?,?)').run(m.author_name, m.author_type, m.message, m.parent_id || null),
       removeMessage: async (id) => sqliteDb.prepare('DELETE FROM team_messages WHERE id = ?').run(id),
       togglePinMessage: async (id) => sqliteDb.prepare('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id),
+      toggleReaction: async (messageId, authorName, reactionType) => {
+        const existing = sqliteDb.prepare('SELECT id FROM board_reactions WHERE message_id = ? AND author_name = ? AND reaction_type = ?').get(messageId, authorName, reactionType);
+        if (existing) {
+          sqliteDb.prepare('DELETE FROM board_reactions WHERE id = ?').run(existing.id);
+        } else {
+          sqliteDb.prepare('DELETE FROM board_reactions WHERE message_id = ? AND author_name = ?').run(messageId, authorName);
+          sqliteDb.prepare('INSERT INTO board_reactions (message_id, author_name, reaction_type) VALUES (?, ?, ?)').run(messageId, authorName, reactionType);
+        }
+      },
+      getReactionsForMessages: async (messageIds) => {
+        if (!messageIds.length) return {};
+        const placeholders = messageIds.map(() => '?').join(',');
+        const rows = sqliteDb.prepare(`SELECT message_id, reaction_type, COUNT(*) as cnt, GROUP_CONCAT(author_name) as authors FROM board_reactions WHERE message_id IN (${placeholders}) GROUP BY message_id, reaction_type`).all(...messageIds);
+        const result = {};
+        for (const r of rows) {
+          if (!result[r.message_id]) result[r.message_id] = { up: 0, down: 0, upAuthors: [], downAuthors: [] };
+          result[r.message_id][r.reaction_type] = r.cnt;
+          result[r.message_id][r.reaction_type + 'Authors'] = r.authors ? r.authors.split(',') : [];
+        }
+        return result;
+      },
       getAllSavedLocations: async () => sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
       addSavedLocation: async (name, address) => sqliteDb.prepare('INSERT INTO saved_locations (location_name, address) VALUES (?, ?)').run(name, address),
       removeSavedLocation: async (id) => sqliteDb.prepare('DELETE FROM saved_locations WHERE id = ?').run(id),
@@ -1691,6 +1863,20 @@ async function init() {
       addProgramEquipment: async (e) => ({ id: sqliteDb.prepare('INSERT INTO program_equipment (program_id, item_name, is_required, buy_url, sort_order) VALUES (?,?,?,?,?)').run(e.program_id, e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0).lastInsertRowid }),
       updateProgramEquipment: async (id, e) => sqliteDb.prepare('UPDATE program_equipment SET item_name=?, is_required=?, buy_url=?, sort_order=? WHERE id=?').run(e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0, id),
       removeProgramEquipment: async (id) => sqliteDb.prepare('DELETE FROM program_equipment WHERE id = ?').run(id),
+
+      getAllQuizzes: async () => sqliteDb.prepare('SELECT * FROM quizzes ORDER BY position, title').all(),
+      getQuiz: async (id) => sqliteDb.prepare('SELECT * FROM quizzes WHERE id = ?').get(id) || null,
+      getQuizzesByPosition: async (pos) => sqliteDb.prepare('SELECT * FROM quizzes WHERE position = ?').all(pos),
+      createQuiz: async (q) => ({ id: sqliteDb.prepare('INSERT INTO quizzes (title, position, description) VALUES (?,?,?)').run(q.title, q.position, q.description || null).lastInsertRowid }),
+      getQuizQuestions: async (quizId) => sqliteDb.prepare('SELECT * FROM quiz_questions WHERE quiz_id = ? ORDER BY sort_order').all(quizId),
+      addQuizQuestion: async (q) => ({ id: sqliteDb.prepare('INSERT INTO quiz_questions (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer, sort_order) VALUES (?,?,?,?,?,?,?,?)').run(q.quiz_id, q.question_text, q.option_a, q.option_b, q.option_c || null, q.option_d || null, q.correct_answer, q.sort_order || 0).lastInsertRowid }),
+      assignQuiz: async (quizId, playerId) => { try { sqliteDb.prepare('INSERT INTO quiz_assignments (quiz_id, player_id) VALUES (?,?)').run(quizId, playerId); } catch(e) { /* duplicate */ } },
+      getQuizAssignments: async (quizId) => sqliteDb.prepare('SELECT qa.*, p.player_name, p.parent_phone FROM quiz_assignments qa JOIN players p ON qa.player_id = p.id WHERE qa.quiz_id = ? ORDER BY p.player_name').all(quizId),
+      getPlayerQuizAssignments: async (playerId) => sqliteDb.prepare('SELECT qa.*, q.title, q.position, q.description FROM quiz_assignments qa JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.player_id = ? ORDER BY qa.assigned_at DESC').all(playerId),
+      getQuizAttempts: async (quizId, playerId) => sqliteDb.prepare('SELECT * FROM quiz_attempts WHERE quiz_id = ? AND player_id = ? ORDER BY completed_at DESC').all(quizId, playerId),
+      getAllQuizAttempts: async (quizId) => sqliteDb.prepare('SELECT qa.*, p.player_name FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id WHERE qa.quiz_id = ? ORDER BY qa.completed_at DESC').all(quizId),
+      addQuizAttempt: async (a) => ({ id: sqliteDb.prepare('INSERT INTO quiz_attempts (quiz_id, player_id, score, total, answers_json) VALUES (?,?,?,?,?)').run(a.quiz_id, a.player_id, a.score, a.total, a.answers_json || null).lastInsertRowid }),
+      getQuizAttempt: async (id) => sqliteDb.prepare('SELECT qa.*, p.player_name, q.title as quiz_title, q.position as quiz_position FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = ?').get(id) || null,
     };
   }
 }
@@ -1852,4 +2038,17 @@ module.exports = {
   addProgramEquipment: (...args) => impl.addProgramEquipment(...args),
   updateProgramEquipment: (...args) => impl.updateProgramEquipment(...args),
   removeProgramEquipment: (...args) => impl.removeProgramEquipment(...args),
+  getAllQuizzes: (...args) => impl.getAllQuizzes(...args),
+  getQuiz: (...args) => impl.getQuiz(...args),
+  getQuizzesByPosition: (...args) => impl.getQuizzesByPosition(...args),
+  createQuiz: (...args) => impl.createQuiz(...args),
+  getQuizQuestions: (...args) => impl.getQuizQuestions(...args),
+  addQuizQuestion: (...args) => impl.addQuizQuestion(...args),
+  assignQuiz: (...args) => impl.assignQuiz(...args),
+  getQuizAssignments: (...args) => impl.getQuizAssignments(...args),
+  getPlayerQuizAssignments: (...args) => impl.getPlayerQuizAssignments(...args),
+  getQuizAttempts: (...args) => impl.getQuizAttempts(...args),
+  getAllQuizAttempts: (...args) => impl.getAllQuizAttempts(...args),
+  addQuizAttempt: (...args) => impl.addQuizAttempt(...args),
+  getQuizAttempt: (...args) => impl.getQuizAttempt(...args),
 };

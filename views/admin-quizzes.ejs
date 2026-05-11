@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>Quizzes &middot; Admin &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/admin" class="back-link">&larr; Back to Admin</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Position Quizzes</h1>
+            <p class="subtitle">Assign &amp; Track Player Knowledge</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (success) { %>
+    <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (error) { %>
+    <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <% if (quizzes.length === 0) { %>
+    <div style="margin:24px 0; padding:20px; background:#eff6ff; border:1px solid #3b82f6; border-radius:12px;">
+      <form method="POST" action="/admin/seed-quizzes" style="display:flex; align-items:center; gap:12px;">
+        <div style="flex:1;">
+          <strong style="font-size:14px; color:#1e40af;">Seed Position Quizzes</strong>
+          <p style="font-size:12px; color:#2563eb; margin:4px 0 0;">Load quizzes for 1B, 2B, SS, 3B, and General Infield from the Perry Hill Infield System. 10 questions each.</p>
+        </div>
+        <button type="submit" class="btn btn-confirm" style="white-space:nowrap;">Seed Quizzes</button>
+      </form>
+    </div>
+    <% } %>
+
+    <% if (quizzes.length > 0) { %>
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:16px;">
+      <% quizzes.forEach(quiz => { %>
+      <% const stats = quizStats[quiz.id] || { assigned: 0, attempted: 0, attempts: 0 }; %>
+      <div style="border:1px solid var(--gray-200); border-radius:12px; padding:16px; background:#fff;">
+        <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:200px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <h3 style="font-size:15px; font-weight:700; color:var(--navy); margin:0;"><%= quiz.title %></h3>
+              <span style="font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; background:#dbeafe; color:#1e40af;"><%= quiz.position %></span>
+            </div>
+            <% if (quiz.description) { %>
+            <p style="font-size:12px; color:var(--gray-500); margin:0 0 8px;"><%= quiz.description %></p>
+            <% } %>
+            <div style="display:flex; gap:16px; font-size:12px; color:var(--gray-500);">
+              <span><strong><%= stats.assigned %></strong> assigned</span>
+              <span><strong><%= stats.attempted %></strong> taken</span>
+              <span><strong><%= stats.attempts %></strong> total attempts</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <form method="POST" action="/admin/quizzes/assign" style="margin:0;">
+              <input type="hidden" name="quiz_id" value="<%= quiz.id %>">
+              <button type="submit" class="btn btn-confirm" style="font-size:12px; padding:6px 14px;">Assign by Position</button>
+            </form>
+            <form method="POST" action="/admin/quizzes/assign-all" style="margin:0;">
+              <input type="hidden" name="quiz_id" value="<%= quiz.id %>">
+              <button type="submit" class="btn btn-secondary" style="font-size:12px; padding:6px 14px;">Assign All</button>
+            </form>
+            <a href="/admin/quizzes/<%= quiz.id %>/results" class="btn btn-secondary" style="text-decoration:none; font-size:12px; padding:6px 14px;">View Results</a>
+          </div>
+        </div>
+      </div>
+      <% }); %>
+    </div>
+    <% } %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>

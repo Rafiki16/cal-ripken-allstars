@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title><%= quiz.title %> &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .quiz-q { background:#fff; border:1px solid var(--gray-200); border-radius:12px; padding:16px; margin-bottom:12px; }
+    .quiz-q h3 { font-size:14px; font-weight:600; color:var(--navy); margin:0 0 12px; }
+    .quiz-q .q-num { color:var(--gray-500); font-weight:400; }
+    .quiz-option { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--gray-200); border-radius:8px; margin-bottom:6px; cursor:pointer; transition:all 0.15s; }
+    .quiz-option:hover { background:#f0f7ff; border-color:#93c5fd; }
+    .quiz-option input[type="radio"] { margin:0; }
+    .quiz-option label { cursor:pointer; font-size:14px; flex:1; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1><%= quiz.title %></h1>
+            <p class="subtitle"><%= player.player_name %></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <% if (blocked) { %>
+    <div style="text-align:center; padding:40px 20px;">
+      <div style="font-size:48px; margin-bottom:16px;">&#9203;</div>
+      <h2 style="color:var(--navy); margin:0 0 8px;">Retake Locked</h2>
+      <p style="color:var(--gray-500); font-size:14px; max-width:400px; margin:0 auto 16px;">
+        You've used your two attempts. You can retake this quiz after:
+      </p>
+      <div style="font-size:18px; font-weight:700; color:#dc2626; background:#fee2e2; display:inline-block; padding:8px 20px; border-radius:8px;">
+        <%= blockedUntil.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %>
+      </div>
+      <% if (attempts.length > 0) { %>
+      <div style="margin-top:20px;">
+        <a href="/quiz/attempt/<%= attempts[0].id %>" style="color:var(--navy); font-weight:600;">View your last result</a>
+      </div>
+      <% } %>
+    </div>
+    <% } else { %>
+
+    <% if (attempts.length > 0) { %>
+    <div style="margin-bottom:16px; padding:12px 16px; background:#fef9c3; border:1px solid #fbbf24; border-radius:10px; font-size:13px; color:#92400e;">
+      <strong>Attempt <%= attempts.length + 1 %></strong> &mdash;
+      <% if (attempts.length === 1) { %>
+        This is your last free retake. After this, you'll need to wait 48 hours.
+      <% } else { %>
+        You scored <%= attempts[0].score %>/<%= attempts[0].total %> last time.
+      <% } %>
+    </div>
+    <% } %>
+
+    <% if (quiz.description) { %>
+    <p style="color:var(--gray-500); font-size:13px; margin-bottom:16px;"><%= quiz.description %></p>
+    <% } %>
+
+    <form method="POST" action="/quiz/<%= quiz.id %>/submit/<%= player.id %>" onsubmit="return validateQuiz()">
+      <% questions.forEach((q, i) => { %>
+      <div class="quiz-q" id="qq_<%= q.id %>">
+        <h3><span class="q-num">Q<%= i + 1 %>.</span> <%= q.question_text %></h3>
+        <div class="quiz-option" onclick="this.querySelector('input').checked=true">
+          <input type="radio" name="q_<%= q.id %>" value="a" id="q<%= q.id %>_a">
+          <label for="q<%= q.id %>_a"><%= q.option_a %></label>
+        </div>
+        <div class="quiz-option" onclick="this.querySelector('input').checked=true">
+          <input type="radio" name="q_<%= q.id %>" value="b" id="q<%= q.id %>_b">
+          <label for="q<%= q.id %>_b"><%= q.option_b %></label>
+        </div>
+        <% if (q.option_c) { %>
+        <div class="quiz-option" onclick="this.querySelector('input').checked=true">
+          <input type="radio" name="q_<%= q.id %>" value="c" id="q<%= q.id %>_c">
+          <label for="q<%= q.id %>_c"><%= q.option_c %></label>
+        </div>
+        <% } %>
+        <% if (q.option_d) { %>
+        <div class="quiz-option" onclick="this.querySelector('input').checked=true">
+          <input type="radio" name="q_<%= q.id %>" value="d" id="q<%= q.id %>_d">
+          <label for="q<%= q.id %>_d"><%= q.option_d %></label>
+        </div>
+        <% } %>
+      </div>
+      <% }); %>
+
+      <div style="text-align:center; margin:24px 0;">
+        <button type="submit" class="btn btn-confirm" style="font-size:16px; padding:12px 40px;">Submit Quiz</button>
+      </div>
+    </form>
+
+    <script>
+    function validateQuiz() {
+      var qs = document.querySelectorAll('.quiz-q');
+      var missing = false;
+      for (var i = 0; i < qs.length; i++) {
+        var radios = qs[i].querySelectorAll('input[type="radio"]');
+        var answered = false;
+        for (var j = 0; j < radios.length; j++) { if (radios[j].checked) answered = true; }
+        if (!answered) {
+          qs[i].style.border = '2px solid #dc2626';
+          if (!missing) qs[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          missing = true;
+        } else {
+          qs[i].style.border = '1px solid var(--gray-200)';
+        }
+      }
+      if (missing) { alert('Please answer all questions before submitting.'); return false; }
+      return true;
+    }
+    </script>
+    <% } %>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+    </div>
+  </footer>
+</body>
+</html>
