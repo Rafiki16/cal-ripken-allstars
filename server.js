@@ -933,14 +933,16 @@ app.post('/profile/:id', async (req, res) => {
     baseball_iq: toInt(req.body.baseball_iq),
     contacts: JSON.stringify(contacts),
     jersey_number: (req.body.jersey_number || '').trim() || null,
+    coach_assigned_positions: isAdmin ? toList(req.body.coach_assigned_positions) : (player.coach_assigned_positions || ''),
   });
 
   const updated = await db.getPlayer(Number(req.params.id));
 
-  // Auto-assign to programs based on position match
-  if (updated.status === 'confirmed' && updated.best_positions) {
+  // Auto-assign to programs based on position match (prefer coach-assigned, fall back to best)
+  const posSource = updated.coach_assigned_positions || updated.best_positions;
+  if (updated.status === 'confirmed' && posSource) {
     try {
-      const playerPositions = updated.best_positions.split(',').map(p => p.trim()).filter(Boolean);
+      const playerPositions = posSource.split(',').map(p => p.trim()).filter(Boolean);
       const programsWithPositions = await db.getAllProgramsWithPositions();
       for (const prog of programsWithPositions) {
         const progPositions = prog.assigned_positions.split(',').map(p => p.trim()).filter(Boolean);
@@ -2834,6 +2836,7 @@ app.post('/admin/programs/:id/day/:dayId/activity', requireAdmin, async (req, re
     instructions: (req.body.instructions || '').trim() || null,
     reps: (req.body.reps || '').trim() || null,
     link_url: (req.body.link_url || '').trim() || null,
+    image_url: (req.body.image_url || '').trim() || null,
     sort_order: activities.length,
   });
   res.redirect('/admin/programs/' + req.params.id + '/edit#day-' + req.params.dayId);
@@ -2847,6 +2850,7 @@ app.post('/admin/programs/:id/activity/:actId/update', requireAdmin, async (req,
     instructions: (req.body.instructions || '').trim() || null,
     reps: (req.body.reps || '').trim() || null,
     link_url: (req.body.link_url || '').trim() || null,
+    image_url: (req.body.image_url || '').trim() || null,
     sort_order: parseInt(req.body.sort_order) || 0,
   });
   res.redirect('/admin/programs/' + req.params.id + '/edit#day-' + dayId);
@@ -2917,8 +2921,9 @@ app.post('/admin/programs/:id/assign-positions', requireAdmin, async (req, res) 
     const confirmedPlayers = await db.getConfirmedPlayers();
     let count = 0;
     for (const player of confirmedPlayers) {
-      if (!player.best_positions) continue;
-      const playerPositions = player.best_positions.split(',').map(p => p.trim()).filter(Boolean);
+      const posSource = player.coach_assigned_positions || player.best_positions;
+      if (!posSource) continue;
+      const playerPositions = posSource.split(',').map(p => p.trim()).filter(Boolean);
       if (playerPositions.some(pp => positions.includes(pp))) {
         await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
         count++;
@@ -3099,6 +3104,282 @@ app.post('/admin/seed-arm-care', requireAdmin, async (req, res) => {
     res.redirect('/admin/programs/' + program.id + '/edit?success=Arm+Care+program+seeded');
   } catch (err) {
     console.error('Seed error:', err);
+    res.redirect('/admin/programs?error=' + encodeURIComponent(err.message));
+  }
+});
+
+app.post('/admin/seed-perry-hill', requireAdmin, async (req, res) => {
+  try {
+    const programs = [
+      {
+        title: 'Perry Hill: Infield Fundamentals - The Six Fs',
+        description: 'The foundation of Perry Hill\'s infield system. Every infielder must master the Six Fs: Feet, Field, Funnel, Footwork, Fire, and Follow.',
+        positions: '1B,2B,SS,3B',
+        days: [
+          { label: 'F1: Feet - Ready Position', activities: [
+            { name: 'Relaxed Stance', description: 'Be in a relaxed position as the pitcher holds the ball. Stay loose and athletic.', instructions: 'Stand at your position with knees slightly bent, weight balanced.', reps: 'Every pitch' },
+            { name: 'Bend on First Movement', description: 'On the pitcher\'s first movement, bend your back slightly to begin loading.', instructions: 'Watch the pitcher\'s arm. As it starts moving forward, begin your bend.', reps: 'Every pitch' },
+            { name: 'Small Step & Separate', description: 'When the pitcher\'s arm reaches the ear, take a small step forward with either foot, then separate feet to shoulder-width apart.', instructions: 'Step forward, then separate both feet simultaneously so weight is distributed evenly on the balls of your feet. Knees slightly bent.', reps: '10 reps dry, then live off fungo' },
+            { name: 'Avoid Laziness', description: 'Always move your feet into the proper position - wide base, butt down, hands out front.', instructions: 'Set up with a wide base, the butt down, and the hands out in front on every single pitch. Never get lazy as the game progresses.', reps: 'Every pitch' },
+          ]},
+          { label: 'F2: Field - Get to the Ball', activities: [
+            { name: 'Wide Base Setup', description: 'As you get to the ball, make sure your feet are wide apart to create a wide base.', instructions: 'Get to the ball as quickly as you can. Set up with feet wide apart so your butt can get down and hands can push out front.', reps: '10 ground balls' },
+            { name: 'See Ball and Glove Together', description: 'Field the ball out in front so you can see the ball and the glove in the same view.', instructions: 'Watch the ball from the bat into the glove. Seeing both together makes you a more consistent fielder and helps you react to difficult hops.', reps: '10 ground balls' },
+            { name: 'Balance Point', description: 'A wide base provides a good balance point so you won\'t tip over.', instructions: 'Create a wide base. Not creating one will cause your glove to lift off the ground and may tip you forward. A narrow stance makes it hard to see ball and glove together.', reps: '10 ground balls' },
+          ]},
+          { label: 'F3: Funnel - Soft Hands', activities: [
+            { name: 'Funnel to Body Center', description: 'After fielding the ball out in front, funnel the ball back into your body with soft hands.', instructions: 'Catch the ball, then bring it to the center of the body at chest level so you can separate the hands and prepare to throw.', reps: '10 ground balls' },
+            { name: 'Thumbs Down Separation', description: 'Separate the hands with the thumbs down to get into a position of power.', instructions: 'Thumbs down locks your front shoulder on target and ensures proper elbow angle with hand above the ball. This leads to a more powerful, accurate throw.', reps: '10 reps dry, 10 with ball' },
+          ]},
+          { label: 'F4: Footwork - Direction & Momentum', activities: [
+            { name: 'Right-Left-Target (RH throwers)', description: 'The formula is right foot to left foot and left foot to target. For lefties: left to right and right to target.', instructions: 'Move your feet in the direction of the target without crossing over. Right-handers take the right foot toward the left, then the left toward the target.', reps: '10 reps dry' },
+            { name: 'No Cross-Over Rule', description: 'Never cross your feet before releasing the ball - it causes your hand to get under the ball and strains the elbow.', instructions: 'If you cross over your feet, the ball can move during flight. Keep feet moving toward target, never crossing.', reps: '10 throws focusing on footwork' },
+          ]},
+          { label: 'F5: Fire - Release the Ball', activities: [
+            { name: 'Quick Release', description: 'If the first four Fs are completed, you shouldn\'t have to think about anything other than getting rid of the ball quickly.', instructions: 'Thumbs-down separation should have your front shoulder aligned and elbow at proper angle with hand behind ball. Release with confidence.', reps: '10 throws' },
+            { name: 'Four-Seam Grip', description: 'Always use a four-seam grip when throwing after the catch.', instructions: 'Grip across the seams for maximum rotation and accuracy. Keep your elbow above the shoulder.', reps: 'Every throw' },
+          ]},
+          { label: 'F6: Follow - Follow the Throw', activities: [
+            { name: 'Follow Through', description: 'After releasing the ball, your body should automatically follow toward the target for several steps.', instructions: 'If you\'re peeling off or not following through, it means you\'re not generating enough momentum. Go back and check the first five Fs.', reps: '10 throws with follow' },
+            { name: 'Complete Six Fs Drill', description: 'Put all six Fs together: Relax, Bend, Step, Separate, Field, Wide Base, Funnel, Footwork, Thumbs Down, Fire, Follow.', instructions: 'Full sequence from ready position through follow-through. Every rep should hit all six Fs in order.', reps: '20 ground balls' },
+          ]},
+        ],
+      },
+      {
+        title: 'Perry Hill: First Baseman Program',
+        description: 'Complete first baseman development program covering break to base, receiving throws, ground balls, bunts, holding runners, and pick-offs from the Perry Hill system.',
+        positions: '1B',
+        days: [
+          { label: 'Break to Base & Receiving', activities: [
+            { name: 'Anchor at Corner', description: 'Right-handed 1B: Go to the corner closest with left foot, replace with right foot. See throw, drop foot, stretch foot to the ball.', instructions: 'Anchor at the corner away from the glove. See the throw, drop the foot, stretch to the ball.', reps: '10 reps each side' },
+            { name: 'Fungo Drill', description: 'Ground balls from various infield spots to keep 1B from stretching too early. Receive simulated low throws "inside" and stretch whether forehand or backhand.', instructions: 'Right-handed 1B: Backhand any ball at or outside left shoulder, forehand any ball inside left shoulder. Left-handed 1B: Backhand at or inside right shoulder, forehand outside right shoulder.', reps: '15 throws' },
+            { name: 'Decision-Making Drill', description: 'Come off the bag on the outfield side to save an errant throw. Roll with the tag on wide throws "up the line."', instructions: 'Simulate balls in front of the mound or home plate with left foot against inside part of bag. Receive good throws. Work on shifting feet into foul territory on errant throws outside the line.', reps: '10 reps' },
+          ]},
+          { label: 'Ground Balls at First Base', activities: [
+            { name: 'Ground Balls - Throws to Second', description: 'Rolled, fungo, or soft toss with throws to second base. Emphasis on good fielding position, footwork, and throwing mechanics.', instructions: 'Direction of ball determines fielding position and footwork. Right-handed 1B at first base: right foot to left, left to second. Toward the line: field right foot to left, left foot to second.', reps: '15 ground balls' },
+            { name: 'Ground Balls - Pitcher Covering', description: 'Rolled, fungo, soft toss with pitcher covering first. Field and follow with "no spin" toss.', instructions: 'At or medium speed away: Field and follow with no-spin toss. Hard to backhand routine: Field in middle of body, in front of throwing side foot, stay low, throw uphill. Extended: Field off glove side foot, gather balance as throwing side foot crosses over, stay low, throw uphill.', reps: '10 each type' },
+          ]},
+          { label: 'Bunts', activities: [
+            { name: 'Bunts - Runner on First', description: 'Set angle on "early break." Must "get around" all bunts with proper footwork.', instructions: 'Right-handed 1B Forehand: field mid-body to right foot, jab step with left foot to second or right foot to left, left to second or first. Left-handed 1B Forehand: field mid-body to left foot, jab step with right foot to second or left foot to right, right to second or first.', reps: '10 bunts' },
+            { name: 'Bunts - Runners on First and Second', description: 'In on grass charging in a straight line to home plate. Direction of bunt determines fielding position. Field with lead base in mind.', instructions: 'Right-handed 1B: Ball left of body mid-line forehand, field inside left foot, right foot to left foot, left foot reverse pivot to third base. Ball right of body mid-line backhand: field ball inside left foot, right foot to left, left foot to first, third base.', reps: '10 bunts' },
+            { name: 'Tweeners', description: 'Read speed and direction of ball to decide coverage.', instructions: 'Soft: Cover first. Hard: 3-1 play (throw to third, cover first).', reps: '5 each type' },
+          ]},
+          { label: 'Holding Runners & Pick-Offs', activities: [
+            { name: 'Proper Set-Up for Holding Runners', description: 'Right foot against the base, inside edge with toes extending beyond front inside corner. Left foot should be "open" with heel against foul line pointed to mound area.', instructions: 'Position ensures tag is in front of base. Stay in fair territory. Left heel against foul line.', reps: '10 reps' },
+            { name: 'Receive Pick-Off Throws', description: 'Make hard, straight downward tag. Simulate runners on first-and-third with "blind" tag technique.', instructions: 'On first-and-third: receive pick-off throw, keep head up, watch runner at third while making the tag.', reps: '10 pick-off tags' },
+            { name: 'Break Off Bag with Pitch', description: 'Lead with right foot, shuffle back staying "square" to home plate for possible pickoff throw from catcher.', instructions: 'Drop step (Right-hander: left foot; Left-hander: right foot). Reverse tag; catch or block errant throws.', reps: '5 reps each' },
+            { name: 'First Move with Left-Handed Pitcher', description: 'Proper footwork creates angle and distance to second base when runner breaks.', instructions: 'Right-handed 1B: move right foot to left foot, then left foot to second base. Pick-off throw should be on outside left shoulder. Left-handed 1B: right foot to pick-off throw, left foot to right foot, right foot to second.', reps: '5 reps' },
+          ]},
+        ],
+      },
+      {
+        title: 'Perry Hill: Second Baseman Program',
+        description: 'Complete second baseman development: positioning, ground balls, slow rollers, backhands, and double play pivots from the Perry Hill infield system.',
+        positions: '2B',
+        days: [
+          { label: 'Positioning & Routine Ground Balls', activities: [
+            { name: 'Positioning Strategy', description: 'Move with the count and game situation. Understand when to shade and when to play straight up.', instructions: 'Adjust based on pitcher, hitter tendencies, count, and base runners. Know your pitcher\'s strengths.', reps: 'Situational review' },
+            { name: 'Routine Ground Balls to First', description: 'Rolled, fungo, soft toss with throws to first base. Emphasis on good fielding position, footwork (replace) and throwing mechanics.', instructions: 'Field the ball, use replace footwork (right-left to target), throw to first with four-seam grip.', reps: '15 ground balls' },
+            { name: 'Slow Rollers', description: 'Using proper angle, field ball slightly outside left foot. Make change "in the middle" and throw off the right foot.', instructions: 'Field left, throw right. If ball is fielded on the grass, tuck glove into body to enable arm to get "back and through" to first baseman.', reps: '10 slow rollers' },
+          ]},
+          { label: 'Backhand & Varied Ground Balls', activities: [
+            { name: 'Backhand - Routine', description: 'Using proper angle, take right foot to the ball, extend glove in front of right foot in middle of body. Left shoulder automatically at first base.', instructions: 'Use replace footwork: right to left, left to first or take a jab step toward first with left foot.', reps: '10 backhands' },
+            { name: 'Backhand - Extended', description: 'Using proper angle, field ball off left foot, gather balance as right foot crosses over and plants.', instructions: 'Take a jab step toward first base with left foot after planting.', reps: '10 extended backhands' },
+            { name: 'Medium Speed Ground Balls', description: 'Various speeds and angles. Player chooses correct approach and footwork.', instructions: 'Medium speed to right, below average runner: get around the ball, field slightly outside left foot making exchange "in the middle", use right-left replace footwork. With average or above average runner: get around ball, exchange "in the middle" and throw off right foot. Field left, throw right.', reps: '15 varied ground balls' },
+          ]},
+          { label: 'DP Pivots from SS/3B', activities: [
+            { name: 'Middle Back Position', description: 'Approach the base with hands up and in, shoulders parallel to third base line. Left foot on or near middle of base, right foot extended behind the bag.', instructions: 'This is the "middle back" starting position for receiving throws from the shortstop or third baseman.', reps: '5 dry reps' },
+            { name: 'Throw Between Shoulders', description: 'Receive the throw, left foot takes a jab step to first base, make the relay throw.', instructions: 'Quick transfer from glove to hand, jab step toward first, fire.', reps: '10 feeds' },
+            { name: 'Slow Hit Ball / Backhand Feed', description: 'Step to the ball with right foot and as the left foot comes down, make the relay throw.', instructions: 'Adjust footwork to the speed and location of the feed.', reps: '10 feeds' },
+            { name: 'Behind Right Shoulder', description: 'Step to the ball with right foot, drag left across the bag, left foot takes a jab step to first base and make the relay throw.', instructions: 'Stay athletic, keep hands up and ready.', reps: '10 feeds' },
+            { name: 'In Front of Left Shoulder', description: 'Step to the ball with right foot as left foot comes down and make the relay throw.', instructions: 'Catch and throw in one motion, using momentum toward first base.', reps: '10 feeds' },
+          ]},
+          { label: 'DP Pivots from 1B/Pitcher & Feeds', activities: [
+            { name: 'Pivot from First Baseman', description: 'Ground ball inside the baseline. Approach bag with shoulders "square" to first baseman. Left foot on or near back outside corner with right foot extending inside baseline.', instructions: 'From left shoulder in: right foot jab step, drag left foot across base, make relay. Outside left shoulder: left foot jab step, begin right-left footwork to first.', reps: '10 feeds each type' },
+            { name: 'Pivot from Pitcher', description: 'Approach bag with right foot slightly past the back corner of second base.', instructions: 'From right shoulder in: left foot to ball, right to left, left to first base footwork. From right shoulder out: right foot to ball, drag left foot across bag, jab step to first.', reps: '10 feeds each type' },
+            { name: 'DP Feeds to Shortstop', description: 'Five types based on "straight up" depth and ball location.', instructions: '1) Ground ball toward 2B or directly at 2B: no spin underhand toss. 2) Ground ball fielded behind bag: no spin backhand toss. 3) Ground ball to right fielded "in the middle": left foot slightly open, firm uphill throw to back of 2B. 4) Below avg runner, medium speed toward 1B: funnel, replace feet, strong throw to back of 2B. 5) Hard ground ball first base hole, below avg runner at first: field off left foot, back to infield, strong throw to back of 2B.', reps: '3 each type' },
+            { name: 'Closed Eye Pivots', description: 'Ball in hand, simulate receiving throws with eyes closed. Use appropriate pivot and make the relay throw.', instructions: 'This is a fundamentals check. Close eyes, feel the throw, open and execute proper footwork and throw.', reps: '10 reps' },
+          ]},
+        ],
+      },
+      {
+        title: 'Perry Hill: Shortstop Program',
+        description: 'Complete shortstop development: double play pivots from 1B, 2B, and pitcher, DP feeds, and closed eye drill from the Perry Hill infield system.',
+        positions: 'SS',
+        days: [
+          { label: 'DP Pivots from 1B & 2B', activities: [
+            { name: 'Setup Position', description: 'Approach the bag with shoulders "square" to the infielder. Right foot on or near back inside corner of base, left foot extending behind the bag.', instructions: 'Hands up and in. Be ready to adjust to the throw location.', reps: '5 dry reps' },
+            { name: 'Throw Between Shoulders', description: 'With left foot, take a jab step to the ball, then use right to left, left to first base footwork. Make the relay throw.', instructions: 'Replace the feet - right foot changes sides, left foot follows toward first.', reps: '10 feeds' },
+            { name: 'From Right Shoulder Out', description: 'With the left foot, take a jab step to the ball, then use right to left, left to first base footwork. Make the relay throw.', instructions: 'Same replace footwork, adjusting angle for the feed location.', reps: '10 feeds' },
+            { name: 'Inside Right Shoulder', description: 'With right foot, take a jab step to the ball, drag left foot across the base creating a jab step to first base, make the relay throw.', instructions: 'Quick feet across the bag, staying low for the throw.', reps: '10 feeds' },
+          ]},
+          { label: 'DP Pivots from 1B & Pitcher', activities: [
+            { name: 'Pivots from First Baseman', description: 'Ground ball inside the baseline. Approach with shoulders "square" to first baseman. Left foot on or near back outside corner, right foot extending inside baseline.', instructions: 'From left shoulder in: right foot jab step, drag left foot across base, relay throw. Outside left shoulder: left foot jab step, begin right-left to first base footwork.', reps: '10 feeds each type' },
+            { name: 'Pivot from Pitcher', description: 'Approach bag with left foot slightly past back corner of second base.', instructions: 'From right shoulder in: left foot to ball, use right to left, left to first base footwork. From right shoulder out: right foot to ball, drag left foot across bag, jab step to first.', reps: '10 feeds each type' },
+          ]},
+          { label: 'DP Feeds & Closed Eye Drill', activities: [
+            { name: 'DP Feeds to Second Baseman', description: 'Five types based on "straight up" depth and ball location.', instructions: '1) Ground ball toward 2B or directly at SS: no spin underhand toss. 2) Ground ball fielded behind bag: no spin backhand toss. 3) Ground ball to right which can be fielded "in the middle": left foot slightly open, firm uphill throw to back of 2B. 4) Hard ground ball to right, routine or extended backhand: deliver a strong throw to back of 2B. 5) Medium speed ground ball to right, below avg runner at first: using proper angle, field off left foot, exchange "in the middle", throw back to 2B to get lead runner.', reps: '3 each type' },
+            { name: 'Closed Eye Pivots', description: 'Ball in hand, simulate receiving throws with eyes closed. Use appropriate pivot and make the relay throw.', instructions: 'This is a fundamentals check. Build muscle memory for pivot footwork.', reps: '10 reps' },
+          ]},
+        ],
+      },
+      {
+        title: 'Perry Hill: Third Baseman Program',
+        description: 'Complete third baseman development: routine ground balls, slow rollers, backhands, bunts, bunt reads, and varied ground ball situations from the Perry Hill system.',
+        positions: '3B',
+        days: [
+          { label: 'Routine Ground Balls & Slow Rollers', activities: [
+            { name: 'Routine Ground Balls', description: 'Rolled, fungo, soft toss with throws to first or second base. Emphasis on good fielding position, footwork (replace) and throwing mechanics.', instructions: 'Field the ball with wide base, funnel to body, use replace footwork to target. Right to left, left to first or second base.', reps: '15 ground balls' },
+            { name: 'Slow Rollers', description: 'Rolled, fungo, soft toss with throws to first base. Using proper angle, field ball slightly outside left foot.', instructions: 'Make exchange "in the middle" and throw off right foot. Field left, throw right.', reps: '10 slow rollers' },
+          ]},
+          { label: 'Backhand & Varied Ground Balls', activities: [
+            { name: 'Backhand - Routine', description: 'Using proper angle, take right foot to the ball, extend glove in front of right foot in middle of body. Left shoulder automatically at target.', instructions: 'Use replace footwork: right to left, left to first base or take a jab step forward first or second with left foot.', reps: '10 backhands' },
+            { name: 'Backhand - Extended', description: 'Using proper angle, field ball off left foot, gather balance as your right foot crosses over and plants.', instructions: 'Take a jab step toward target with left foot.', reps: '10 extended backhands' },
+            { name: 'Varied Ground Balls', description: 'Various speeds, angles, and situations. Player chooses correct approach and footwork.', instructions: '1) Medium speed to right, below avg runner: get around ball, field outside left foot, replace footwork. 2) Same with avg/above avg runner: exchange "in the middle", throw off right foot. 3) Hard ground ball to right: backhand routine and/or extended. 4) Hard or medium at or left: field ball in middle of body, replace footwork. 5) Hard ball directly at player with no momentum: use left, replace footwork.', reps: '15 varied ground balls' },
+          ]},
+          { label: 'Bunt Plays & Reads', activities: [
+            { name: 'Bunt Plays', description: 'Simulate: field bunt with lead base in mind, make adjustment to first base if called.', instructions: 'Charge the ball, read the direction and speed. Field slightly outside glove side foot, make the exchange "in the middle", throw off the right foot. Field left, throw right.', reps: '10 bunts' },
+            { name: 'Read Bunts', description: 'Position even with bag or "in." Read hitter\'s hand as it slides up the bat or as he uses a drop step.', instructions: 'Take a quick, aggressive first step to the middle of the line. Second step with left foot toward home plate. These two steps give correct angle, distance, and momentum through the ball with minimal steps.', reps: '10 bunt reads' },
+            { name: 'Situation: Runners on 1st and 2nd', description: 'Read ground ball, at or toward second base. After fielding, get ball "out" and ready to throw with right foot touch inside front corner of third base.', instructions: '5U-3 play: After fielding ball, get the ball out, right foot touch inside front corner of 3B, then replace feet and make relay throw to first base.', reps: '10 situational reps' },
+          ]},
+        ],
+      },
+      {
+        title: 'Perry Hill: Game Situations & Movement',
+        description: 'Where every position goes in every game scenario: bunt defenses, squeeze plays, first-and-third defense, pick-offs, relays, cut-offs, and defensive positioning.',
+        positions: 'P,C,1B,2B,3B,SS,LF,CF,RF',
+        days: [
+          { label: 'Bunt Defense - No Set Play', activities: [
+            { name: 'Runner on First - No Set Play', description: 'Primary objective: get the out. Secondary: get the lead runner.', instructions: '3B: In on grass, creeping, charges toward home when pitcher delivers. Hustles back to cover 3B if he doesn\'t field it. SS: At DP depth, covers 2B. 2B: At DP depth, creeps in, reads bunt, then covers 1B. 1B: Holds runner then charges when pitcher delivers. Covers foul line to mound area. P: Delivers strike then breaks toward home plate. C: Calls play loud and clear. Fields all bunts close to home plate. Also covers 3B if 3B fields the ball.', reps: '5 walk-throughs, 5 live' },
+          ]},
+          { label: 'Bunt Situations #1 - #4', activities: [
+            { name: 'Bunt Situation #1 - Set Up Play #2', description: 'Runner on first. Primary objective: set up play #2. Secondary: keep runner honest.', instructions: '3B: Holds position, backs up returning throw to pitcher from 1B. SS: At DP depth, on pickoff throw to 1B breaks toward 2B. 2B: Breaks back at angle to protect against bad pickoff throw. 1B: Receives sign from manager, goes to mound, tells pitcher to throw over. Holding runner on, receives pickoff throw. P: Verbally receives sign from 1B, comes set, holds ball, makes pickoff throw to 1B. C: Set up as usual.', reps: '5 walk-throughs' },
+            { name: 'Bunt Situation #2 - Get Out at Second', description: 'Runner on first. Primary objective: get out at second base.', instructions: '3B: In on grass, creeping. Charges toward home plate when pitcher delivers or reads bunt. Hustles back to cover 3B if he doesn\'t field it. SS: At DP depth, covers 2B. 2B: At DP depth, creeps in and reads bunt, then covers 1B. 1B: Receives sign from manager, goes to mound, tells pitcher "Do not throw over. When I break early, deliver a strike." Charges hard but under control. Perfect bunt = get the out at 1B. P: Delivers a strike then breaks towards home plate. C: Calls play loud and clear. Fields all bunts close to home plate. Covers 3B if 3B fields ball.', reps: '5 walk-throughs' },
+            { name: 'Bunt Situation #3 - Keep Runner Honest', description: 'Runner on first. Primary objective: keep the runner honest.', instructions: '3B: Holds position. SS: At DP depth, on pickoff throw to 1B breaks toward 2B. 2B: At DP depth, breaks back at angle to protect against bad pickoff throw. 1B: Goes to mound, tells pitcher to wait for his false break. Takes two hard steps toward home, retreats to 1B, receives pickoff throw. P: Verbally receives sign from 1B, comes set as 1B retreats, makes pickoff throw to 1B. C: Set up as usual.', reps: '5 walk-throughs' },
+            { name: 'Bunt Situation #4 - Inside Move', description: 'Runners on first-and-second, 0-out. Possible bunt/hit & run. Primary objective: reduce base runner aggression.', instructions: '3B: Slight body angle facing pitcher, ready for rundown or play at 3B. SS: A little deeper than DP depth, at peak of pitcher\'s leg lift breaks to 2B. 2B: A little deeper than DP depth, does not give play away, creeps in, ready to cover 2B for possible rundown. 1B: One or two steps in on grass as decoy, when pitcher\'s leg lifts breaks hard toward home. P: Will come set locked on home plate. At peak of leg lift, pivots on post foot and delivers firm chest-high throw to 2B. Then breaks in controlled jog toward 3B for possible rundown.', reps: '5 walk-throughs' },
+          ]},
+          { label: 'Bunt Defense #1 Regular (1st & 2nd)', activities: [
+            { name: '#1 Regular - Runners on 1st & 2nd', description: 'Obvious or probable bunt in order, 0-out. Be ready for batted ball but play shallow enough to field a bunt.', instructions: '3B: Receives and gives sign. Position just inside line about 3-4 steps in front of bag. Slight body angle facing pitcher but will "square up" to home plate with the pitch. Can also play 1-2 steps behind bag on soft bunts. Takes charge on hard bunts toward him and calls off pitcher. SS: At DP depth, keeps runner close to 2B, "daylight" pick-off play possible, covers 2B. 2B: At DP depth, reads bunt, breaks in, then covers 1B. 1B: On edge of grass (can also play behind runner). Reads bunt and charges to cover area between foul line and mound. Also takes bunts up the middle. P: Holds runner at 2B (possible daylight play with SS). Delivers strike, reads bunt, breaks off mound to 3B side. Will yield to 3B if he calls for the ball. C: Calls play loud and clear. Fields all bunts close to home plate.', reps: '5 walk-throughs, 5 live' },
+          ]},
+          { label: '#2 Wheel Pick-Off (1st & 2nd)', activities: [
+            { name: 'Wheel Pick-Off Play', description: 'Runners on first-and-second, 0-out. Obvious bunt. Pick-off play to keep base runners honest. Primary objective: keep runner close at 2B for the force at 3B.', instructions: '3B: Receives sign, slight body angle facing pitcher. Takes 1-2 hard charge steps toward home, stops, retreats to 3B for possible rundown. SS: As pitcher begins his motion, begins to creep in on base runner\'s right shoulder. Makes sure pitcher is set. After seeing pitcher turn to throw to 2B, breaks hard to 3B, stops and circles to the outside back to 2B for possible rundown. 2B: Creeps in. As pitcher turns away from breaking SS, keys the back of pitcher\'s head and breaks to cover 2B. 1B: One or two steps in on grass as decoy. P: Keys the SHORTSTOP (does not vary head looks). Once SS breaks toward 3B, pitcher locks on home plate, turns and delivers firm chest-high throw to 2B. Breaks toward 3B for possible rundown.', reps: '5 walk-throughs, 3 live' },
+          ]},
+          { label: '#3 Wheel (1st & 2nd)', activities: [
+            { name: 'Wheel Play', description: 'Runners on first-and-second, 0-out. Get the lead out at 3B. Secondary: get the out at 1B.', instructions: '3B: Receives sign, slight body angle facing pitcher, squares up to home plate with pitch. Can play 1-2 steps behind bag on soft bunts. Takes charge on hard bunts, calls off pitcher. SS: At DP depth, keeps runner close, "daylight" pick-off play possible, covers 2B. 2B: At DP depth, reads bunt, breaks in, covers 1B. 1B: On edge of grass, reads bunt and charges to cover area between foul line and mound. Takes bunts up the middle. P: Holds runner at 2B (possible daylight play with SS). Delivers strike, reads bunt, breaks off mound to 3B side. Yields to 3B if called. C: Calls play loud and clear. Fields all bunts close to home plate.', reps: '5 walk-throughs, 5 live' },
+          ]},
+          { label: 'Squeeze Play & First-and-Third', activities: [
+            { name: 'Squeeze Play Defense', description: 'Runner on third. Get the runner at home plate. Secondary: get out at first base.', instructions: '3B: As runner breaks for home, 3B breaks with him. SS: Cover 3B. 2B: Cover 1B/Read first baseman or cover 2B. 1B: As hitter squares to bunt, breaks to home plate or covers 1B. P: Breaks straight to home plate. C: Protects home plate.', reps: '5 walk-throughs' },
+            { name: 'First-and-Third Defense - Option I', description: 'Focus on the out at second. We are NOT concerned with runner at third.', instructions: 'As runner breaks to 2B, catcher comes up throwing to 2B. He does not peek at runner on 3B. We disregard the runner breaking from 3B to home and take the out at 2B.', reps: '3 reps' },
+            { name: 'First-and-Third Defense - Option II', description: 'Focus on the out at home plate. Entice runner at third to break.', instructions: 'As runner breaks to 2B, catcher comes up throwing. Peek at runner on 3B. Infielder receiving gets in position to make tag at 2B. As runner breaks home, infielder returns throw to catcher. Footwork: left to ball, right to left, left to home.', reps: '3 reps' },
+            { name: 'First-and-Third Defense - Options III & IV', description: 'Direct throw to third base or hold ball/pump fake.', instructions: 'III: Catcher throws directly to 3B (pump fake at manager\'s discretion). Middle infielders hold position. As ball gets by hitter, 3B flows toward 3B. IV: Hold ball or pump fake at manager\'s discretion.', reps: '3 reps each' },
+          ]},
+          { label: 'Pick-Offs & Daylight Plays', activities: [
+            { name: 'Catcher\'s Pick-Off Signs', description: 'Learn catcher\'s pick-off signs and proper execution.', instructions: 'Thumb: throw over (thumb points to 3B for pick at 1B). Flap Extension: hard step off and check runner. Hand slide down thigh plus sign: quick step. Same number three times (3x"1", 3x"2"): pitch out. Horn sign with runners on 1st and 3rd: pitcher fakes to 3B, throws to 1B.', reps: 'Review and 5 live reps' },
+            { name: '"No Look" Pick-Off', description: 'Aggressive base runner at second. Catcher relays sign to pitcher and infielders.', instructions: 'Catcher receives sign from manager, relays with glove up for target. When middle infielder breaks he drops his glove. Pitcher receives sign, comes "locked" on home plate. As catcher drops glove, turns and delivers firm chest-high throw to 2B.', reps: '5 reps' },
+            { name: '"Daylight" Situation', description: 'Aggressive base runner at second. No sign needed - simply a "read" by either middle infielder.', instructions: 'SS extends glove and breaks hard to 2B. Pitcher turns and makes firm chest-high throw. 2B extends "open" hand and breaks hard. Pitchers should break toward 3B for possible rundown after the throw.', reps: '5 reps' },
+          ]},
+          { label: 'Relay & Cut-Off Fundamentals', activities: [
+            { name: 'General Relay Rules', description: 'Balls down the line or in gaps = double, possible triple. Line up to 3B if 1B unoccupied, to home if 1B occupied.', instructions: 'Cut-off men position at back of mound (dirt/grass line) in direct line with outfielder, relay man, and proper base. Stay "square" until ball is in flight, then get around the ball, replace feet for momentum. Primary relay man never leave his feet to catch a throw or attempt to pick a short hop.', reps: '5 walk-throughs' },
+            { name: 'Relay Calls', description: 'Learn the call system for cut-off plays.', instructions: 'Number of base = cut and throw to that base (e.g. "4,4,4" = cut, throw to home). "CUT" = cut throw and check for other possible plays. NO SOUND = let throw go through. On relays, the double cut man makes the call.', reps: 'Review and practice' },
+            { name: 'Tags', description: 'Straddle the base and let the ball come to you. Tag hard, straight down!', instructions: 'Position yourself straddling the base. Wait for the throw. When you catch it, bring the glove straight down to apply a hard tag.', reps: '10 tag plays' },
+          ]},
+          { label: 'Cut-Off Patterns - No One On', activities: [
+            { name: 'Single to Left Field (No One On)', description: 'Every position\'s movement on a single to left field with bases empty.', instructions: 'P: Backup position between 1B and 2B. C: Follow hitter to 1B, ready to cover if 1B leaves bag. 1B: Break to area inside base, make sure hitter touches first, then cover. Be ready for overthrow by LF. 2B: Cover 2B. SS: Move into relay position to 2B (assume runner advances). 3B: Protect 3B area. LF: Field ball and throw to 2B, no short hops. CF: Back up LF. RF: Possible backup behind 2B.', reps: '3 walk-throughs' },
+            { name: 'Single to Center Field (No One On)', description: 'Every position\'s movement on a single to center field with bases empty.', instructions: 'P: Backup between mound and 2B. C: Follow hitter to 1B, back up 1B. Anticipate 2B or SS throwing behind runner. 1B: Break inside base, hitter touches first, then cover. 2B: Go for ball, communicate with SS on who is relay man and who covers 2B. SS: Same as 2B - communicate. 3B: Protect 3B area. LF: Back up CF. CF: Field ball, throw to 2B, no short hops. RF: Back up CF.', reps: '3 walk-throughs' },
+            { name: 'Single to Right Field (No One On)', description: 'Every position\'s movement on a single to right field with bases empty.', instructions: 'P: Backup between 2B and 3B. C: Follow hitter to 1B, give room to back up 1B if RF throws behind runner. 1B: Break inside base, hitter touches first, then cover. 2B: Move into relay position to 2B (assume runner advances). SS: Cover 2B. 3B: Protect 3B area. LF: Possible backup toward 3B. CF: Back up RF. RF: Field ball, throw to 2B, no short hops.', reps: '3 walk-throughs' },
+          ]},
+          { label: 'Cut-Off Patterns - Runner on 1B', activities: [
+            { name: 'Single to Left Field (Runner on 1B)', description: 'Every position\'s movement on a single to LF with runner on first.', instructions: 'P: Back up 3B. C: Protect home plate. 1B: Make sure hitter touches 1B, then cover. 2B: Cover 2B. SS: Move into position to be the relay man. Assume runner will attempt to advance. 3B: Cover 3B. LF: Field ball and make a throw that can be cut-off by the SS. CF: Back up LF. RF: Possible backup near 2B.', reps: '3 walk-throughs' },
+            { name: 'Single to Center Field (Runner on 1B)', description: 'Every position\'s movement on a single to CF with runner on first.', instructions: 'P: Back up 3B. C: Protect home plate. 2B: Cover 2B. SS: Move into position to be the relay man. Assume runner will attempt to advance. 3B: Cover 3B. LF: Back up CF. CF: Field ball and make a throw that can be cut-off by the SS. RF: Back up CF.', reps: '3 walk-throughs' },
+            { name: 'Single to Right Field (Runner on 1B)', description: 'Every position\'s movement on a single to RF with runner on first.', instructions: 'P: Back up 3B. C: Protect home plate. 1B: Make sure hitter touches 1B, then cover. 2B: Cover 2B. SS: Move into position to be the relay man. Assume runner will attempt to advance. 3B: Cover 3B. LF: Possible backup behind 3B. CF: Back up RF. RF: Field ball and make a throw that can be cut-off by the SS.', reps: '3 walk-throughs' },
+          ]},
+          { label: 'Cut-Off Patterns - Runner on 2B+', activities: [
+            { name: 'Single to LF (Runner on 2B, 1B & 2B, or Bases Loaded)', description: 'Every position\'s movement when runner is scoring from second or further.', instructions: 'P: Back up home plate. C: Cover home plate. 1B: Cover 1B. 2B: Cover 2B. SS: Cover 3B. 3B: Move into position to be the cut-off man to home plate. LF: Field ball and throw to home plate through the cut-off. CF: Back up LF. RF: Possible backup near 2B.', reps: '3 walk-throughs' },
+          ]},
+          { label: 'Defensive Positioning', activities: [
+            { name: '2B Positioning', description: 'Line from 3B corner of plate through edge of dirt on mound. Find Straight Right, Straight Left, Double Play, and Split Defense marks.', instructions: 'Straight Right (SR): 1 step plus one shoe size from line to left toward 1B. Straight Left (SL): 3 steps to the left from SR and square up. Double Play (DP): 5 steps in on an angle to plate from SR. Split Defense: Halfway between marks.', reps: 'Walk through each position' },
+            { name: 'SS Positioning', description: 'Line from 1B corner of plate through edge of dirt on mound.', instructions: 'Straight Left (SL): 1 step plus one shoe size from line to the right toward 3B. Straight Right (SR): 3 steps to the right from SL mark and square up. Double Play (DP): 5 steps in on angle to plate from SL. Split Defense: Halfway between marks.', reps: 'Walk through each position' },
+            { name: '1B Positioning', description: 'Straight Left (SL): 8 steps up the line and 6 steps to the left.', instructions: 'Straight Right (SR): 2 steps over and 2 steps in from SL.', reps: 'Walk through each position' },
+            { name: '3B Positioning', description: 'Straight Right (SR): 8 steps up the line and 6 steps out (plus arm can use 10 steps up and 6 over).', instructions: 'Straight Left (SL): 2 steps over from SR (for typical power LHH, need to play in on cut of the grass for hitters who slap/bunt). Double Play: 2 steps in from SR.', reps: 'Walk through each position' },
+          ]},
+        ],
+      },
+      {
+        title: 'Perry Hill: Drills & Practice',
+        description: 'All individual and team drills from the Perry Hill infield system: ready position, short hops, on-knees, wide base, toss & feeds, wall drills, closed eye drill, tags, relays, and more.',
+        positions: '1B,2B,SS,3B',
+        days: [
+          { label: 'Individual Drills', activities: [
+            { name: 'Ready Position Drill', description: 'Walking into the pitch: on the balls of feet, off the heels, with glove open in front of body.', instructions: 'Work during BP off coaches and simulate off the fungo. Practice the Feet (F1) on every single pitch.', reps: '10 reps' },
+            { name: 'Short Hops Drill', description: 'Reinforce good fielding position - wide base, knees and back bent, hands out front.', instructions: 'Practice routine short hops, backhand short hops, and extended backhand short hops.', reps: '10 each type' },
+            { name: 'On-Knees Hand Drill', description: 'Infielder on his knees, coach 20-25 feet away, hitting firm fungo to player\'s right and left.', instructions: 'This is a reaction drill to improve hand quickness. Focus on tracking the ball into the glove.', reps: '20 reps' },
+            { name: 'Wide Base Drill', description: 'Hard ground balls directly at player. Demonstrates how a wide base enables the infielder to get hands in front where eyes track the ball.', instructions: 'A narrow base pulls hands in, creating a blind spot. Wide base keeps glove out front and visible.', reps: '10 ground balls' },
+            { name: '5-Error Drill', description: 'Five types of hops in sequence to practice reactions.', instructions: '1) 1 or 2 steps in front. 2) To the right. 3) To the left. 4) Underneath and behind. 5) 5 or 6 steps in front.', reps: '5 sequences' },
+          ]},
+          { label: 'Feeds, Toss & Throwing Drills', activities: [
+            { name: 'Toss and Feeds', description: 'Reinforce the importance of using the legs to keep infielder from "slinging" or "wristing" the ball.', instructions: 'Use proper leg drive on all tosses and feeds. Keep throws firm and controlled.', reps: '10 each type' },
+            { name: 'Soft Toss Ground Balls', description: 'React to the ball off the bat creating game situations.', instructions: 'Emphasis on angles, approach, and footwork. Create different game scenarios.', reps: '15 ground balls' },
+            { name: 'Off-Balance Throwing', description: 'Reinforce footwork and throwing mechanics from awkward positions.', instructions: 'Ball in glove, making exchange "in the middle" and throwing off the right foot. Field left, throw right. Hand behind ball, not under.', reps: '10 throws' },
+            { name: 'Action-Reaction Decision-Making', description: 'Take simulated throws off fungo from different areas of the infield (primarily for first basemen).', instructions: 'Concentrate on footwork and decision-making (when to come off the bag to save an errant throw). Can also be used for tags at all infield positions.', reps: '10 plays' },
+          ]},
+          { label: 'Team Drills', activities: [
+            { name: 'Closed Eye Drill', description: 'Reinforce proper fundamentals and throwing mechanics with eyes closed.', instructions: 'Routine ground balls, routine backhand, extended backhand, slow rollers and bunts, double plays. Close eyes, field, open eyes, throw.', reps: '5 each type' },
+            { name: 'Pop-Ups', description: 'Let the ball reach its peak, stay "behind" the ball, then make the call three times.', instructions: 'Ball in outfield: no call unless player is "camped" underneath the ball. If infielder turns wrong way, continue in same direction and look over opposite shoulder. Infielder always yields to outfielder if he makes the call.', reps: '10 pop-ups' },
+            { name: 'Tags Drill', description: 'Simulate game situations. Straddle the base and let the ball come to you.', instructions: 'Tag hard, straight down! Practice at all bases.', reps: '10 tags' },
+            { name: 'Relays Drill', description: 'During long toss, simulate relay plays: hands up, get around the ball while receiving close in.', instructions: 'Replace feet to create direction and momentum. Practice right-to-left, left-to-target footwork.', reps: '10 relay throws' },
+            { name: 'Rundowns Drill', description: 'Simulate rundown plays. Ball up, run hard, receiving player breaks hard and yells "NOW."', instructions: 'Receiving player gets the ball on the run and makes the tag. Goal is one throw only. On ground ball to 3B with runner on 3B, run the base runner toward home plate for a one-throw play.', reps: '5 rundowns' },
+            { name: 'Wall Drills', description: 'Player throws ball off a wall and fields. Emphasis on fielding position and proper footwork.', instructions: 'Set up in proper angle for throws. A partner can stand behind the fielder and make the throw off the wall. This drill simulates all infield plays.', reps: '15 reps' },
+          ]},
+          { label: 'Pre-Game Infield/Outfield', activities: [
+            { name: 'Round 1 - Getting One (At Him/Left)', description: 'Ground ball to each infielder at him or to his left. Throw to 1B. Ball goes around the horn.', instructions: 'Ground ball to 3B (throw to 1B, catcher returns, pivot at 2B). Then SS, 2B same pattern. 1B at normal depth (at him or right) - shortstop looks to complete 3-6-3. If unable, SS pump-fakes and throws to 3B. Roll ball to catcher for one, first baseman throws to 2B, ball comes home.', reps: '1 full round' },
+            { name: 'Round 2 - Getting One (To His Right)', description: 'Same as round 1, except ball is hit to the right of each infielder. Second baseman gets ball down the line for first baseman.', instructions: 'Ball hit to right of 3B, SS, 2B, and down the line for 1B. Same throw patterns and horn sequence.', reps: '1 full round' },
+            { name: 'Round 3 - Double Plays (At Him/Left)', description: 'Ground ball to each infielder at him or to his left. Execute double play turn.', instructions: '3B: Catcher throws to 3B, 3B goes across diamond to 1B. SS: Catcher throws to 2B, 2B turns throws to off catcher. 2B (at him or right): Catcher throws to 2B, SS turns. 1B: Working off the base, if SS can complete 3-6-3, 1B returns ball to off catcher. Otherwise SS pump-fakes to 1B, throws to 3B. Roll ball to catcher for two.', reps: '1 full round' },
+            { name: 'Round 4 - Double Plays (To His Right)', description: 'Same as round 3 but ball hit to the right. First baseman starts behind runner.', instructions: 'All throws return to the plate for double play practice.', reps: '1 full round' },
+            { name: 'Round 5 - Long Round', description: 'Ground ball deep on the line. Shortstop is deep in the hole. Second baseman is behind the bag. First baseman starts "in" and throws home.', instructions: 'After the long round, hit a slow roller to each infielder. First baseman throws to 3B (simulate a bad bunt).', reps: '1 full round' },
+            { name: 'Round 6 - Pop Ups to Catcher', description: 'Infielders stay in position for possible pop up. Run off field after the last pop up.', instructions: 'Pop ups to catcher. Catchers are to wear catching gear throughout the infield/outfield process.', reps: 'Until complete' },
+          ]},
+        ],
+      },
+      {
+        title: 'Perry Hill: Mental Preparation',
+        description: 'Confidence, Concentration, Consistency, communication, defensive positioning awareness, and pre-game mental preparation from the Perry Hill infield system.',
+        positions: '1B,2B,SS,3B',
+        days: [
+          { label: 'Confidence & Concentration', activities: [
+            { name: 'Confidence Mindset', description: 'Every infielder should have positive thoughts and BELIEVE he is the best at his position.', instructions: 'Your thoughts MUST BE: "I am mentally ready to play. I know I have the talent. I can handle any ground ball, pop fly, etc. I expect the ball to be coming at me every pitch. I WANT it coming my way because I KNOW I can make the play."', reps: 'Before every game' },
+            { name: 'Concentration for Every Pitch', description: 'On every pitch you should be ready to make any play. Total concentration for 2-3 hours is not too much to ask.', instructions: 'When pitching is good, defense is usually good and vice versa. MUST maintain high intensity and concentration REGARDLESS of how the game is going. When the pitcher is struggling, it is vital that you make the good play to end the inning. Do not let hitting affect your fielding.', reps: 'Every inning' },
+            { name: 'Consistency', description: 'Strive to make the routine play every time. THE ROUTINE PLAY IS A MUST!', instructions: 'Most young infielders make 5-20 "careless" errors per season. If you make great, spectacular plays, that\'s a bonus. The routine play every time, day in and day out is the goal.', reps: 'Every game' },
+          ]},
+          { label: 'Communication & Game Awareness', activities: [
+            { name: 'Communication on the Field', description: 'Be enthusiastic and communicate with each other during the game. Remind everyone of all possible situations.', instructions: 'Keep each other in the ball game. The game is not that tough to play. Have some fun together between the white lines. You don\'t need to be a cheerleader, but stay engaged.', reps: 'Every inning' },
+            { name: 'Know Your Pitching Staff', description: 'Basic positioning varies depending on the type of pitcher on the mound.', instructions: 'Knowing your pitcher allows you to shade or cheat a little either way. Keep tabs on your pitcher during the game by checking with the catcher. A pitcher\'s stuff varies from game to game.', reps: 'Pre-game review' },
+            { name: 'Know Opposing Hitters', description: 'Make adjustments according to the type of hitter at the plate.', instructions: 'Know the hitter\'s running speed, bat control, bunting ability, bat speed, and bat arc. Be aware of the count - most hitters won\'t pull as much when behind 1-2 or 0-2. Make the necessary adjustments.', reps: 'Pre-game review' },
+            { name: 'Know Opposing Club Tendencies', description: 'What do opposing clubs like to do in certain situations? Bunt, hit and run, steal, delayed steal, squeeze.', instructions: 'DO NOT BE CAUGHT BY SURPRISE! Make mental notes when situations occur and you will be able to anticipate what some clubs are going to do. YOU WILL BE READY!', reps: 'Pre-game review' },
+            { name: 'Check Field Conditions & Wind', description: 'Notice how ground balls play during batting practice. Check wind conditions each inning.', instructions: 'Your positioning may vary due to fast or slow infields. An unnoticed wind change has made many infielders look foolish on high pop-ups. Check every inning!', reps: 'Pre-game and every inning' },
+            { name: 'Check the Foul Lines', description: 'Before each game, 1B and 3B should roll baseballs down each base path.', instructions: 'See if the ball will stay fair or roll foul on slow hit or bunted balls. This knowledge gives you an edge.', reps: 'Pre-game' },
+            { name: 'Quality BP Work', description: 'Take all types of ground balls during batting practice the way you would during the game.', instructions: 'Balls to your left, right, routine balls, slow hit balls, double play feeds and pivots. Do not get lazy or just go through the motions - this only develops bad habits.', reps: 'During batting practice' },
+          ]},
+        ],
+      },
+    ];
+
+    const results = [];
+    for (const prog of programs) {
+      const result = await db.addProgram({ title: prog.title, description: prog.description, program_type: 'training', schedule_type: 'sequential' });
+      await db.updateProgramPositions(result.id, prog.positions);
+      for (let i = 0; i < prog.days.length; i++) {
+        const d = prog.days[i];
+        const day = await db.addProgramDay({ program_id: result.id, day_label: d.label, day_number: i, sort_order: i });
+        for (let j = 0; j < d.activities.length; j++) {
+          const a = d.activities[j];
+          await db.addProgramActivity({ program_day_id: day.id, activity_name: a.name, description: a.description || null, instructions: a.instructions || null, reps: a.reps || null, link_url: null, image_url: null, sort_order: j });
+        }
+      }
+      results.push(prog.title);
+    }
+    res.redirect('/admin/programs?success=' + encodeURIComponent(results.length + ' Perry Hill programs created: ' + results.join(', ')));
+  } catch (err) {
+    console.error('Perry Hill seed error:', err);
     res.redirect('/admin/programs?error=' + encodeURIComponent(err.message));
   }
 });

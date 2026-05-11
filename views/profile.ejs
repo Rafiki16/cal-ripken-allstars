@@ -115,6 +115,22 @@
         </div>
       </div>
 
+      <% if (isAdmin) { %>
+      <div class="profile-section">
+        <h2 class="profile-section-title">Coach-Assigned Positions</h2>
+        <p class="section-hint">Positions assigned by coaches — used for program auto-assignment</p>
+        <div class="positions-grid">
+          <% POSITIONS.forEach(pos => { %>
+            <label class="position-checkbox">
+              <input type="checkbox" name="coach_assigned_positions" value="<%= pos %>"
+                <%= (player.coach_assigned_positions || '').split(',').includes(pos) ? 'checked' : '' %>>
+              <span class="position-label"><%= pos %></span>
+            </label>
+          <% }); %>
+        </div>
+      </div>
+      <% } %>
+
       <!-- Skills Ratings -->
       <div class="profile-section">
         <h2 class="profile-section-title">Skills Assessment</h2>

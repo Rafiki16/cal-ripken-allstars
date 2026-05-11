@@ -80,6 +80,18 @@
     </div>
     <% } %>
 
+    <% if (!programs.some(p => p.title && p.title.startsWith('Perry Hill:'))) { %>
+    <div style="margin-bottom:16px; padding:16px; background:#eff6ff; border:1px solid #3b82f6; border-radius:10px;">
+      <form method="POST" action="/admin/seed-perry-hill" style="display:flex; align-items:center; gap:12px;">
+        <div style="flex:1;">
+          <strong style="font-size:13px; color:#1e40af;">Seed Perry Hill Infield Programs</strong>
+          <p style="font-size:12px; color:#2563eb; margin:2px 0 0;">Load 8 programs from the Perry Hill Infield System: Six Fs, 1B, 2B, SS, 3B, Game Situations, Drills, and Mental Preparation. Programs auto-assign by position.</p>
+        </div>
+        <button type="submit" class="btn btn-confirm" style="white-space:nowrap;">Seed Programs</button>
+      </form>
+    </div>
+    <% } %>
+
     <% if (programs.length === 0) { %>
     <p style="color:var(--gray-500); font-size:14px;">No programs yet. Create one above.</p>
     <% } else { %>
