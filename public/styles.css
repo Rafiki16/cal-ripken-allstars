@@ -1070,6 +1070,14 @@ main { flex: 1; padding-bottom: 40px; }
   box-shadow: 0 4px 12px rgba(0,0,0,0.12);
   border-color: var(--gray-300);
 }
+.te-card-past {
+  background: var(--gray-100);
+  opacity: 0.6;
+  filter: grayscale(0.4);
+}
+.te-card-past:hover {
+  opacity: 0.85;
+}
 .te-card-body {
   display: flex;
   align-items: flex-start;
