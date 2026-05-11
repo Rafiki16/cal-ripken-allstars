@@ -1258,6 +1258,58 @@
           <div class="rsvp-count rsvp-count-pending"><span class="rsvp-count-num"><%= notResponded %></span> No Response</div>
         </div>
 
+        <% if (isAdmin || isStaff) { %>
+        <%
+          const yesPlayers = rsvps.filter(r => r.status === 'yes');
+          const noPlayers = rsvps.filter(r => r.status === 'no');
+          const maybePlayers = rsvps.filter(r => r.status === 'maybe');
+          const respondedIds = new Set(rsvps.map(r => r.player_id));
+          const noResponsePlayers = confirmedPlayers.filter(p => !respondedIds.has(p.id));
+        %>
+        <div style="margin-top:16px; display:flex; flex-direction:column; gap:12px;">
+          <% if (yesPlayers.length > 0) { %>
+          <div>
+            <div style="font-size:12px; font-weight:700; color:#16a34a; margin-bottom:4px;">Attending (<%= yesPlayers.length %>)</div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+              <% yesPlayers.forEach(r => { %>
+              <span style="font-size:12px; padding:3px 10px; border-radius:6px; background:#dcfce7; color:#166534;"><%= r.player_name %></span>
+              <% }); %>
+            </div>
+          </div>
+          <% } %>
+          <% if (maybePlayers.length > 0) { %>
+          <div>
+            <div style="font-size:12px; font-weight:700; color:#ca8a04; margin-bottom:4px;">Maybe (<%= maybePlayers.length %>)</div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+              <% maybePlayers.forEach(r => { %>
+              <span style="font-size:12px; padding:3px 10px; border-radius:6px; background:#fef9c3; color:#854d0e;"><%= r.player_name %></span>
+              <% }); %>
+            </div>
+          </div>
+          <% } %>
+          <% if (noPlayers.length > 0) { %>
+          <div>
+            <div style="font-size:12px; font-weight:700; color:#dc2626; margin-bottom:4px;">Can't Make It (<%= noPlayers.length %>)</div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+              <% noPlayers.forEach(r => { %>
+              <span style="font-size:12px; padding:3px 10px; border-radius:6px; background:#fee2e2; color:#991b1b;"><%= r.player_name %></span>
+              <% }); %>
+            </div>
+          </div>
+          <% } %>
+          <% if (noResponsePlayers.length > 0) { %>
+          <div>
+            <div style="font-size:12px; font-weight:700; color:#6b7280; margin-bottom:4px;">No Response (<%= noResponsePlayers.length %>)</div>
+            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+              <% noResponsePlayers.forEach(p => { %>
+              <span style="font-size:12px; padding:3px 10px; border-radius:6px; background:#f3f4f6; color:#6b7280;"><%= p.player_name %></span>
+              <% }); %>
+            </div>
+          </div>
+          <% } %>
+        </div>
+        <% } %>
+
         <% if (parentUser) { %>
         <% const myRsvps = rsvps.filter(r => parentUser.player_ids && parentUser.player_ids.includes(r.player_id)); %>
         <% const myStatus = myRsvps.length > 0 ? myRsvps[0].status : null; %>
