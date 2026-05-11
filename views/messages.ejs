@@ -17,6 +17,9 @@
     .thread-reply-form form { display:flex; gap:8px; }
     .thread-reply-form input[type="text"] { flex:1; }
     .reply-count { font-size:12px; color:var(--gray-500); margin-top:8px; }
+    .edit-form { margin-top:8px; }
+    .edit-form textarea { width:100%; min-height:60px; padding:8px; border:1px solid var(--gray-200); border-radius:6px; font-size:14px; font-family:inherit; resize:vertical; }
+    .edit-form .edit-actions { display:flex; gap:6px; margin-top:6px; }
   </style>
 </head>
 <body>
@@ -84,6 +87,7 @@
             <% } %>
             <% if (isAdmin) { %>
               <div class="msg-actions">
+                <button type="button" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 10px;" onclick="document.getElementById('edit-topic-<%= topic.id %>').style.display = document.getElementById('edit-topic-<%= topic.id %>').style.display === 'none' ? 'block' : 'none'">Edit</button>
                 <form method="POST" action="/messages/pin" style="margin:0;">
                   <input type="hidden" name="message_id" value="<%= topic.id %>">
                   <button type="submit" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 10px;"><%= topic.pinned ? 'Unpin' : 'Pin' %></button>
@@ -91,6 +95,16 @@
                 <form method="POST" action="/messages/delete" style="margin:0;" onsubmit="return confirm('Delete this topic and all replies?')">
                   <input type="hidden" name="message_id" value="<%= topic.id %>">
                   <button type="submit" class="btn-sm btn-sm-remove" style="font-size:11px;padding:3px 10px;">Delete</button>
+                </form>
+              </div>
+              <div id="edit-topic-<%= topic.id %>" class="edit-form" style="display:none;">
+                <form method="POST" action="/messages/edit">
+                  <input type="hidden" name="message_id" value="<%= topic.id %>">
+                  <textarea name="message" required><%= topic.message %></textarea>
+                  <div class="edit-actions">
+                    <button type="submit" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 10px;">Save</button>
+                    <button type="button" class="btn-sm" style="font-size:11px;padding:3px 10px;" onclick="this.closest('.edit-form').style.display='none'">Cancel</button>
+                  </div>
                 </form>
               </div>
             <% } %>
@@ -112,9 +126,20 @@
               <div class="msg-body" style="font-size:14px;"><%= reply.message %></div>
               <% if (isAdmin) { %>
               <div class="msg-actions" style="margin-top:4px;">
+                <button type="button" class="btn-sm btn-sm-email" style="font-size:10px;padding:2px 8px;" onclick="document.getElementById('edit-reply-<%= reply.id %>').style.display = document.getElementById('edit-reply-<%= reply.id %>').style.display === 'none' ? 'block' : 'none'">Edit</button>
                 <form method="POST" action="/messages/delete" style="margin:0;" onsubmit="return confirm('Delete this reply?')">
                   <input type="hidden" name="message_id" value="<%= reply.id %>">
                   <button type="submit" class="btn-sm btn-sm-remove" style="font-size:10px;padding:2px 8px;">Delete</button>
+                </form>
+              </div>
+              <div id="edit-reply-<%= reply.id %>" class="edit-form" style="display:none;">
+                <form method="POST" action="/messages/edit">
+                  <input type="hidden" name="message_id" value="<%= reply.id %>">
+                  <textarea name="message" required><%= reply.message %></textarea>
+                  <div class="edit-actions">
+                    <button type="submit" class="btn-sm btn-sm-email" style="font-size:10px;padding:2px 8px;">Save</button>
+                    <button type="button" class="btn-sm" style="font-size:10px;padding:2px 8px;" onclick="this.closest('.edit-form').style.display='none'">Cancel</button>
+                  </div>
                 </form>
               </div>
               <% } %>

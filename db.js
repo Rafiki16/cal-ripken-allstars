@@ -98,6 +98,7 @@ async function init() {
       )
     `);
     try { await pool.query('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE admins ADD COLUMN display_name TEXT'); } catch (e) { /* exists */ }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS team_events (
@@ -147,6 +148,14 @@ async function init() {
             AND EXTRACT(DOW FROM start_date::date) BETWEEN 1 AND 5
         `);
         await pool.query("INSERT INTO migrations (name) VALUES ('normalize_weekday_practice_times_v1')");
+      }
+    } catch (e) { /* best-effort */ }
+
+    try {
+      const m = await pool.query("SELECT 1 FROM migrations WHERE name = 'rename_admin_posts_coach_matt'");
+      if (m.rowCount === 0) {
+        await pool.query("UPDATE team_messages SET author_name = 'Coach Matt' WHERE author_type = 'admin'");
+        await pool.query("INSERT INTO migrations (name) VALUES ('rename_admin_posts_coach_matt')");
       }
     } catch (e) { /* best-effort */ }
 
@@ -629,6 +638,7 @@ async function init() {
       createAdmin: async (username, passwordHash) => pool.query('INSERT INTO admins (username, password_hash) VALUES ($1, $2)', [username, passwordHash]),
       updateAdminPassword: async (id, passwordHash) => pool.query('UPDATE admins SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
       updateAdminEmail: async (id, email) => pool.query('UPDATE admins SET email = $1 WHERE id = $2', [email, id]),
+      updateAdminDisplayName: async (id, displayName) => pool.query('UPDATE admins SET display_name = $1 WHERE id = $2', [displayName, id]),
       getAdminByEmail: async (email) => (await pool.query('SELECT * FROM admins WHERE LOWER(email) = LOWER($1)', [email])).rows[0] || null,
       removeAdmin: async (id) => pool.query('DELETE FROM admins WHERE id = $1', [id]),
       getRsvp: async (eventId, playerId) => (await pool.query('SELECT * FROM rsvps WHERE team_event_id = $1 AND player_id = $2', [eventId, playerId])).rows[0] || null,
@@ -647,8 +657,18 @@ async function init() {
         'INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES ($1,$2,$3,$4,$5)',
         [eventId, playerId, type, channel, value]
       ),
+      getRecentReminders: async (limit = 50) => (await pool.query(
+        'SELECT r.*, p.player_name, te.title as event_title FROM reminder_log r LEFT JOIN players p ON r.player_id = p.id LEFT JOIN team_events te ON r.team_event_id = te.id ORDER BY r.sent_at DESC LIMIT $1', [limit]
+      )).rows,
+      getRecentProgramReminders: async (limit = 50) => (await pool.query(
+        'SELECT pr.*, p.player_name, prog.title as program_title FROM program_reminder_log pr LEFT JOIN players p ON pr.player_id = p.id LEFT JOIN programs prog ON pr.program_id = prog.id ORDER BY pr.sent_at DESC LIMIT $1', [limit]
+      )).rows,
       hasProgramReminderBeenSent: async (sentDate) => {
         const { rows } = await pool.query('SELECT COUNT(*) as c FROM program_reminder_log WHERE sent_date = $1', [sentDate]);
+        return parseInt(rows[0].c) > 0;
+      },
+      hasProgramReminderBeenSentForPlayer: async (programId, playerId, sentDate) => {
+        const { rows } = await pool.query('SELECT COUNT(*) as c FROM program_reminder_log WHERE program_id = $1 AND player_id = $2 AND sent_date = $3', [programId, playerId, sentDate]);
         return parseInt(rows[0].c) > 0;
       },
       logProgramReminder: async (programId, playerId, sentDate) => pool.query(
@@ -698,6 +718,7 @@ async function init() {
       getTopicReplies: async (topicId) => (await pool.query('SELECT * FROM team_messages WHERE parent_id = $1 ORDER BY created_at ASC', [topicId])).rows,
       addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES ($1,$2,$3,$4)', [m.author_name, m.author_type, m.message, m.parent_id || null]),
       removeMessage: async (id) => pool.query('DELETE FROM team_messages WHERE id = $1', [id]),
+      updateMessage: async (id, message) => pool.query('UPDATE team_messages SET message = $1 WHERE id = $2', [message, id]),
       togglePinMessage: async (id) => pool.query('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = $1', [id]),
       getAllSavedLocations: async () => (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
       addSavedLocation: async (name, address) => pool.query('INSERT INTO saved_locations (location_name, address) VALUES ($1, $2)', [name, address]),
@@ -937,6 +958,7 @@ async function init() {
       )
     `);
     try { sqliteDb.exec('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE admins ADD COLUMN display_name TEXT'); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS team_events (
@@ -1436,6 +1458,7 @@ async function init() {
       createAdmin: async (username, passwordHash) => sqliteDb.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(username, passwordHash),
       updateAdminPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(passwordHash, id),
       updateAdminEmail: async (id, email) => sqliteDb.prepare('UPDATE admins SET email = ? WHERE id = ?').run(email, id),
+      updateAdminDisplayName: async (id, displayName) => sqliteDb.prepare('UPDATE admins SET display_name = ? WHERE id = ?').run(displayName, id),
       getAdminByEmail: async (email) => sqliteDb.prepare('SELECT * FROM admins WHERE LOWER(email) = LOWER(?)').get(email) || null,
       removeAdmin: async (id) => sqliteDb.prepare('DELETE FROM admins WHERE id = ?').run(id),
       getRsvp: async (eventId, playerId) => sqliteDb.prepare('SELECT * FROM rsvps WHERE team_event_id = ? AND player_id = ?').get(eventId, playerId) || null,
@@ -1457,8 +1480,18 @@ async function init() {
       logReminder: async (eventId, playerId, type, channel, value) => {
         sqliteDb.prepare('INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES (?,?,?,?,?)').run(eventId, playerId, type, channel, value);
       },
+      getRecentReminders: async (limit = 50) => sqliteDb.prepare(
+        'SELECT r.*, p.player_name, te.title as event_title FROM reminder_log r LEFT JOIN players p ON r.player_id = p.id LEFT JOIN team_events te ON r.team_event_id = te.id ORDER BY r.sent_at DESC LIMIT ?'
+      ).all(limit),
+      getRecentProgramReminders: async (limit = 50) => sqliteDb.prepare(
+        'SELECT pr.*, p.player_name, prog.title as program_title FROM program_reminder_log pr LEFT JOIN players p ON pr.player_id = p.id LEFT JOIN programs prog ON pr.program_id = prog.id ORDER BY pr.sent_at DESC LIMIT ?'
+      ).all(limit),
       hasProgramReminderBeenSent: async (sentDate) => {
         const row = sqliteDb.prepare('SELECT COUNT(*) as c FROM program_reminder_log WHERE sent_date = ?').get(sentDate);
+        return row.c > 0;
+      },
+      hasProgramReminderBeenSentForPlayer: async (programId, playerId, sentDate) => {
+        const row = sqliteDb.prepare('SELECT COUNT(*) as c FROM program_reminder_log WHERE program_id = ? AND player_id = ? AND sent_date = ?').get(programId, playerId, sentDate);
         return row.c > 0;
       },
       logProgramReminder: async (programId, playerId, sentDate) => {
@@ -1511,6 +1544,7 @@ async function init() {
       getTopicReplies: async (topicId) => sqliteDb.prepare('SELECT * FROM team_messages WHERE parent_id = ? ORDER BY created_at ASC').all(topicId),
       addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES (?,?,?,?)').run(m.author_name, m.author_type, m.message, m.parent_id || null),
       removeMessage: async (id) => sqliteDb.prepare('DELETE FROM team_messages WHERE id = ?').run(id),
+      updateMessage: async (id, message) => sqliteDb.prepare('UPDATE team_messages SET message = ? WHERE id = ?').run(message, id),
       togglePinMessage: async (id) => sqliteDb.prepare('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id),
       getAllSavedLocations: async () => sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
       addSavedLocation: async (name, address) => sqliteDb.prepare('INSERT INTO saved_locations (location_name, address) VALUES (?, ?)').run(name, address),
@@ -1741,6 +1775,7 @@ module.exports = {
   createAdmin: (...args) => impl.createAdmin(...args),
   updateAdminPassword: (...args) => impl.updateAdminPassword(...args),
   updateAdminEmail: (...args) => impl.updateAdminEmail(...args),
+  updateAdminDisplayName: (...args) => impl.updateAdminDisplayName(...args),
   getAdminByEmail: (...args) => impl.getAdminByEmail(...args),
   removeAdmin: (...args) => impl.removeAdmin(...args),
   getRsvp: (...args) => impl.getRsvp(...args),
@@ -1750,6 +1785,8 @@ module.exports = {
   upsertRsvp: (...args) => impl.upsertRsvp(...args),
   hasReminderBeenSent: (...args) => impl.hasReminderBeenSent(...args),
   logReminder: (...args) => impl.logReminder(...args),
+  getRecentReminders: (...args) => impl.getRecentReminders(...args),
+  getRecentProgramReminders: (...args) => impl.getRecentProgramReminders(...args),
   updateJerseyNumber: (...args) => impl.updateJerseyNumber(...args),
   getParentAccountByPhone: (...args) => impl.getParentAccountByPhone(...args),
   getParentAccountByUsername: (...args) => impl.getParentAccountByUsername(...args),
@@ -1779,6 +1816,7 @@ module.exports = {
   getTopicReplies: (...args) => impl.getTopicReplies(...args),
   addMessage: (...args) => impl.addMessage(...args),
   removeMessage: (...args) => impl.removeMessage(...args),
+  updateMessage: (...args) => impl.updateMessage(...args),
   togglePinMessage: (...args) => impl.togglePinMessage(...args),
   getAllSavedLocations: (...args) => impl.getAllSavedLocations(...args),
   addSavedLocation: (...args) => impl.addSavedLocation(...args),
@@ -1847,6 +1885,7 @@ module.exports = {
   getCompletionsForProgram: (...args) => impl.getCompletionsForProgram(...args),
   getCompletionsForWeek: (...args) => impl.getCompletionsForWeek(...args),
   hasProgramReminderBeenSent: (...args) => impl.hasProgramReminderBeenSent(...args),
+  hasProgramReminderBeenSentForPlayer: (...args) => impl.hasProgramReminderBeenSentForPlayer(...args),
   logProgramReminder: (...args) => impl.logProgramReminder(...args),
   getProgramEquipment: (...args) => impl.getProgramEquipment(...args),
   addProgramEquipment: (...args) => impl.addProgramEquipment(...args),
