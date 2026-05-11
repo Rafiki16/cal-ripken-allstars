@@ -119,6 +119,37 @@ async function init() {
 
     try { await pool.query('ALTER TABLE team_events ADD COLUMN batting_all INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* exists */ }
 
+    // Salvage start_time/end_time rows that were stored as Postgres array
+    // literals (e.g. {"","18:00"}) when the multi-day form posted duplicate
+    // fields. substring() returns the first HH:MM match or NULL.
+    try {
+      await pool.query("UPDATE team_events SET start_time = substring(start_time from '\\d{1,2}:\\d{2}') WHERE start_time LIKE '{%}'");
+      await pool.query("UPDATE team_events SET end_time = substring(end_time from '\\d{1,2}:\\d{2}') WHERE end_time LIKE '{%}'");
+    } catch (e) { /* best-effort cleanup */ }
+
+    // Track one-time data migrations so they don't re-run after admin edits.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS migrations (
+        name TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // One-time normalization: every weekday practice runs 6:00pm–8:00pm.
+    // Weekend practices are not touched. Per user instruction.
+    try {
+      const m = await pool.query("SELECT 1 FROM migrations WHERE name = 'normalize_weekday_practice_times_v1'");
+      if (m.rowCount === 0) {
+        await pool.query(`
+          UPDATE team_events
+          SET start_time = '18:00', end_time = '20:00'
+          WHERE event_type = 'practice'
+            AND EXTRACT(DOW FROM start_date::date) BETWEEN 1 AND 5
+        `);
+        await pool.query("INSERT INTO migrations (name) VALUES ('normalize_weekday_practice_times_v1')");
+      }
+    } catch (e) { /* best-effort */ }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS practice_drills (
         id SERIAL PRIMARY KEY,

@@ -188,10 +188,34 @@ app.use((req, res, next) => {
   next();
 });
 
+// Form fields with the same name (e.g. the multi-day picker injects a hidden
+// start_time while the single-date input is also in the form) come through as
+// arrays. Pick the last non-empty value and strip any Postgres array-literal
+// crud that may have been written previously.
+function pickFormString(v) {
+  if (v == null) return null;
+  if (Array.isArray(v)) {
+    const found = v.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).pop();
+    return found || null;
+  }
+  if (typeof v !== 'string') return null;
+  const s = v.trim();
+  if (!s) return null;
+  if (s.startsWith('{') && s.endsWith('}')) {
+    const inner = s.slice(1, -1).split(',').map(p => p.replace(/^"(.*)"$/, '$1').trim()).filter(Boolean);
+    return inner.pop() || null;
+  }
+  return s;
+}
+
 function calcEndTime(startTime, durationMinutes) {
-  if (!startTime || !durationMinutes) return null;
-  const [h, m] = startTime.split(':').map(Number);
-  const total = h * 60 + m + Number(durationMinutes);
+  const st = pickFormString(startTime);
+  const dur = pickFormString(durationMinutes);
+  if (!st || !dur) return null;
+  const [h, m] = st.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return null;
+  const total = h * 60 + m + Number(dur);
+  if (isNaN(total)) return null;
   const eh = Math.floor(total / 60) % 24;
   const em = total % 60;
   return String(eh).padStart(2, '0') + ':' + String(em).padStart(2, '0');
@@ -1240,12 +1264,15 @@ app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
     return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and at least one date are required.'));
   }
 
-  const resolvedEndTime = duration ? calcEndTime(start_time, duration) : (end_time || null);
+  const cleanStartTime = pickFormString(start_time);
+  const cleanEndTime = pickFormString(end_time);
+  const cleanDuration = pickFormString(duration);
+  const resolvedEndTime = cleanDuration ? calcEndTime(cleanStartTime, cleanDuration) : cleanEndTime;
 
   const eventData = {
     event_type: event_type || 'practice',
     title: title.trim(),
-    start_time: start_time || null,
+    start_time: cleanStartTime,
     end_time: resolvedEndTime,
     location_name: (location_name || '').trim() || null,
     address: (address || '').trim() || null,
@@ -1280,12 +1307,15 @@ app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
     const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
     return res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'error=' + encodeURIComponent('Event title and start date are required.'));
   }
-  const resolvedEndTime = duration ? calcEndTime(start_time, duration) : (end_time || null);
+  const cleanStartTime = pickFormString(start_time);
+  const cleanEndTime = pickFormString(end_time);
+  const cleanDuration = pickFormString(duration);
+  const resolvedEndTime = cleanDuration ? calcEndTime(cleanStartTime, cleanDuration) : cleanEndTime;
   await db.updateTeamEvent(Number(event_id), {
     event_type: event_type || 'practice',
     title: title.trim(),
     start_date,
-    start_time: start_time || null,
+    start_time: cleanStartTime,
     end_date: end_date || null,
     end_time: resolvedEndTime,
     location_name: (location_name || '').trim() || null,
