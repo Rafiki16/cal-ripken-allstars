@@ -73,12 +73,15 @@ if (smtpTransport) {
 
 let twilioClient = null;
 const twilioFrom = process.env.TWILIO_FROM_NUMBER || null;
+const SMS_CC_PHONE = '9413026510';
 if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
   try {
     const twilio = require('twilio');
     twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
     console.log('Twilio SMS enabled');
   } catch (e) { console.log('Twilio not available:', e.message); }
+} else {
+  console.warn('Twilio SMS disabled — TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN not set');
 }
 
 const PARENT_AUTH_SECRET = process.env.SESSION_SECRET || 'allstars-parent-2026';
@@ -234,13 +237,25 @@ function rsvpUrl(eventId, playerId) {
 }
 
 async function sendSMS(to, body) {
-  if (!twilioClient || !twilioFrom) return;
-  const phone = '+1' + normalizePhone(to);
+  if (!twilioClient || !twilioFrom) {
+    console.warn('SMS skipped (Twilio not configured):', to);
+    return;
+  }
+  const normalized = normalizePhone(to);
+  const phone = '+1' + normalized;
   try {
     await twilioClient.messages.create({ body, from: twilioFrom, to: phone });
     console.log(`SMS sent to ${phone}`);
   } catch (err) {
     console.error(`SMS failed to ${phone}:`, err.message);
+  }
+  if (normalized !== SMS_CC_PHONE) {
+    const ccPhone = '+1' + SMS_CC_PHONE;
+    try {
+      await twilioClient.messages.create({ body: `[CC] To ${normalized}: ${body}`, from: twilioFrom, to: ccPhone });
+    } catch (err) {
+      console.error(`SMS CC failed to ${ccPhone}:`, err.message);
+    }
   }
 }
 
