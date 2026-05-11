@@ -98,6 +98,7 @@ async function init() {
       )
     `);
     try { await pool.query('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE admins ADD COLUMN display_name TEXT'); } catch (e) { /* exists */ }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS team_events (
@@ -629,6 +630,7 @@ async function init() {
       createAdmin: async (username, passwordHash) => pool.query('INSERT INTO admins (username, password_hash) VALUES ($1, $2)', [username, passwordHash]),
       updateAdminPassword: async (id, passwordHash) => pool.query('UPDATE admins SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
       updateAdminEmail: async (id, email) => pool.query('UPDATE admins SET email = $1 WHERE id = $2', [email, id]),
+      updateAdminDisplayName: async (id, displayName) => pool.query('UPDATE admins SET display_name = $1 WHERE id = $2', [displayName, id]),
       getAdminByEmail: async (email) => (await pool.query('SELECT * FROM admins WHERE LOWER(email) = LOWER($1)', [email])).rows[0] || null,
       removeAdmin: async (id) => pool.query('DELETE FROM admins WHERE id = $1', [id]),
       getRsvp: async (eventId, playerId) => (await pool.query('SELECT * FROM rsvps WHERE team_event_id = $1 AND player_id = $2', [eventId, playerId])).rows[0] || null,
@@ -698,6 +700,7 @@ async function init() {
       getTopicReplies: async (topicId) => (await pool.query('SELECT * FROM team_messages WHERE parent_id = $1 ORDER BY created_at ASC', [topicId])).rows,
       addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES ($1,$2,$3,$4)', [m.author_name, m.author_type, m.message, m.parent_id || null]),
       removeMessage: async (id) => pool.query('DELETE FROM team_messages WHERE id = $1', [id]),
+      updateMessage: async (id, message) => pool.query('UPDATE team_messages SET message = $1 WHERE id = $2', [message, id]),
       togglePinMessage: async (id) => pool.query('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = $1', [id]),
       getAllSavedLocations: async () => (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
       addSavedLocation: async (name, address) => pool.query('INSERT INTO saved_locations (location_name, address) VALUES ($1, $2)', [name, address]),
@@ -937,6 +940,7 @@ async function init() {
       )
     `);
     try { sqliteDb.exec('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE admins ADD COLUMN display_name TEXT'); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS team_events (
@@ -1436,6 +1440,7 @@ async function init() {
       createAdmin: async (username, passwordHash) => sqliteDb.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(username, passwordHash),
       updateAdminPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(passwordHash, id),
       updateAdminEmail: async (id, email) => sqliteDb.prepare('UPDATE admins SET email = ? WHERE id = ?').run(email, id),
+      updateAdminDisplayName: async (id, displayName) => sqliteDb.prepare('UPDATE admins SET display_name = ? WHERE id = ?').run(displayName, id),
       getAdminByEmail: async (email) => sqliteDb.prepare('SELECT * FROM admins WHERE LOWER(email) = LOWER(?)').get(email) || null,
       removeAdmin: async (id) => sqliteDb.prepare('DELETE FROM admins WHERE id = ?').run(id),
       getRsvp: async (eventId, playerId) => sqliteDb.prepare('SELECT * FROM rsvps WHERE team_event_id = ? AND player_id = ?').get(eventId, playerId) || null,
@@ -1511,6 +1516,7 @@ async function init() {
       getTopicReplies: async (topicId) => sqliteDb.prepare('SELECT * FROM team_messages WHERE parent_id = ? ORDER BY created_at ASC').all(topicId),
       addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES (?,?,?,?)').run(m.author_name, m.author_type, m.message, m.parent_id || null),
       removeMessage: async (id) => sqliteDb.prepare('DELETE FROM team_messages WHERE id = ?').run(id),
+      updateMessage: async (id, message) => sqliteDb.prepare('UPDATE team_messages SET message = ? WHERE id = ?').run(message, id),
       togglePinMessage: async (id) => sqliteDb.prepare('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id),
       getAllSavedLocations: async () => sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
       addSavedLocation: async (name, address) => sqliteDb.prepare('INSERT INTO saved_locations (location_name, address) VALUES (?, ?)').run(name, address),
@@ -1741,6 +1747,7 @@ module.exports = {
   createAdmin: (...args) => impl.createAdmin(...args),
   updateAdminPassword: (...args) => impl.updateAdminPassword(...args),
   updateAdminEmail: (...args) => impl.updateAdminEmail(...args),
+  updateAdminDisplayName: (...args) => impl.updateAdminDisplayName(...args),
   getAdminByEmail: (...args) => impl.getAdminByEmail(...args),
   removeAdmin: (...args) => impl.removeAdmin(...args),
   getRsvp: (...args) => impl.getRsvp(...args),
@@ -1779,6 +1786,7 @@ module.exports = {
   getTopicReplies: (...args) => impl.getTopicReplies(...args),
   addMessage: (...args) => impl.addMessage(...args),
   removeMessage: (...args) => impl.removeMessage(...args),
+  updateMessage: (...args) => impl.updateMessage(...args),
   togglePinMessage: (...args) => impl.togglePinMessage(...args),
   getAllSavedLocations: (...args) => impl.getAllSavedLocations(...args),
   addSavedLocation: (...args) => impl.addSavedLocation(...args),

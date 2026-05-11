@@ -47,6 +47,19 @@
       </form>
     </div>
 
+    <!-- Display Name -->
+    <div class="admin-section">
+      <h2 class="profile-section-title">Display Name</h2>
+      <p class="section-hint">Shown on Team Board posts instead of your username.</p>
+      <form method="POST" action="/admin/update-display-name" class="add-player-form">
+        <div class="form-group">
+          <label>Display Name</label>
+          <input type="text" name="display_name" value="<%= adminDisplayName %>" class="form-input" placeholder="Coach Matt" maxlength="50">
+        </div>
+        <button type="submit" class="btn btn-confirm">Save Display Name</button>
+      </form>
+    </div>
+
     <!-- Recovery Email -->
     <div class="admin-section">
       <h2 class="profile-section-title">Recovery Email</h2>
