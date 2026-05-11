@@ -649,8 +649,18 @@ async function init() {
         'INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES ($1,$2,$3,$4,$5)',
         [eventId, playerId, type, channel, value]
       ),
+      getRecentReminders: async (limit = 50) => (await pool.query(
+        'SELECT r.*, p.player_name, te.title as event_title FROM reminder_log r LEFT JOIN players p ON r.player_id = p.id LEFT JOIN team_events te ON r.team_event_id = te.id ORDER BY r.sent_at DESC LIMIT $1', [limit]
+      )).rows,
+      getRecentProgramReminders: async (limit = 50) => (await pool.query(
+        'SELECT pr.*, p.player_name, prog.title as program_title FROM program_reminder_log pr LEFT JOIN players p ON pr.player_id = p.id LEFT JOIN programs prog ON pr.program_id = prog.id ORDER BY pr.sent_at DESC LIMIT $1', [limit]
+      )).rows,
       hasProgramReminderBeenSent: async (sentDate) => {
         const { rows } = await pool.query('SELECT COUNT(*) as c FROM program_reminder_log WHERE sent_date = $1', [sentDate]);
+        return parseInt(rows[0].c) > 0;
+      },
+      hasProgramReminderBeenSentForPlayer: async (programId, playerId, sentDate) => {
+        const { rows } = await pool.query('SELECT COUNT(*) as c FROM program_reminder_log WHERE program_id = $1 AND player_id = $2 AND sent_date = $3', [programId, playerId, sentDate]);
         return parseInt(rows[0].c) > 0;
       },
       logProgramReminder: async (programId, playerId, sentDate) => pool.query(
@@ -1462,8 +1472,18 @@ async function init() {
       logReminder: async (eventId, playerId, type, channel, value) => {
         sqliteDb.prepare('INSERT INTO reminder_log (team_event_id, player_id, reminder_type, channel, contact_value) VALUES (?,?,?,?,?)').run(eventId, playerId, type, channel, value);
       },
+      getRecentReminders: async (limit = 50) => sqliteDb.prepare(
+        'SELECT r.*, p.player_name, te.title as event_title FROM reminder_log r LEFT JOIN players p ON r.player_id = p.id LEFT JOIN team_events te ON r.team_event_id = te.id ORDER BY r.sent_at DESC LIMIT ?'
+      ).all(limit),
+      getRecentProgramReminders: async (limit = 50) => sqliteDb.prepare(
+        'SELECT pr.*, p.player_name, prog.title as program_title FROM program_reminder_log pr LEFT JOIN players p ON pr.player_id = p.id LEFT JOIN programs prog ON pr.program_id = prog.id ORDER BY pr.sent_at DESC LIMIT ?'
+      ).all(limit),
       hasProgramReminderBeenSent: async (sentDate) => {
         const row = sqliteDb.prepare('SELECT COUNT(*) as c FROM program_reminder_log WHERE sent_date = ?').get(sentDate);
+        return row.c > 0;
+      },
+      hasProgramReminderBeenSentForPlayer: async (programId, playerId, sentDate) => {
+        const row = sqliteDb.prepare('SELECT COUNT(*) as c FROM program_reminder_log WHERE program_id = ? AND player_id = ? AND sent_date = ?').get(programId, playerId, sentDate);
         return row.c > 0;
       },
       logProgramReminder: async (programId, playerId, sentDate) => {
@@ -1757,6 +1777,8 @@ module.exports = {
   upsertRsvp: (...args) => impl.upsertRsvp(...args),
   hasReminderBeenSent: (...args) => impl.hasReminderBeenSent(...args),
   logReminder: (...args) => impl.logReminder(...args),
+  getRecentReminders: (...args) => impl.getRecentReminders(...args),
+  getRecentProgramReminders: (...args) => impl.getRecentProgramReminders(...args),
   updateJerseyNumber: (...args) => impl.updateJerseyNumber(...args),
   getParentAccountByPhone: (...args) => impl.getParentAccountByPhone(...args),
   getParentAccountByUsername: (...args) => impl.getParentAccountByUsername(...args),
@@ -1855,6 +1877,7 @@ module.exports = {
   getCompletionsForProgram: (...args) => impl.getCompletionsForProgram(...args),
   getCompletionsForWeek: (...args) => impl.getCompletionsForWeek(...args),
   hasProgramReminderBeenSent: (...args) => impl.hasProgramReminderBeenSent(...args),
+  hasProgramReminderBeenSentForPlayer: (...args) => impl.hasProgramReminderBeenSentForPlayer(...args),
   logProgramReminder: (...args) => impl.logProgramReminder(...args),
   getProgramEquipment: (...args) => impl.getProgramEquipment(...args),
   addProgramEquipment: (...args) => impl.addProgramEquipment(...args),

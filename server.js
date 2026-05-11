@@ -343,10 +343,8 @@ async function checkAndSendProgramReminders() {
   try {
     const now = new Date();
     const hour = now.getHours();
-    if (hour < 12 || hour >= 13) return;
+    if (hour < 8 || hour >= 14) return;
     const todayStr = now.toISOString().split('T')[0];
-    const alreadySentToday = await db.hasProgramReminderBeenSent(todayStr);
-    if (alreadySentToday) return;
 
     const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
     const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
@@ -370,6 +368,8 @@ async function checkAndSendProgramReminders() {
         if (!assignment.send_reminders) continue;
         if (assignment.start_date && todayStr < assignment.start_date.toString().substring(0,10)) continue;
         if (assignment.end_date && todayStr > assignment.end_date.toString().substring(0,10)) continue;
+        const alreadySentForPlayer = await db.hasProgramReminderBeenSentForPlayer(program.id, assignment.player_id, todayStr);
+        if (alreadySentForPlayer) continue;
         const alreadyDone = completions.some(c => c.player_id === assignment.player_id && c.program_day_id === todayDay.id);
         if (alreadyDone) continue;
 
@@ -1737,6 +1737,14 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
   res.redirect('/admin/settings?success=Admin+removed.');
 });
 
+// --- Notification Log ---
+
+app.get('/admin/notifications', requireAdmin, async (req, res) => {
+  const eventReminders = await db.getRecentReminders(100);
+  const programReminders = await db.getRecentProgramReminders(100);
+  res.render('admin-notifications', { eventReminders, programReminders, teamName: res.locals.teamName });
+});
+
 // --- Team Messages ---
 
 app.get('/messages', requireParentOrAdmin, async (req, res) => {
@@ -1756,7 +1764,8 @@ app.post('/messages', async (req, res) => {
 
   let authorName, authorType;
   if (isAdmin) {
-    authorName = req.session.admin.display_name || req.session.admin.username;
+    const firstName = req.session.admin.display_name || req.session.admin.username;
+    authorName = 'Coach ' + firstName;
     authorType = 'admin';
   } else if (req.parentUser) {
     authorName = req.parentUser.display_name;
@@ -1782,7 +1791,7 @@ app.post('/messages/:id/reply', async (req, res) => {
   if (!message) return res.redirect('/messages');
 
   let authorName, authorType;
-  if (isAdmin) { authorName = req.session.admin.display_name || req.session.admin.username; authorType = 'admin'; }
+  if (isAdmin) { authorName = 'Coach ' + (req.session.admin.display_name || req.session.admin.username); authorType = 'admin'; }
   else if (req.parentUser) { authorName = req.parentUser.display_name; authorType = 'parent'; }
   else return res.redirect('/messages');
 

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>Notification Log &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .log-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .log-table th, .log-table td { padding:8px 12px; border-bottom:1px solid var(--gray-100); text-align:left; }
+    .log-table th { background:#f3f4f6; font-weight:600; color:var(--navy); font-size:12px; text-transform:uppercase; }
+    .log-table tr:hover { background:#f9fafb; }
+    .badge-sms { background:#dbeafe; color:#1d4ed8; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+    .badge-email { background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+    .tab-bar { display:flex; gap:4px; margin-bottom:20px; }
+    .tab-bar button { padding:8px 16px; border:1px solid var(--gray-200); background:white; border-radius:6px; cursor:pointer; font-size:14px; font-weight:500; }
+    .tab-bar button.active { background:var(--navy); color:white; border-color:var(--navy); }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    .empty-state { text-align:center; padding:40px; color:#6b7280; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <a href="/admin" class="back-link">&larr; Back to Dashboard</a>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Notification Log</h1>
+            <p class="subtitle">All sent texts &amp; emails</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="tab-bar">
+      <button class="active" onclick="showTab('program')">Program Reminders</button>
+      <button onclick="showTab('event')">RSVP Reminders</button>
+    </div>
+
+    <div id="tab-program" class="tab-content active">
+      <% if (programReminders.length === 0) { %>
+        <div class="empty-state">
+          <p>No program reminders have been sent yet.</p>
+        </div>
+      <% } else { %>
+      <div style="overflow-x:auto;">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Date Sent</th>
+              <th>Player</th>
+              <th>Program</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% programReminders.forEach(r => { %>
+            <tr>
+              <td><%= r.sent_at ? new Date(r.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : r.sent_date %></td>
+              <td><%= r.player_name || 'Unknown' %></td>
+              <td><%= r.program_title || 'Unknown' %></td>
+            </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
+    </div>
+
+    <div id="tab-event" class="tab-content">
+      <% if (eventReminders.length === 0) { %>
+        <div class="empty-state">
+          <p>No RSVP reminders have been sent yet.</p>
+        </div>
+      <% } else { %>
+      <div style="overflow-x:auto;">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Date Sent</th>
+              <th>Player</th>
+              <th>Event</th>
+              <th>Type</th>
+              <th>Channel</th>
+              <th>Contact</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% eventReminders.forEach(r => { %>
+            <tr>
+              <td><%= new Date(r.sent_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %></td>
+              <td><%= r.player_name || 'Unknown' %></td>
+              <td><%= r.event_title || 'Unknown' %></td>
+              <td><%= r.reminder_type %></td>
+              <td><span class="badge-<%= r.channel %>"><%= r.channel %></span></td>
+              <td style="font-size:12px;color:#6b7280;"><%= r.contact_value %></td>
+            </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <% } %>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
+    </div>
+  </footer>
+
+  <script>
+    function showTab(name) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-bar button').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      event.target.classList.add('active');
+    }
+  </script>
+</body>
+</html>
