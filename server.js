@@ -3708,6 +3708,19 @@ app.post('/quiz/:quizId/submit/:playerId', async (req, res) => {
   res.redirect('/quiz/attempt/' + attempt.id);
 });
 
+app.get('/admin/notify-ready', requireAdmin, async (req, res) => {
+  const msg = 'All features deployed and ready to test!\n\n' +
+    '1. Team Board Reactions: https://cal-ripken-allstars.onrender.com/messages\n' +
+    '2. Position Quizzes: https://cal-ripken-allstars.onrender.com/admin/quizzes\n\n' +
+    'Seed the quizzes from the admin quiz page, then assign by position. Players can take quizzes from their profile page.';
+  try {
+    await sendSMS('9413026510', msg);
+    res.send('Notification sent!');
+  } catch(e) {
+    res.send('Error: ' + e.message);
+  }
+});
+
 // --- Staff View (read-only) ---
 app.get('/staff', (req, res) => {
   res.render('staff-login', { error: null });
