@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <title>Summer 2026 <%= teamName %></title>
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -184,24 +185,30 @@
 
       function renderEvents(filter) {
         const now = new Date().toISOString().slice(0, 10);
-        let filtered = filter === 'all' ? EVENTS : EVENTS.filter(e => (e.end_date || e.start_date) >= now);
+        const isPast = (e) => (e.end_date || e.start_date) < now;
+        const upcoming = EVENTS.filter(e => !isPast(e))
+          .sort((a, b) => (a.start_date + (a.start_time || '')).localeCompare(b.start_date + (b.start_time || '')));
+        const past = EVENTS.filter(isPast)
+          .sort((a, b) => (b.start_date + (b.start_time || '')).localeCompare(a.start_date + (a.start_time || '')));
+        const ordered = upcoming.concat(past);
         const list = document.getElementById('events-list');
         const titleEl = document.getElementById('upcoming-title');
         titleEl.textContent = filter === 'all' ? 'All Events' : 'Upcoming Events';
 
-        if (filtered.length === 0) {
-          list.innerHTML = '<p style="color:#6b7280;font-size:14px;">No upcoming events.</p>';
+        if (ordered.length === 0) {
+          list.innerHTML = '<p style="color:#6b7280;font-size:14px;">No events.</p>';
           return;
         }
 
-        list.innerHTML = filtered.map(ev => {
+        list.innerHTML = ordered.map(ev => {
+          const past_ = isPast(ev);
           const startDate = new Date(ev.start_date + 'T12:00:00');
           const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
           const endStr = ev.end_date && ev.end_date !== ev.start_date ? ' &ndash; ' + new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
           const timeStr = ev.start_time ? formatTime(ev.start_time) + (ev.end_time ? ' &ndash; ' + formatTime(ev.end_time) : '') : '';
           const color = TYPE_COLORS[ev.type] || TYPE_COLORS.other;
 
-          let html = '<div class="te-card" id="event-' + ev.id + '" style="border-left:4px solid ' + color + ';">';
+          let html = '<div class="te-card' + (past_ ? ' te-card-past' : '') + '" id="event-' + ev.id + '" style="border-left:4px solid ' + color + ';">';
           html += '<div class="te-card-body">';
           html += '<a href="/event/' + ev.id + '" class="te-card-link">';
           html += '<div class="te-header">';

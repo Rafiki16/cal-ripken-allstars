@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <title>Admin &middot; <%= teamName %></title>
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -685,12 +686,21 @@
         var on = document.getElementById('multi-day-check').checked;
         document.getElementById('multi-day-picker').style.display = on ? '' : 'none';
         document.getElementById('single-date-row').style.display = on ? 'none' : '';
+        // Disable the single-date inputs when multi-day is active so the form
+        // doesn't submit duplicate start_time/duration fields alongside the
+        // hidden values injected by the multi-day picker.
+        var addStartTime = document.getElementById('add-start-time');
+        var addDuration = document.getElementById('add-duration');
         if (on) {
           document.getElementById('add-start-date').removeAttribute('required');
           document.getElementById('add-start-date').value = '';
+          addStartTime.disabled = true;
+          addDuration.disabled = true;
           renderMpCal();
         } else {
           document.getElementById('add-start-date').setAttribute('required', '');
+          addStartTime.disabled = false;
+          addDuration.disabled = false;
         }
       }
 
