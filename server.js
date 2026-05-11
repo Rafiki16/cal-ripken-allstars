@@ -24,6 +24,7 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('trust proxy', 1);
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/favicon.ico', (req, res) => res.redirect(301, '/favicon.svg'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
