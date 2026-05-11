@@ -151,6 +151,14 @@ async function init() {
       }
     } catch (e) { /* best-effort */ }
 
+    try {
+      const m = await pool.query("SELECT 1 FROM migrations WHERE name = 'rename_admin_posts_coach_matt'");
+      if (m.rowCount === 0) {
+        await pool.query("UPDATE team_messages SET author_name = 'Coach Matt' WHERE author_type = 'admin'");
+        await pool.query("INSERT INTO migrations (name) VALUES ('rename_admin_posts_coach_matt')");
+      }
+    } catch (e) { /* best-effort */ }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS practice_drills (
         id SERIAL PRIMARY KEY,
