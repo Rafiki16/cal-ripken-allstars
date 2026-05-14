@@ -1500,6 +1500,52 @@ app.post('/event/:id/drill/reorder', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/event/:id/drill/:drillId/copy', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/admin');
+  const drills = await db.getDrills(event.id);
+  const source = drills.find(d => d.id === Number(req.params.drillId));
+  if (!source) return res.redirect('/event/' + req.params.id);
+  await db.addDrill({
+    team_event_id: event.id,
+    drill_name: source.drill_name + ' (copy)',
+    description: source.description,
+    duration_minutes: source.duration_minutes,
+    sort_order: drills.length,
+    coach_notes: source.coach_notes,
+    assigned_staff: source.assigned_staff,
+    block_name: source.block_name,
+    parallel_group: source.parallel_group,
+  });
+  res.redirect('/event/' + req.params.id);
+});
+
+app.post('/event/:id/drill/copy-block', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event) return res.redirect('/admin');
+  const drills = await db.getDrills(event.id);
+  const blockName = (req.body.block_name || '').trim();
+  if (!blockName) return res.redirect('/event/' + req.params.id);
+  const blockDrills = drills.filter(d => d.block_name === blockName);
+  if (blockDrills.length === 0) return res.redirect('/event/' + req.params.id);
+  const newBlockName = blockName + ' (copy)';
+  let order = drills.length;
+  for (const source of blockDrills) {
+    await db.addDrill({
+      team_event_id: event.id,
+      drill_name: source.drill_name,
+      description: source.description,
+      duration_minutes: source.duration_minutes,
+      sort_order: order++,
+      coach_notes: source.coach_notes,
+      assigned_staff: source.assigned_staff,
+      block_name: newBlockName,
+      parallel_group: source.parallel_group,
+    });
+  }
+  res.redirect('/event/' + req.params.id);
+});
+
 app.post('/event/:id/drill/:drillId/delete', requireAdmin, async (req, res) => {
   await db.removeDrill(Number(req.params.drillId));
   res.redirect('/event/' + req.params.id);
