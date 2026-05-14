@@ -648,22 +648,23 @@
                           </div>
                           <div style="flex:1;min-width:150px;">
                             <label style="font-size:11px;font-weight:700;color:#4338ca;display:block;margin-bottom:3px;">Runs parallel with</label>
-                            <input type="text" name="parallel_group" value="<%= mBlock.parallelGroup %>" list="pg-list" placeholder="Empty = serial" class="form-input" style="width:100%;font-size:13px;border-color:#a5b4fc;">
-                            <datalist id="pg-list">
-                              <% mParallelGroups.forEach(g => { %>
-                              <option value="<%= g %>">
+                            <%
+                              // Find which other block shares the same parallel group
+                              const partnerBlock = mBlock.parallelGroup
+                                ? mBlocks.find(b => b.name !== mBlock.name && b.parallelGroup === mBlock.parallelGroup)
+                                : null;
+                              const partnerName = partnerBlock ? partnerBlock.name : '';
+                            %>
+                            <select name="parallel_group" class="form-input" style="width:100%;font-size:13px;border-color:#a5b4fc;">
+                              <option value="">None (runs in sequence)</option>
+                              <% mBlockNames.filter(n => n !== mBlock.name).forEach(n => { %>
+                              <option value="<%= n %>" <%= partnerName === n ? 'selected' : '' %>><%= n %></option>
                               <% }); %>
-                            </datalist>
+                            </select>
                           </div>
                           <button type="submit" class="btn btn-confirm" style="font-size:12px;padding:6px 12px;white-space:nowrap;">Save</button>
                         </div>
-                        <p style="font-size:11px;color:#6366f1;margin:0;">
-                          <% if (mParallelGroups.length > 0) { %>
-                          Parallel groups: <strong><%= mParallelGroups.join(', ') %></strong> &mdash; type the same name on two blocks to run them at the same time.
-                          <% } else { %>
-                          To run blocks at the same time, type the same group name (e.g. "Stations") on each block.
-                          <% } %>
-                        </p>
+                        <p style="font-size:11px;color:#6366f1;margin:0;">Select another block to run at the same time as this one.</p>
                       </div>
                     </form>
                     <div style="margin-top:8px;">

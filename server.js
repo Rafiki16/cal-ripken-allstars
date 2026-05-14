@@ -1552,11 +1552,33 @@ app.post('/event/:id/drill/update-block', requireAdmin, async (req, res) => {
   const blockName = (req.body.block_name || '').trim();
   if (!blockName) return res.redirect('/event/' + req.params.id);
   const newBlockName = (req.body.new_block_name || '').trim() || blockName;
-  const parallelGroup = (req.body.parallel_group || '').trim() || null;
+  const selectedPartner = (req.body.parallel_group || '').trim() || null;
   const drills = await db.getDrills(event.id);
-  for (const d of drills) {
-    if (d.block_name === blockName) {
-      await db.updateDrill(d.id, { ...d, block_name: newBlockName, parallel_group: parallelGroup });
+
+  if (selectedPartner) {
+    // Link this block and the selected partner block with a shared parallel group name
+    const groupName = [newBlockName, selectedPartner].sort().join(' + ');
+    for (const d of drills) {
+      if (d.block_name === blockName) {
+        await db.updateDrill(d.id, { ...d, block_name: newBlockName, parallel_group: groupName });
+      } else if (d.block_name === selectedPartner) {
+        await db.updateDrill(d.id, { ...d, parallel_group: groupName });
+      }
+    }
+  } else {
+    // Clear parallel group — also unlink any partner that was only linked to this block
+    const oldGroup = drills.find(d => d.block_name === blockName)?.parallel_group;
+    for (const d of drills) {
+      if (d.block_name === blockName) {
+        await db.updateDrill(d.id, { ...d, block_name: newBlockName, parallel_group: null });
+      } else if (oldGroup && d.parallel_group === oldGroup) {
+        // Check if there are still other blocks in this group besides the one being removed
+        const remainingInGroup = drills.filter(x => x.parallel_group === oldGroup && x.block_name !== blockName && x.block_name !== d.block_name);
+        if (remainingInGroup.length === 0) {
+          // Only two blocks were in this group; clear the partner too
+          await db.updateDrill(d.id, { ...d, parallel_group: null });
+        }
+      }
     }
   }
   res.redirect('/event/' + req.params.id);
