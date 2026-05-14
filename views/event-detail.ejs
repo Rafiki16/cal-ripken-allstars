@@ -152,21 +152,49 @@
         <% if (isStaff) { %>
         <a href="/event/<%= event.id %>/practice-timer" class="btn btn-confirm" style="display:inline-block;margin-bottom:16px;text-decoration:none;font-size:15px;padding:10px 24px;">Start Practice</a>
         <% } %>
+        <%
+          // Group drills into blocks (preserving sort order)
+          const blocks = [];
+          const blockMap = {};
+          drills.forEach(drill => {
+            const bName = drill.block_name || '';
+            if (!blockMap[bName]) {
+              blockMap[bName] = { name: bName, drills: [] };
+              blocks.push(blockMap[bName]);
+            }
+            blockMap[bName].drills.push(drill);
+          });
+          const hasBlocks = blocks.some(b => b.name !== '');
+          let globalDrillIdx = 0;
+        %>
         <div id="drill-list" class="drill-list">
-          <% drills.forEach((drill, i) => { %>
-          <div class="drill-card<%= isAdmin ? ' drill-draggable' : '' %>" data-duration="<%= drill.duration_minutes %>" data-name="<%= drill.drill_name %>" data-id="<%= drill.id %>" id="drill-<%= drill.id %>" <% if (isAdmin) { %>draggable="true"<% } %>>
-            <% if (isAdmin) { %><div class="drill-grip" title="Drag to reorder">&#9776;</div><% } %>
-            <div class="drill-num"><%= i + 1 %></div>
-            <div class="drill-body">
-              <div class="drill-name"><%= drill.drill_name %></div>
-              <% if (drill.description) { %><div class="drill-desc"><%= drill.description %></div><% } %>
-              <% if (drill.assigned_staff) { %>
-              <div class="drill-staff-tags"><% const drillStaffIds = drill.assigned_staff.split(','); drillStaffIds.forEach(sid => { const s = staffList.find(x => String(x.id) === sid.trim()); if (s) { %><span class="drill-staff-tag"><%= s.name %></span><% } }); %></div>
-              <% } %>
-              <% if (isStaff && drill.coach_notes) { %><div class="drill-coach-notes"><span class="coach-notes-badge">Coach Notes</span> <%= drill.coach_notes %></div><% } %>
+          <% blocks.forEach((block, bi) => { %>
+            <% if (hasBlocks && block.name) { %>
+            <div class="block-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;margin-top:<%= bi > 0 ? '16px' : '0' %>;background:var(--navy);color:#fff;border-radius:10px 10px 0 0;font-weight:700;font-size:15px;">
+              <span><%= block.name %></span>
+              <span style="font-size:13px;font-weight:600;opacity:0.85;"><%= block.drills.reduce((s, d) => s + d.duration_minutes, 0) %> min</span>
             </div>
-            <div class="drill-dur"><%= drill.duration_minutes %> min</div>
-          </div>
+            <% } else if (hasBlocks && !block.name) { %>
+            <div class="block-header" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;margin-top:<%= bi > 0 ? '16px' : '0' %>;background:#6b7280;color:#fff;border-radius:10px 10px 0 0;font-weight:700;font-size:15px;">
+              <span>Other</span>
+              <span style="font-size:13px;font-weight:600;opacity:0.85;"><%= block.drills.reduce((s, d) => s + d.duration_minutes, 0) %> min</span>
+            </div>
+            <% } %>
+            <% block.drills.forEach((drill, di) => { %>
+            <div class="drill-card<%= isAdmin ? ' drill-draggable' : '' %><%= hasBlocks && block.name ? ' drill-in-block' : '' %>" data-duration="<%= drill.duration_minutes %>" data-name="<%= drill.drill_name %>" data-id="<%= drill.id %>" data-block="<%= drill.block_name || '' %>" id="drill-<%= drill.id %>" <% if (isAdmin) { %>draggable="true"<% } %>>
+              <% if (isAdmin) { %><div class="drill-grip" title="Drag to reorder">&#9776;</div><% } %>
+              <div class="drill-num"><%= ++globalDrillIdx %></div>
+              <div class="drill-body">
+                <div class="drill-name"><%= drill.drill_name %></div>
+                <% if (drill.description) { %><div class="drill-desc"><%= drill.description %></div><% } %>
+                <% if (drill.assigned_staff) { %>
+                <div class="drill-staff-tags"><% const drillStaffIds = drill.assigned_staff.split(','); drillStaffIds.forEach(sid => { const s = staffList.find(x => String(x.id) === sid.trim()); if (s) { %><span class="drill-staff-tag"><%= s.name %></span><% } }); %></div>
+                <% } %>
+                <% if (isStaff && drill.coach_notes) { %><div class="drill-coach-notes"><span class="coach-notes-badge">Coach Notes</span> <%= drill.coach_notes %></div><% } %>
+              </div>
+              <div class="drill-dur"><%= drill.duration_minutes %> min</div>
+            </div>
+            <% }); %>
           <% }); %>
         </div>
 
@@ -294,6 +322,18 @@
           <h4 class="ed-admin-title">Add Drill</h4>
           <form method="POST" action="/event/<%= event.id %>/drill" class="drill-form">
             <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+                <div style="flex:2; min-width:150px;">
+                  <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Block <span style="font-weight:400;">(optional)</span></label>
+                  <input type="text" name="block_name" list="block-names" placeholder="e.g. Warm-Up, Infield, BP..." class="form-input" style="width:100%;">
+                  <datalist id="block-names">
+                    <% const existingBlocks = [...new Set(drills.map(d => d.block_name).filter(Boolean))]; %>
+                    <% existingBlocks.forEach(b => { %>
+                    <option value="<%= b %>">
+                    <% }); %>
+                  </datalist>
+                </div>
+              </div>
               <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
                 <div style="flex:2; min-width:200px;">
                   <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Drill Name *</label>
@@ -497,13 +537,23 @@
             <% drills.forEach(drill => { %>
             <details style="margin-bottom:8px; border:1px solid var(--gray-200); border-radius:8px; overflow:hidden;">
               <summary style="padding:8px 12px; cursor:pointer; font-size:13px; font-weight:600; background:var(--gray-50); display:flex; align-items:center; gap:8px;">
-                <span style="flex:1;"><%= drill.drill_name %></span>
+                <span style="flex:1;"><%= drill.drill_name %><% if (drill.block_name) { %> <span style="font-size:11px;color:var(--gray-400);font-weight:400;">(<%= drill.block_name %>)</span><% } %></span>
                 <span style="font-size:12px; color:var(--gray-500); font-weight:400;"><%= drill.duration_minutes %>m</span>
               </summary>
               <div style="padding:10px 12px;">
                 <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/update">
                   <input type="hidden" name="sort_order" value="<%= drill.sort_order %>">
                   <div style="display:flex; flex-direction:column; gap:6px;">
+                    <div>
+                      <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Block</label>
+                      <input type="text" name="block_name" value="<%= drill.block_name || '' %>" list="block-names-edit" placeholder="e.g. Warm-Up, Infield, BP..." class="form-input" style="width:100%;">
+                      <datalist id="block-names-edit">
+                        <% const editBlocks = [...new Set(drills.map(d => d.block_name).filter(Boolean))]; %>
+                        <% editBlocks.forEach(b => { %>
+                        <option value="<%= b %>">
+                        <% }); %>
+                      </datalist>
+                    </div>
                     <div style="display:flex; gap:8px; align-items:end;">
                       <div style="flex:2;">
                         <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Name</label>

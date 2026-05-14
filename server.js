@@ -1468,6 +1468,7 @@ app.post('/event/:id/drill', requireAdmin, async (req, res) => {
     sort_order: drills.length,
     coach_notes: (req.body.coach_notes || '').trim() || null,
     assigned_staff: staffIds || null,
+    block_name: (req.body.block_name || '').trim() || null,
   });
   res.redirect('/event/' + event.id);
 });
@@ -1481,6 +1482,7 @@ app.post('/event/:id/drill/:drillId/update', requireAdmin, async (req, res) => {
     sort_order: parseInt(req.body.sort_order) || 0,
     coach_notes: (req.body.coach_notes || '').trim() || null,
     assigned_staff: staffIds || null,
+    block_name: (req.body.block_name || '').trim() || null,
   });
   res.redirect('/event/' + req.params.id);
 });
@@ -1491,7 +1493,7 @@ app.post('/event/:id/drill/reorder', requireAdmin, async (req, res) => {
   const drills = await db.getDrills(Number(req.params.id));
   for (let i = 0; i < order.length; i++) {
     const d = drills.find(x => x.id === order[i]);
-    if (d) await db.updateDrill(d.id, { drill_name: d.drill_name, description: d.description, duration_minutes: d.duration_minutes, sort_order: i, coach_notes: d.coach_notes });
+    if (d) await db.updateDrill(d.id, { drill_name: d.drill_name, description: d.description, duration_minutes: d.duration_minutes, sort_order: i, coach_notes: d.coach_notes, block_name: d.block_name });
   }
   res.json({ ok: true });
 });
