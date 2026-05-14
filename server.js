@@ -1551,11 +1551,12 @@ app.post('/event/:id/drill/update-block', requireAdmin, async (req, res) => {
   if (!event) return res.redirect('/admin');
   const blockName = (req.body.block_name || '').trim();
   if (!blockName) return res.redirect('/event/' + req.params.id);
+  const newBlockName = (req.body.new_block_name || '').trim() || blockName;
   const parallelGroup = (req.body.parallel_group || '').trim() || null;
   const drills = await db.getDrills(event.id);
   for (const d of drills) {
     if (d.block_name === blockName) {
-      await db.updateDrill(d.id, { ...d, parallel_group: parallelGroup });
+      await db.updateDrill(d.id, { ...d, block_name: newBlockName, parallel_group: parallelGroup });
     }
   }
   res.redirect('/event/' + req.params.id);
