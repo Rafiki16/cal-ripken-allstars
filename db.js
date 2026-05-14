@@ -891,6 +891,33 @@ async function init() {
       deletePitch: async (id) => pool.query('DELETE FROM pitches WHERE id = $1', [id]),
       getPitchesForPitcherSeason: async (playerId) => (await pool.query('SELECT p.*, lg.started_at FROM pitches p JOIN live_games lg ON p.game_id = lg.id WHERE p.pitcher_player_id = $1 ORDER BY p.id', [playerId])).rows,
 
+      getPitchCountReport: async (startDate, endDate) => {
+        // Get all completed games in the date range with pitch data
+        const games = (await pool.query(`
+          SELECT lg.id as game_id, lg.team_event_id, lg.sub_event_id, lg.opp_team_name, lg.active_scorer_name, lg.started_at,
+                 te.start_date, te.start_time, te.location_name, te.title as event_title
+          FROM live_games lg
+          LEFT JOIN team_events te ON lg.team_event_id = te.id
+          WHERE te.start_date >= $1 AND te.start_date <= $2
+            AND lg.status = 'final'
+          ORDER BY te.start_date, te.start_time
+        `, [startDate, endDate])).rows;
+        // Get pitch counts per pitcher per game (our pitchers pitch when opponent bats)
+        const pitchCounts = (await pool.query(`
+          SELECT p.game_id, p.pitcher_player_id, p.pitcher_name, COUNT(*)::int as pitch_count
+          FROM pitches p
+          JOIN live_games lg ON p.game_id = lg.id
+          LEFT JOIN team_events te ON lg.team_event_id = te.id
+          WHERE te.start_date >= $1 AND te.start_date <= $2
+            AND lg.status = 'final'
+            AND p.pitcher_player_id IS NOT NULL
+            AND ((lg.home_away = 'home' AND p.half = 'top') OR (lg.home_away = 'away' AND p.half = 'bottom'))
+          GROUP BY p.game_id, p.pitcher_player_id, p.pitcher_name
+          ORDER BY p.pitcher_player_id
+        `, [startDate, endDate])).rows;
+        return { games, pitchCounts };
+      },
+
       addGameChat: async (msg) => {
         const r = await pool.query('INSERT INTO game_chat (game_id, author_name, message) VALUES ($1,$2,$3) RETURNING *', [msg.game_id, msg.author_name, msg.message]);
         return r.rows[0];
@@ -1786,6 +1813,31 @@ async function init() {
       deletePitch: async (id) => sqliteDb.prepare('DELETE FROM pitches WHERE id = ?').run(id),
       getPitchesForPitcherSeason: async (playerId) => sqliteDb.prepare('SELECT p.*, lg.started_at FROM pitches p JOIN live_games lg ON p.game_id = lg.id WHERE p.pitcher_player_id = ? ORDER BY p.id').all(playerId),
 
+      getPitchCountReport: async (startDate, endDate) => {
+        const games = sqliteDb.prepare(`
+          SELECT lg.id as game_id, lg.team_event_id, lg.sub_event_id, lg.opp_team_name, lg.active_scorer_name, lg.started_at,
+                 te.start_date, te.start_time, te.location_name, te.title as event_title
+          FROM live_games lg
+          LEFT JOIN team_events te ON lg.team_event_id = te.id
+          WHERE te.start_date >= ? AND te.start_date <= ?
+            AND lg.status = 'final'
+          ORDER BY te.start_date, te.start_time
+        `).all(startDate, endDate);
+        const pitchCounts = sqliteDb.prepare(`
+          SELECT p.game_id, p.pitcher_player_id, p.pitcher_name, COUNT(*) as pitch_count
+          FROM pitches p
+          JOIN live_games lg ON p.game_id = lg.id
+          LEFT JOIN team_events te ON lg.team_event_id = te.id
+          WHERE te.start_date >= ? AND te.start_date <= ?
+            AND lg.status = 'final'
+            AND p.pitcher_player_id IS NOT NULL
+            AND ((lg.home_away = 'home' AND p.half = 'top') OR (lg.home_away = 'away' AND p.half = 'bottom'))
+          GROUP BY p.game_id, p.pitcher_player_id, p.pitcher_name
+          ORDER BY p.pitcher_player_id
+        `).all(startDate, endDate);
+        return { games, pitchCounts };
+      },
+
       addGameChat: async (msg) => {
         const r = sqliteDb.prepare('INSERT INTO game_chat (game_id, author_name, message) VALUES (?,?,?)').run(msg.game_id, msg.author_name, msg.message);
         return { id: r.lastInsertRowid, game_id: msg.game_id, author_name: msg.author_name, message: msg.message, created_at: new Date().toISOString() };
@@ -2000,6 +2052,7 @@ module.exports = {
   getLastPitchInAB: (...args) => impl.getLastPitchInAB(...args),
   deletePitch: (...args) => impl.deletePitch(...args),
   getPitchesForPitcherSeason: (...args) => impl.getPitchesForPitcherSeason(...args),
+  getPitchCountReport: (...args) => impl.getPitchCountReport(...args),
   addGameChat: (...args) => impl.addGameChat(...args),
   getGameChat: (...args) => impl.getGameChat(...args),
   pushUndo: (...args) => impl.pushUndo(...args),

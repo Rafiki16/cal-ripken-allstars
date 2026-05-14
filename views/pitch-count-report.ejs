@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pitch Count Record &middot; <%= teamName %></title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; padding: 20px; }
+
+    /* Screen-only toolbar */
+    .toolbar {
+      max-width: 900px; margin: 0 auto 20px;
+      display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+      padding: 16px; background: #f3f4f6; border-radius: 10px;
+    }
+    .toolbar label { font-size: 13px; font-weight: 600; color: #374151; display: block; margin-bottom: 4px; }
+    .toolbar input[type="date"] { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+    .toolbar .btn {
+      display: inline-block; padding: 10px 20px; font-size: 14px; font-weight: 700;
+      border: none; border-radius: 8px; cursor: pointer; text-decoration: none;
+    }
+    .btn-generate { background: #1a2744; color: #fff; }
+    .btn-generate:hover { background: #2d3f5e; }
+    .btn-print { background: #059669; color: #fff; }
+    .btn-print:hover { background: #047857; }
+    .btn-back { background: #e5e7eb; color: #374151; }
+    .btn-back:hover { background: #d1d5db; }
+    .toolbar-right { margin-left: auto; display: flex; gap: 8px; }
+
+    /* Report container */
+    .report-page {
+      max-width: 1100px; margin: 0 auto; padding: 0;
+    }
+
+    /* Header matching Babe Ruth League format */
+    .report-header {
+      text-align: center; margin-bottom: 12px; padding-bottom: 8px;
+    }
+    .report-header .org { font-size: 14px; font-weight: 700; }
+    .report-header .tournament { font-size: 13px; font-weight: 600; }
+    .report-header .title { font-size: 18px; font-weight: 900; margin: 4px 0; }
+
+    /* Meta row */
+    .report-meta {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 8px; font-size: 13px; padding: 0 2px;
+    }
+    .report-meta .team-line { font-weight: 700; font-size: 15px; }
+    .report-meta .page-line { font-weight: 600; }
+
+    /* The grid table */
+    .pitch-table {
+      width: 100%; border-collapse: collapse; font-size: 12px;
+      border: 2px solid #000;
+    }
+    .pitch-table th, .pitch-table td {
+      border: 1px solid #000; padding: 4px 6px; text-align: center; vertical-align: middle;
+    }
+    /* Pitcher name column - sticky for multi-page */
+    .pitch-table .col-name {
+      text-align: left; font-weight: 600; white-space: nowrap;
+      min-width: 140px; max-width: 180px;
+      background: #fff; position: sticky; left: 0; z-index: 1;
+    }
+    .pitch-table thead th {
+      background: #f3f4f6; font-weight: 700; font-size: 11px;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .pitch-table thead th.col-name {
+      background: #f3f4f6; text-align: left; font-size: 13px;
+    }
+
+    /* Date header row */
+    .pitch-table .date-header {
+      background: #e5e7eb; font-weight: 700; font-size: 12px;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    /* Sub-header row (initials, game #) */
+    .pitch-table .sub-header {
+      font-size: 10px; font-weight: 600; color: #4b5563;
+      background: #f9fafb;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+
+    /* Game columns */
+    .pitch-table .game-col { min-width: 55px; }
+
+    /* Pitch count cells */
+    .pitch-table td.count { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pitch-table td.count.has-value { color: #1a2744; }
+    .pitch-table td.count.empty { color: #d1d5db; }
+
+    /* Total column */
+    .pitch-table .col-total { background: #fef3c7; font-weight: 800; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    /* Row number column */
+    .pitch-table .col-num { width: 24px; color: #9ca3af; font-size: 10px; }
+
+    /* No data state */
+    .no-data { text-align: center; padding: 40px; color: #6b7280; font-size: 16px; }
+
+    /* Footer note */
+    .report-footer {
+      margin-top: 8px; font-size: 10px; color: #dc2626;
+      padding: 0 2px;
+    }
+
+    /* Print styles */
+    @media print {
+      body { padding: 0; font-size: 11px; }
+      .toolbar { display: none !important; }
+      .report-page { max-width: 100%; }
+      .pitch-table { font-size: 11px; }
+      .pitch-table td.count { font-size: 13px; }
+      .pitch-table .col-name { position: static; }
+      @page { margin: 0.4in; size: landscape; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <a href="/admin" class="btn btn-back">&larr; Admin</a>
+    <div>
+      <label>Start Date</label>
+      <input type="date" id="start-date" value="<%= startDate %>">
+    </div>
+    <div>
+      <label>End Date</label>
+      <input type="date" id="end-date" value="<%= endDate %>">
+    </div>
+    <button onclick="generate()" class="btn btn-generate">Generate Report</button>
+    <% if (report && report.games.length > 0) { %>
+    <div class="toolbar-right">
+      <button onclick="window.print()" class="btn btn-print">&#128424; Print / Save PDF</button>
+    </div>
+    <% } %>
+  </div>
+
+  <script>
+  function generate() {
+    const s = document.getElementById('start-date').value;
+    const e = document.getElementById('end-date').value;
+    if (!s || !e) return alert('Please select both start and end dates.');
+    window.location.href = '/admin/pitch-count-report?start=' + s + '&end=' + e;
+  }
+  </script>
+
+  <% if (report) { %>
+    <% if (report.games.length === 0) { %>
+    <div class="no-data">No completed scored games found in this date range.</div>
+    <% } else { %>
+    <%
+      const games = report.games;
+      const pitchCounts = report.pitchCounts;
+
+      // Build pitcher list (unique pitchers who threw in any game)
+      const pitcherMap = {};
+      pitchCounts.forEach(pc => {
+        const key = pc.pitcher_player_id || pc.pitcher_name;
+        if (!pitcherMap[key]) {
+          const p = players.find(pl => pl.id === pc.pitcher_player_id);
+          pitcherMap[key] = {
+            id: pc.pitcher_player_id,
+            name: p ? p.player_name : pc.pitcher_name,
+            counts: {} // game_id -> count
+          };
+        }
+        pitcherMap[key].counts[pc.game_id] = pc.pitch_count;
+      });
+      const pitchers = Object.values(pitcherMap).sort((a, b) => a.name.localeCompare(b.name));
+
+      // Max games per page (to avoid too-wide columns)
+      const MAX_GAMES_PER_PAGE = 8;
+      const totalPages = Math.ceil(games.length / MAX_GAMES_PER_PAGE);
+
+      for (let page = 0; page < totalPages; page++) {
+        const pageGames = games.slice(page * MAX_GAMES_PER_PAGE, (page + 1) * MAX_GAMES_PER_PAGE);
+    %>
+
+    <div class="report-page" style="<%= page > 0 ? 'page-break-before:always;margin-top:20px;' : '' %>">
+      <div class="report-header">
+        <div class="org">Babe Ruth League, Inc.</div>
+        <div class="title">Pitch Count Record</div>
+      </div>
+
+      <div class="report-meta">
+        <div>
+          <span class="team-line">Team: SRQ Orange</span>
+        </div>
+        <div class="page-line">Page <%= page + 1 %> of <%= totalPages %></div>
+      </div>
+
+      <table class="pitch-table">
+        <thead>
+          <!-- Date row -->
+          <tr>
+            <th class="col-name" rowspan="3">Pitcher name</th>
+            <% pageGames.forEach(game => { %>
+            <% const d = new Date(game.start_date + 'T12:00:00'); %>
+            <th class="date-header game-col">
+              <%= d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' }) %>
+            </th>
+            <% }); %>
+            <th class="col-total" rowspan="3">Total</th>
+          </tr>
+          <!-- Initials row -->
+          <tr>
+            <% pageGames.forEach(game => { %>
+            <%
+              const scorerName = game.active_scorer_name || '';
+              const scorerInitials = scorerName.split(/\s+/).map(w => w[0]).join('').toUpperCase();
+            %>
+            <th class="sub-header game-col">
+              <span title="Recorder / Manager"><%= scorerInitials || '—' %> / MT</span>
+            </th>
+            <% }); %>
+          </tr>
+          <!-- Game # / Opponent row -->
+          <tr>
+            <% pageGames.forEach((game, gi) => { %>
+            <th class="sub-header game-col" title="<%= game.opp_team_name %>">
+              Game <%= (page * MAX_GAMES_PER_PAGE) + gi + 1 %>
+            </th>
+            <% }); %>
+          </tr>
+        </thead>
+        <tbody>
+          <% pitchers.forEach((pitcher, pi) => { %>
+          <tr>
+            <td class="col-name"><%= pitcher.name %></td>
+            <% let rowTotal = 0; %>
+            <% pageGames.forEach(game => { %>
+            <%
+              const cnt = pitcher.counts[game.game_id] || 0;
+              // Only count toward total on this page
+              rowTotal += cnt;
+            %>
+            <td class="count game-col <%= cnt > 0 ? 'has-value' : 'empty' %>"><%= cnt > 0 ? cnt : '' %></td>
+            <% }); %>
+            <td class="count col-total has-value"><%= rowTotal > 0 ? rowTotal : '' %></td>
+          </tr>
+          <% }); %>
+
+          <% /* Add empty rows to fill the sheet */ %>
+          <% const minRows = Math.max(15, pitchers.length); %>
+          <% for (let i = pitchers.length; i < minRows; i++) { %>
+          <tr>
+            <td class="col-name">&nbsp;</td>
+            <% pageGames.forEach(() => { %>
+            <td class="count game-col empty"></td>
+            <% }); %>
+            <td class="count col-total"></td>
+          </tr>
+          <% } %>
+        </tbody>
+        <tfoot>
+          <tr>
+            <th class="col-name" style="text-align:right;font-size:11px;">Game Totals:</th>
+            <% pageGames.forEach(game => { %>
+            <%
+              let gameTotal = 0;
+              pitchers.forEach(p => { gameTotal += (p.counts[game.game_id] || 0); });
+            %>
+            <th class="game-col" style="font-weight:800;"><%= gameTotal > 0 ? gameTotal : '' %></th>
+            <% }); %>
+            <%
+              let grandTotal = 0;
+              pitchers.forEach(p => { pageGames.forEach(g => { grandTotal += (p.counts[g.game_id] || 0); }); });
+            %>
+            <th class="col-total" style="font-weight:800;"><%= grandTotal > 0 ? grandTotal : '' %></th>
+          </tr>
+        </tfoot>
+      </table>
+
+      <% if (pageGames.length > 0) { %>
+      <div style="margin-top:8px;font-size:11px;display:flex;gap:16px;flex-wrap:wrap;color:#4b5563;">
+        <% pageGames.forEach((game, gi) => { %>
+        <div>
+          <strong>Game <%= (page * MAX_GAMES_PER_PAGE) + gi + 1 %>:</strong>
+          vs <%= game.opp_team_name %>
+          <% if (game.location_name) { %>&mdash; <%= game.location_name %><% } %>
+        </div>
+        <% }); %>
+      </div>
+      <% } %>
+
+      <div class="report-footer">
+        Every pitch delivered to a batter count. This includes strikes, balls, foul balls, fair balls, pitches that touch the batter, and pitches that are ruled "no pitch" by the umpire.
+      </div>
+    </div>
+
+    <% } /* end page loop */ %>
+    <% } /* end has games */ %>
+  <% } /* end report exists */ %>
+</body>
+</html>

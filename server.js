@@ -1463,6 +1463,18 @@ app.get('/event/:id/print', requireAdmin, async (req, res) => {
   res.render('practice-print', { event, drills, staffList });
 });
 
+// --- Pitch Count Report ---
+app.get('/admin/pitch-count-report', requireAdmin, async (req, res) => {
+  const startDate = req.query.start || '';
+  const endDate = req.query.end || '';
+  let report = null;
+  if (startDate && endDate) {
+    report = await db.getPitchCountReport(startDate, endDate);
+  }
+  const players = await db.getAllPlayers();
+  res.render('pitch-count-report', { startDate, endDate, report, players });
+});
+
 // --- Practice Drills ---
 app.post('/event/:id/drill', requireAdmin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
