@@ -393,23 +393,13 @@
           <form method="POST" action="/event/<%= event.id %>/drill" class="drill-form">
             <div style="display:flex; flex-direction:column; gap:8px;">
               <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
-                <div style="flex:2; min-width:150px;">
-                  <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Block <span style="font-weight:400;">(optional)</span></label>
+                <div style="flex:1; min-width:150px;">
+                  <label style="font-size:12px; font-weight:600; color:var(--gray-500); display:block; margin-bottom:4px;">Block <span style="font-weight:400;">(optional &mdash; group drills together)</span></label>
                   <input type="text" name="block_name" list="block-names" placeholder="e.g. Warm-Up, Infield, BP..." class="form-input" style="width:100%;">
                   <datalist id="block-names">
                     <% const existingBlocks = [...new Set(drills.map(d => d.block_name).filter(Boolean))]; %>
                     <% existingBlocks.forEach(b => { %>
                     <option value="<%= b %>">
-                    <% }); %>
-                  </datalist>
-                </div>
-                <div style="flex:1; min-width:150px;">
-                  <label style="font-size:12px; font-weight:600; color:#6366f1; display:block; margin-bottom:4px;">Parallel Group <span style="font-weight:400;">(optional)</span></label>
-                  <input type="text" name="parallel_group" list="parallel-groups" placeholder="e.g. Stations" class="form-input" style="width:100%;border-color:#a5b4fc;">
-                  <datalist id="parallel-groups">
-                    <% const existingGroups = [...new Set(drills.map(d => d.parallel_group).filter(Boolean))]; %>
-                    <% existingGroups.forEach(g => { %>
-                    <option value="<%= g %>">
                     <% }); %>
                   </datalist>
                 </div>
@@ -616,109 +606,211 @@
             <h4 class="ed-admin-title">Manage Drills</h4>
 
             <%
-              // Group drills by block for copy-block buttons
-              const manageBlocks = {};
+              // Build ordered block list for manage section
+              const mBlocks = [];
+              const mBlockMap = {};
               drills.forEach(d => {
                 const bn = d.block_name || '';
-                if (!manageBlocks[bn]) manageBlocks[bn] = [];
-                manageBlocks[bn].push(d);
+                if (!mBlockMap[bn]) {
+                  mBlockMap[bn] = { name: bn, drills: [], parallelGroup: d.parallel_group || '' };
+                  mBlocks.push(mBlockMap[bn]);
+                }
+                mBlockMap[bn].drills.push(d);
+                if (!mBlockMap[bn].parallelGroup && d.parallel_group) mBlockMap[bn].parallelGroup = d.parallel_group;
               });
-              const manageBlockNames = Object.keys(manageBlocks).filter(b => b !== '');
-              let lastBlock = null;
+              const mBlockNames = mBlocks.filter(b => b.name).map(b => b.name);
+              const mParallelGroups = [...new Set(drills.map(d => d.parallel_group).filter(Boolean))];
             %>
 
-            <% drills.forEach(drill => { %>
-              <%
-                const thisBlock = drill.block_name || '';
-                const showBlockHeader = thisBlock && thisBlock !== lastBlock;
-                lastBlock = thisBlock;
-              %>
-              <% if (showBlockHeader) { %>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:4px;padding:6px 10px;background:var(--gray-100);border-radius:6px;">
-                <span style="font-size:12px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;"><%= thisBlock %> <span style="font-weight:400;color:var(--gray-500);">(<%= manageBlocks[thisBlock].length %> drills, <%= manageBlocks[thisBlock].reduce((s,d) => s + d.duration_minutes, 0) %> min)</span></span>
-                <form method="POST" action="/event/<%= event.id %>/drill/copy-block" style="margin:0;">
-                  <input type="hidden" name="block_name" value="<%= thisBlock %>">
-                  <button type="submit" class="btn-sm" style="font-size:11px;padding:2px 8px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:4px;cursor:pointer;" title="Duplicate this entire block">&#x2398; Copy Block</button>
-                </form>
-              </div>
-              <% } %>
-
-            <details style="margin-bottom:8px; border:1px solid var(--gray-200); border-radius:8px; overflow:hidden;">
-              <summary style="padding:8px 12px; cursor:pointer; font-size:13px; font-weight:600; background:var(--gray-50); display:flex; align-items:center; gap:8px;">
-                <span style="flex:1;"><%= drill.drill_name %><% if (drill.block_name) { %> <span style="font-size:11px;color:var(--gray-400);font-weight:400;">(<%= drill.block_name %><%= drill.parallel_group ? ' ↔ ' + drill.parallel_group : '' %>)</span><% } %></span>
-                <span style="font-size:12px; color:var(--gray-500); font-weight:400;"><%= drill.duration_minutes %>m</span>
-              </summary>
-              <div style="padding:10px 12px;">
-                <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/update">
-                  <input type="hidden" name="sort_order" value="<%= drill.sort_order %>">
-                  <div style="display:flex; flex-direction:column; gap:6px;">
-                    <div style="display:flex; gap:8px; align-items:end;">
+            <% mBlocks.forEach((mBlock, mbi) => { %>
+              <% if (mBlock.name) { %>
+              <!-- Named Block Group -->
+              <details style="margin-bottom:12px;border:2px solid var(--navy);border-radius:10px;overflow:hidden;" open>
+                <summary style="padding:10px 14px;cursor:pointer;background:var(--navy);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;">
+                  <span style="flex:1;"><%= mBlock.name %></span>
+                  <span style="font-size:12px;font-weight:600;opacity:0.8;"><%= mBlock.drills.length %> drills &middot; <%= mBlock.drills.reduce((s,d) => s + d.duration_minutes, 0) %> min</span>
+                  <% if (mBlock.parallelGroup) { %>
+                  <span style="font-size:11px;background:#818cf8;padding:2px 8px;border-radius:10px;">&#8644; <%= mBlock.parallelGroup %></span>
+                  <% } %>
+                </summary>
+                <div style="padding:12px;">
+                  <!-- Block-level controls -->
+                  <div style="display:flex;gap:8px;align-items:end;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--gray-200);flex-wrap:wrap;">
+                    <form method="POST" action="/event/<%= event.id %>/drill/update-block" style="flex:1;min-width:200px;display:flex;gap:8px;align-items:end;margin:0;">
+                      <input type="hidden" name="block_name" value="<%= mBlock.name %>">
                       <div style="flex:1;">
-                        <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Block</label>
-                        <input type="text" name="block_name" value="<%= drill.block_name || '' %>" list="block-names-edit" placeholder="e.g. Warm-Up, Infield, BP..." class="form-input" style="width:100%;">
-                        <datalist id="block-names-edit">
-                          <% manageBlockNames.forEach(b => { %>
-                          <option value="<%= b %>">
+                        <label style="font-size:11px;font-weight:700;color:#6366f1;display:block;margin-bottom:3px;">Scheduling</label>
+                        <select name="parallel_group" class="form-input" style="width:100%;font-size:13px;border-color:#a5b4fc;">
+                          <option value=""<%= !mBlock.parallelGroup ? ' selected' : '' %>>Serial (runs in sequence)</option>
+                          <% mParallelGroups.forEach(g => { %>
+                          <option value="<%= g %>"<%= mBlock.parallelGroup === g ? ' selected' : '' %>>Parallel: <%= g %></option>
                           <% }); %>
-                        </datalist>
+                          <option value="__new__">+ New parallel group...</option>
+                        </select>
                       </div>
-                      <div style="flex:1;">
-                        <label style="font-size:11px; font-weight:600; color:#6366f1;">Parallel Group</label>
-                        <input type="text" name="parallel_group" value="<%= drill.parallel_group || '' %>" list="parallel-groups-edit" placeholder="e.g. Stations" class="form-input" style="width:100%;border-color:#a5b4fc;">
-                        <datalist id="parallel-groups-edit">
-                          <% const editGroups = [...new Set(drills.map(d => d.parallel_group).filter(Boolean))]; %>
-                          <% editGroups.forEach(g => { %>
-                          <option value="<%= g %>">
-                          <% }); %>
-                        </datalist>
-                      </div>
-                    </div>
-                    <div style="display:flex; gap:8px; align-items:end;">
-                      <div style="flex:2;">
-                        <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Name</label>
-                        <input type="text" name="drill_name" value="<%= drill.drill_name %>" class="form-input" style="width:100%;">
-                      </div>
-                      <div style="width:70px;">
-                        <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Min</label>
-                        <input type="number" name="duration_minutes" value="<%= drill.duration_minutes %>" min="1" max="120" class="form-input" style="width:100%;">
-                      </div>
-                    </div>
-                    <div>
-                      <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Description (visible to parents)</label>
-                      <textarea name="description" class="form-input" rows="2" style="width:100%; resize:vertical;"><%= drill.description || '' %></textarea>
-                    </div>
-                    <% if (staffList.length > 0) { %>
-                    <div>
-                      <label style="font-size:11px; font-weight:600; color:var(--gray-500);">Assigned Coaches</label>
-                      <div class="staff-checkbox-group">
-                        <% const editStaffIds = (drill.assigned_staff || '').split(',').map(s => s.trim()); %>
-                        <% staffList.forEach(s => { %>
-                        <label class="staff-checkbox-label"><input type="checkbox" name="assigned_staff" value="<%= s.id %>" <%= editStaffIds.includes(String(s.id)) ? 'checked' : '' %>> <%= s.name %><% if (s.role) { %> <span style="font-size:11px;color:var(--gray-400);">(<%= s.role %>)</span><% } %></label>
-                        <% }); %>
-                      </div>
-                    </div>
-                    <% } %>
-                    <div>
-                      <label style="font-size:11px; font-weight:600; color:var(--orange, #d97706);">Coach Notes (staff only)</label>
-                      <textarea name="coach_notes" class="form-input" rows="2" style="width:100%; resize:vertical; border-color:var(--orange, #d97706);"><%= drill.coach_notes || '' %></textarea>
-                    </div>
-                    <div style="display:flex; gap:8px;">
-                      <button type="submit" class="btn btn-confirm" style="font-size:12px; padding:4px 12px;">Save</button>
-                    </div>
+                      <button type="submit" class="btn btn-confirm" style="font-size:12px;padding:6px 12px;white-space:nowrap;">Update</button>
+                    </form>
+                    <form method="POST" action="/event/<%= event.id %>/drill/copy-block" style="margin:0;">
+                      <input type="hidden" name="block_name" value="<%= mBlock.name %>">
+                      <button type="submit" class="btn-sm" style="font-size:12px;padding:4px 10px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;cursor:pointer;white-space:nowrap;">&#x2398; Copy Block</button>
+                    </form>
                   </div>
-                </form>
-                <div style="display:flex;gap:8px;margin-top:6px;align-items:center;">
-                  <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/copy" style="margin:0;">
-                    <button type="submit" class="btn-sm" style="font-size:11px;padding:2px 8px;background:#f0fdf4;color:#166534;border:1px solid #86efac;border-radius:4px;cursor:pointer;">&#x2398; Copy Drill</button>
-                  </form>
-                  <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/delete" onsubmit="return confirm('Delete this drill?')" style="margin:0;">
-                    <button type="submit" class="btn-sm btn-sm-remove" style="font-size:11px;">Delete Drill</button>
-                  </form>
+
+                  <!-- Drills in this block -->
+                  <% mBlock.drills.forEach(drill => { %>
+                  <details style="margin-bottom:6px;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden;">
+                    <summary style="padding:7px 10px;cursor:pointer;font-size:13px;font-weight:600;background:var(--gray-50);display:flex;align-items:center;gap:8px;">
+                      <span style="flex:1;"><%= drill.drill_name %></span>
+                      <span style="font-size:12px;color:var(--gray-500);font-weight:400;"><%= drill.duration_minutes %>m</span>
+                    </summary>
+                    <div style="padding:10px 12px;">
+                      <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/update">
+                        <input type="hidden" name="sort_order" value="<%= drill.sort_order %>">
+                        <input type="hidden" name="parallel_group" value="<%= drill.parallel_group || '' %>">
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                          <div style="display:flex;gap:8px;align-items:end;">
+                            <div style="flex:1;">
+                              <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Block</label>
+                              <input type="text" name="block_name" value="<%= drill.block_name || '' %>" list="block-names-manage" class="form-input" style="width:100%;">
+                            </div>
+                            <div style="flex:2;">
+                              <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Name</label>
+                              <input type="text" name="drill_name" value="<%= drill.drill_name %>" class="form-input" style="width:100%;">
+                            </div>
+                            <div style="width:65px;">
+                              <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Min</label>
+                              <input type="number" name="duration_minutes" value="<%= drill.duration_minutes %>" min="1" max="120" class="form-input" style="width:100%;">
+                            </div>
+                          </div>
+                          <div>
+                            <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Description</label>
+                            <textarea name="description" class="form-input" rows="2" style="width:100%;resize:vertical;"><%= drill.description || '' %></textarea>
+                          </div>
+                          <% if (staffList.length > 0) { %>
+                          <div>
+                            <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Assigned Coaches</label>
+                            <div class="staff-checkbox-group">
+                              <% const bStaff = (drill.assigned_staff || '').split(',').map(s => s.trim()); %>
+                              <% staffList.forEach(s => { %>
+                              <label class="staff-checkbox-label"><input type="checkbox" name="assigned_staff" value="<%= s.id %>" <%= bStaff.includes(String(s.id)) ? 'checked' : '' %>> <%= s.name %></label>
+                              <% }); %>
+                            </div>
+                          </div>
+                          <% } %>
+                          <div>
+                            <label style="font-size:11px;font-weight:600;color:var(--orange, #d97706);">Coach Notes (staff only)</label>
+                            <textarea name="coach_notes" class="form-input" rows="2" style="width:100%;resize:vertical;border-color:var(--orange, #d97706);"><%= drill.coach_notes || '' %></textarea>
+                          </div>
+                          <div style="display:flex;gap:8px;">
+                            <button type="submit" class="btn btn-confirm" style="font-size:12px;padding:4px 12px;">Save</button>
+                          </div>
+                        </div>
+                      </form>
+                      <div style="display:flex;gap:8px;margin-top:6px;">
+                        <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/copy" style="margin:0;">
+                          <button type="submit" class="btn-sm" style="font-size:11px;padding:2px 8px;background:#f0fdf4;color:#166534;border:1px solid #86efac;border-radius:4px;cursor:pointer;">&#x2398; Copy Drill</button>
+                        </form>
+                        <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/delete" onsubmit="return confirm('Delete this drill?')" style="margin:0;">
+                          <button type="submit" class="btn-sm btn-sm-remove" style="font-size:11px;">Delete</button>
+                        </form>
+                      </div>
+                    </div>
+                  </details>
+                  <% }); %>
                 </div>
-              </div>
-            </details>
+              </details>
+              <% } else { %>
+              <!-- Unblocked drills -->
+              <% if (mBlock.drills.length > 0 && mBlocks.some(b => b.name)) { %>
+              <div style="margin-bottom:4px;margin-top:<%= mbi > 0 ? '12px' : '0' %>;padding:6px 10px;background:var(--gray-100);border-radius:6px;font-size:12px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px;">Unassigned Drills</div>
+              <% } %>
+              <% mBlock.drills.forEach(drill => { %>
+              <details style="margin-bottom:6px;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden;">
+                <summary style="padding:7px 10px;cursor:pointer;font-size:13px;font-weight:600;background:var(--gray-50);display:flex;align-items:center;gap:8px;">
+                  <span style="flex:1;"><%= drill.drill_name %></span>
+                  <span style="font-size:12px;color:var(--gray-500);font-weight:400;"><%= drill.duration_minutes %>m</span>
+                </summary>
+                <div style="padding:10px 12px;">
+                  <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/update">
+                    <input type="hidden" name="sort_order" value="<%= drill.sort_order %>">
+                    <input type="hidden" name="parallel_group" value="">
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                      <div style="display:flex;gap:8px;align-items:end;">
+                        <div style="flex:1;">
+                          <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Block</label>
+                          <input type="text" name="block_name" value="" list="block-names-manage" placeholder="Assign to block..." class="form-input" style="width:100%;">
+                        </div>
+                        <div style="flex:2;">
+                          <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Name</label>
+                          <input type="text" name="drill_name" value="<%= drill.drill_name %>" class="form-input" style="width:100%;">
+                        </div>
+                        <div style="width:65px;">
+                          <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Min</label>
+                          <input type="number" name="duration_minutes" value="<%= drill.duration_minutes %>" min="1" max="120" class="form-input" style="width:100%;">
+                        </div>
+                      </div>
+                      <div>
+                        <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Description</label>
+                        <textarea name="description" class="form-input" rows="2" style="width:100%;resize:vertical;"><%= drill.description || '' %></textarea>
+                      </div>
+                      <% if (staffList.length > 0) { %>
+                      <div>
+                        <label style="font-size:11px;font-weight:600;color:var(--gray-500);">Assigned Coaches</label>
+                        <div class="staff-checkbox-group">
+                          <% const uStaff = (drill.assigned_staff || '').split(',').map(s => s.trim()); %>
+                          <% staffList.forEach(s => { %>
+                          <label class="staff-checkbox-label"><input type="checkbox" name="assigned_staff" value="<%= s.id %>" <%= uStaff.includes(String(s.id)) ? 'checked' : '' %>> <%= s.name %></label>
+                          <% }); %>
+                        </div>
+                      </div>
+                      <% } %>
+                      <div>
+                        <label style="font-size:11px;font-weight:600;color:var(--orange, #d97706);">Coach Notes (staff only)</label>
+                        <textarea name="coach_notes" class="form-input" rows="2" style="width:100%;resize:vertical;border-color:var(--orange, #d97706);"><%= drill.coach_notes || '' %></textarea>
+                      </div>
+                      <div style="display:flex;gap:8px;">
+                        <button type="submit" class="btn btn-confirm" style="font-size:12px;padding:4px 12px;">Save</button>
+                      </div>
+                    </div>
+                  </form>
+                  <div style="display:flex;gap:8px;margin-top:6px;">
+                    <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/copy" style="margin:0;">
+                      <button type="submit" class="btn-sm" style="font-size:11px;padding:2px 8px;background:#f0fdf4;color:#166534;border:1px solid #86efac;border-radius:4px;cursor:pointer;">&#x2398; Copy Drill</button>
+                    </form>
+                    <form method="POST" action="/event/<%= event.id %>/drill/<%= drill.id %>/delete" onsubmit="return confirm('Delete this drill?')" style="margin:0;">
+                      <button type="submit" class="btn-sm btn-sm-remove" style="font-size:11px;">Delete</button>
+                    </form>
+                  </div>
+                </div>
+              </details>
+              <% }); %>
+              <% } %>
             <% }); %>
+
+            <datalist id="block-names-manage">
+              <% mBlockNames.forEach(b => { %><option value="<%= b %>"><% }); %>
+            </datalist>
           </div>
+
+          <script>
+          // Handle "new parallel group" selection
+          document.querySelectorAll('select[name="parallel_group"]').forEach(sel => {
+            sel.addEventListener('change', function() {
+              if (this.value === '__new__') {
+                const name = prompt('Enter a name for the new parallel group (e.g. "Stations"):');
+                if (name && name.trim()) {
+                  const opt = document.createElement('option');
+                  opt.value = name.trim();
+                  opt.textContent = 'Parallel: ' + name.trim();
+                  opt.selected = true;
+                  this.insertBefore(opt, this.querySelector('option[value="__new__"]'));
+                } else {
+                  this.value = '';
+                }
+              }
+            });
+          });
+          </script>
           <% } %>
         </div>
 
