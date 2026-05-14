@@ -625,35 +625,47 @@
             <% mBlocks.forEach((mBlock, mbi) => { %>
               <% if (mBlock.name) { %>
               <!-- Named Block Group -->
-              <details style="margin-bottom:12px;border:2px solid var(--navy);border-radius:10px;overflow:hidden;" open>
-                <summary style="padding:10px 14px;cursor:pointer;background:var(--navy);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;">
+              <details style="margin-bottom:12px;border:2px solid <%= mBlock.parallelGroup ? '#818cf8' : 'var(--navy)' %>;border-radius:10px;overflow:hidden;" open>
+                <summary style="padding:10px 14px;cursor:pointer;background:<%= mBlock.parallelGroup ? '#4338ca' : 'var(--navy)' %>;color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;">
                   <span style="flex:1;"><%= mBlock.name %></span>
                   <span style="font-size:12px;font-weight:600;opacity:0.8;"><%= mBlock.drills.length %> drills &middot; <%= mBlock.drills.reduce((s,d) => s + d.duration_minutes, 0) %> min</span>
                   <% if (mBlock.parallelGroup) { %>
-                  <span style="font-size:11px;background:#818cf8;padding:2px 8px;border-radius:10px;">&#8644; <%= mBlock.parallelGroup %></span>
+                  <span style="font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px;">&#8644; Parallel: <%= mBlock.parallelGroup %></span>
+                  <% } else { %>
+                  <span style="font-size:11px;opacity:0.6;">Serial</span>
                   <% } %>
                 </summary>
                 <div style="padding:12px;">
                   <!-- Block-level controls -->
-                  <div style="display:flex;gap:8px;align-items:end;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--gray-200);flex-wrap:wrap;">
-                    <form method="POST" action="/event/<%= event.id %>/drill/update-block" style="flex:1;min-width:200px;display:flex;gap:8px;align-items:end;margin:0;">
+                  <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--gray-200);">
+                    <form method="POST" action="/event/<%= event.id %>/drill/update-block" style="margin:0;">
                       <input type="hidden" name="block_name" value="<%= mBlock.name %>">
-                      <div style="flex:1;">
-                        <label style="font-size:11px;font-weight:700;color:#6366f1;display:block;margin-bottom:3px;">Scheduling</label>
-                        <select name="parallel_group" class="form-input" style="width:100%;font-size:13px;border-color:#a5b4fc;">
-                          <option value=""<%= !mBlock.parallelGroup ? ' selected' : '' %>>Serial (runs in sequence)</option>
-                          <% mParallelGroups.forEach(g => { %>
-                          <option value="<%= g %>"<%= mBlock.parallelGroup === g ? ' selected' : '' %>>Parallel: <%= g %></option>
-                          <% }); %>
-                          <option value="__new__">+ New parallel group...</option>
-                        </select>
+                      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:180px;">
+                          <label style="font-size:11px;font-weight:700;color:#4338ca;display:block;margin-bottom:3px;">Runs parallel with</label>
+                          <input type="text" name="parallel_group" value="<%= mBlock.parallelGroup %>" list="pg-list" placeholder="Leave empty = serial (runs in sequence)" class="form-input" style="width:100%;font-size:13px;border-color:#a5b4fc;">
+                          <datalist id="pg-list">
+                            <% mParallelGroups.forEach(g => { %>
+                            <option value="<%= g %>">
+                            <% }); %>
+                          </datalist>
+                          <p style="font-size:11px;color:#6366f1;margin:3px 0 0;">
+                            <% if (mParallelGroups.length > 0) { %>
+                            Existing groups: <strong><%= mParallelGroups.join(', ') %></strong> &mdash; type the same name on two blocks to run them at the same time.
+                            <% } else { %>
+                            Type a group name (e.g. "Stations"). Give two or more blocks the same name to run them at the same time.
+                            <% } %>
+                          </p>
+                        </div>
+                        <button type="submit" class="btn btn-confirm" style="font-size:12px;padding:6px 12px;white-space:nowrap;">Save</button>
                       </div>
-                      <button type="submit" class="btn btn-confirm" style="font-size:12px;padding:6px 12px;white-space:nowrap;">Update</button>
                     </form>
-                    <form method="POST" action="/event/<%= event.id %>/drill/copy-block" style="margin:0;">
-                      <input type="hidden" name="block_name" value="<%= mBlock.name %>">
-                      <button type="submit" class="btn-sm" style="font-size:12px;padding:4px 10px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;cursor:pointer;white-space:nowrap;">&#x2398; Copy Block</button>
-                    </form>
+                    <div style="margin-top:8px;">
+                      <form method="POST" action="/event/<%= event.id %>/drill/copy-block" style="display:inline;margin:0;">
+                        <input type="hidden" name="block_name" value="<%= mBlock.name %>">
+                        <button type="submit" class="btn-sm" style="font-size:12px;padding:4px 10px;background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:6px;cursor:pointer;white-space:nowrap;">&#x2398; Copy Block</button>
+                      </form>
+                    </div>
                   </div>
 
                   <!-- Drills in this block -->
@@ -792,25 +804,6 @@
             </datalist>
           </div>
 
-          <script>
-          // Handle "new parallel group" selection
-          document.querySelectorAll('select[name="parallel_group"]').forEach(sel => {
-            sel.addEventListener('change', function() {
-              if (this.value === '__new__') {
-                const name = prompt('Enter a name for the new parallel group (e.g. "Stations"):');
-                if (name && name.trim()) {
-                  const opt = document.createElement('option');
-                  opt.value = name.trim();
-                  opt.textContent = 'Parallel: ' + name.trim();
-                  opt.selected = true;
-                  this.insertBefore(opt, this.querySelector('option[value="__new__"]'));
-                } else {
-                  this.value = '';
-                }
-              }
-            });
-          });
-          </script>
           <% } %>
         </div>
 
