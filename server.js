@@ -1454,6 +1454,15 @@ app.post('/event/:id/clear-player-lineup', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Print Practice Plan ---
+app.get('/event/:id/print', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event || event.event_type !== 'practice') return res.redirect('/admin');
+  const drills = await db.getDrills(event.id);
+  const staffList = await db.getAllStaff();
+  res.render('practice-print', { event, drills, staffList });
+});
+
 // --- Practice Drills ---
 app.post('/event/:id/drill', requireAdmin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));

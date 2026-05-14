@@ -149,9 +149,14 @@
         <h3 class="ed-section-title">Practice Plan</h3>
 
         <% if (drills.length > 0) { %>
-        <% if (isStaff) { %>
-        <a href="/event/<%= event.id %>/practice-timer" class="btn btn-confirm" style="display:inline-block;margin-bottom:16px;text-decoration:none;font-size:15px;padding:10px 24px;">Start Practice</a>
-        <% } %>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+          <% if (isStaff) { %>
+          <a href="/event/<%= event.id %>/practice-timer" class="btn btn-confirm" style="display:inline-block;text-decoration:none;font-size:15px;padding:10px 24px;">Start Practice</a>
+          <% } %>
+          <% if (isAdmin) { %>
+          <a href="/event/<%= event.id %>/print" class="btn btn-secondary" style="display:inline-block;text-decoration:none;font-size:15px;padding:10px 24px;">&#128424; Print Practice Plan</a>
+          <% } %>
+        </div>
         <%
           // Group drills into blocks (preserving sort order)
           const blocks = [];

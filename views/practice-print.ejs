@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Practice Plan &middot; <%= teamName %></title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; padding: 24px; max-width: 850px; margin: 0 auto; }
+
+    /* Screen-only toolbar */
+    .print-toolbar {
+      display: flex; gap: 12px; align-items: center; justify-content: center;
+      padding: 16px; margin-bottom: 24px;
+      background: #f3f4f6; border-radius: 10px;
+    }
+    .print-toolbar .btn {
+      display: inline-block; padding: 10px 28px; font-size: 15px; font-weight: 700;
+      border: none; border-radius: 8px; cursor: pointer; text-decoration: none;
+    }
+    .btn-print { background: #1a2744; color: #fff; }
+    .btn-print:hover { background: #2d3f5e; }
+    .btn-back { background: #e5e7eb; color: #374151; }
+    .btn-back:hover { background: #d1d5db; }
+
+    /* Header */
+    .plan-header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 3px solid #1a2744; }
+    .plan-header h1 { font-size: 26px; color: #1a2744; margin-bottom: 4px; }
+    .plan-header .event-title { font-size: 20px; color: #374151; margin-bottom: 6px; }
+    .plan-header .plan-meta { font-size: 14px; color: #6b7280; }
+
+    /* Blocks */
+    .block-section { margin-bottom: 16px; }
+    .block-title {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 14px; background: #1a2744; color: #fff;
+      font-weight: 700; font-size: 15px; border-radius: 6px 6px 0 0;
+    }
+    .block-time { font-size: 13px; font-weight: 600; opacity: 0.85; }
+
+    /* Parallel header */
+    .parallel-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px; background: #eef2ff; border: 2px solid #818cf8;
+      border-radius: 6px 6px 0 0; font-size: 13px; font-weight: 700; color: #4338ca;
+    }
+    .parallel-header .time { margin-left: auto; font-weight: 600; color: #6366f1; }
+    .parallel-columns { display: grid; gap: 0; border: 2px solid #818cf8; border-top: none; border-radius: 0 0 6px 6px; overflow: hidden; }
+    .parallel-col { border-left: 2px solid #c7d2fe; }
+    .parallel-col:first-child { border-left: none; }
+    .parallel-col .block-title { border-radius: 0; }
+
+    /* Drill rows */
+    .drill-row {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 14px; border-bottom: 1px solid #e5e7eb;
+      font-size: 13px; page-break-inside: avoid;
+    }
+    .drill-row:last-child { border-bottom: none; }
+    .drill-num { font-weight: 700; color: #6b7280; min-width: 22px; text-align: right; padding-top: 1px; }
+    .drill-body { flex: 1; }
+    .drill-name { font-weight: 700; }
+    .drill-desc { color: #4b5563; margin-top: 2px; font-size: 12px; }
+    .drill-staff { margin-top: 3px; font-size: 11px; color: #1a2744; }
+    .drill-staff span { display: inline-block; background: #e0e7ff; padding: 1px 6px; border-radius: 3px; margin-right: 4px; font-weight: 600; }
+    .drill-notes { margin-top: 4px; padding: 4px 8px; background: #fef3c7; border-left: 3px solid #d97706; font-size: 12px; color: #92400e; border-radius: 0 4px 4px 0; }
+    .drill-notes strong { color: #78350f; }
+    .drill-dur { font-weight: 700; white-space: nowrap; color: #374151; padding-top: 1px; }
+
+    /* Total */
+    .plan-total {
+      margin-top: 16px; padding: 10px 14px; text-align: right;
+      font-size: 16px; font-weight: 700; color: #1a2744;
+      border-top: 3px solid #1a2744;
+    }
+    .plan-total .parallel-note { font-weight: 400; color: #6366f1; font-size: 12px; }
+
+    /* Print styles */
+    @media print {
+      body { padding: 0; }
+      .print-toolbar { display: none !important; }
+      .plan-header { border-bottom-width: 2px; }
+      .block-title { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .parallel-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .drill-notes { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .drill-staff span { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      @page { margin: 0.5in; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-toolbar">
+    <a href="/event/<%= event.id %>" class="btn btn-back">&larr; Back to Event</a>
+    <button onclick="window.print()" class="btn btn-print">&#128424; Print / Save PDF</button>
+  </div>
+
+  <div class="plan-header">
+    <h1><%= teamName %></h1>
+    <div class="event-title"><%= event.title %></div>
+    <div class="plan-meta">
+      <%= new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) %>
+      <% if (event.start_time) { %>
+        <% const [h,m] = event.start_time.split(':'); const hr = parseInt(h); %>
+        &middot; <%= (hr % 12 || 12) + ':' + m + ' ' + (hr >= 12 ? 'PM' : 'AM') %>
+        <% if (event.end_time) { const [h2,m2] = event.end_time.split(':'); const hr2 = parseInt(h2); %>
+          &ndash; <%= (hr2 % 12 || 12) + ':' + m2 + ' ' + (hr2 >= 12 ? 'PM' : 'AM') %>
+        <% } %>
+      <% } %>
+      <% if (event.location_name) { %>&middot; <%= event.location_name %><% } %>
+    </div>
+  </div>
+
+  <%
+    // Group drills into blocks
+    const blocks = [];
+    const blockMap = {};
+    drills.forEach(drill => {
+      const bName = drill.block_name || '';
+      if (!blockMap[bName]) {
+        blockMap[bName] = { name: bName, drills: [], parallelGroup: drill.parallel_group || null };
+        blocks.push(blockMap[bName]);
+      }
+      blockMap[bName].drills.push(drill);
+      if (!blockMap[bName].parallelGroup && drill.parallel_group) {
+        blockMap[bName].parallelGroup = drill.parallel_group;
+      }
+    });
+    const hasBlocks = blocks.some(b => b.name !== '');
+
+    // Group consecutive blocks that share a parallel_group
+    const displayGroups = [];
+    blocks.forEach(block => {
+      const pg = block.parallelGroup;
+      if (pg) {
+        const last = displayGroups[displayGroups.length - 1];
+        if (last && last.parallel && last.groupName === pg) {
+          last.blocks.push(block);
+        } else {
+          displayGroups.push({ parallel: true, groupName: pg, blocks: [block] });
+        }
+      } else {
+        displayGroups.push({ parallel: false, groupName: null, blocks: [block] });
+      }
+    });
+
+    // Smart total
+    let smartTotal = 0;
+    displayGroups.forEach(dg => {
+      if (dg.parallel && dg.blocks.length > 1) {
+        smartTotal += Math.max(...dg.blocks.map(b => b.drills.reduce((s, d) => s + d.duration_minutes, 0)));
+      } else {
+        dg.blocks.forEach(b => { smartTotal += b.drills.reduce((s, d) => s + d.duration_minutes, 0); });
+      }
+    });
+
+    let drillIdx = 0;
+  %>
+
+  <% displayGroups.forEach((dg, dgi) => { %>
+    <% if (dg.parallel && dg.blocks.length > 1) { %>
+    <div class="block-section">
+      <div class="parallel-header">
+        <span>&#8644;</span> Running in Parallel &mdash; <%= dg.groupName %>
+        <span class="time"><%= Math.max(...dg.blocks.map(b => b.drills.reduce((s, d) => s + d.duration_minutes, 0))) %> min (concurrent)</span>
+      </div>
+      <div class="parallel-columns" style="grid-template-columns:repeat(<%= dg.blocks.length %>, 1fr);">
+        <% dg.blocks.forEach((block, pbi) => { %>
+        <div class="parallel-col">
+          <div class="block-title">
+            <span><%= block.name || 'Station ' + (pbi+1) %></span>
+            <span class="block-time"><%= block.drills.reduce((s, d) => s + d.duration_minutes, 0) %> min</span>
+          </div>
+          <% block.drills.forEach(drill => { %>
+          <div class="drill-row">
+            <div class="drill-num"><%= ++drillIdx %></div>
+            <div class="drill-body">
+              <div class="drill-name"><%= drill.drill_name %></div>
+              <% if (drill.description) { %><div class="drill-desc"><%= drill.description %></div><% } %>
+              <% if (drill.assigned_staff) { %>
+              <div class="drill-staff"><% drill.assigned_staff.split(',').forEach(sid => { const s = staffList.find(x => String(x.id) === sid.trim()); if (s) { %><span><%= s.name %></span><% } }); %></div>
+              <% } %>
+              <% if (drill.coach_notes) { %><div class="drill-notes"><strong>Coach:</strong> <%= drill.coach_notes %></div><% } %>
+            </div>
+            <div class="drill-dur"><%= drill.duration_minutes %>m</div>
+          </div>
+          <% }); %>
+        </div>
+        <% }); %>
+      </div>
+    </div>
+
+    <% } else { %>
+    <% dg.blocks.forEach((block, bi) => { %>
+    <div class="block-section">
+      <% if (hasBlocks && block.name) { %>
+      <div class="block-title">
+        <span><%= block.name %></span>
+        <span class="block-time"><%= block.drills.reduce((s, d) => s + d.duration_minutes, 0) %> min</span>
+      </div>
+      <% } else if (hasBlocks && !block.name) { %>
+      <div class="block-title" style="background:#6b7280;">
+        <span>Other</span>
+        <span class="block-time"><%= block.drills.reduce((s, d) => s + d.duration_minutes, 0) %> min</span>
+      </div>
+      <% } %>
+      <% block.drills.forEach(drill => { %>
+      <div class="drill-row">
+        <div class="drill-num"><%= ++drillIdx %></div>
+        <div class="drill-body">
+          <div class="drill-name"><%= drill.drill_name %></div>
+          <% if (drill.description) { %><div class="drill-desc"><%= drill.description %></div><% } %>
+          <% if (drill.assigned_staff) { %>
+          <div class="drill-staff"><% drill.assigned_staff.split(',').forEach(sid => { const s = staffList.find(x => String(x.id) === sid.trim()); if (s) { %><span><%= s.name %></span><% } }); %></div>
+          <% } %>
+          <% if (drill.coach_notes) { %><div class="drill-notes"><strong>Coach:</strong> <%= drill.coach_notes %></div><% } %>
+        </div>
+        <div class="drill-dur"><%= drill.duration_minutes %>m</div>
+      </div>
+      <% }); %>
+    </div>
+    <% }); %>
+    <% } %>
+  <% }); %>
+
+  <div class="plan-total">
+    Total: <%= smartTotal %> minutes
+    <% if (smartTotal !== drills.reduce((s, d) => s + d.duration_minutes, 0)) { %>
+      <span class="parallel-note">(parallel blocks run concurrently)</span>
+    <% } %>
+  </div>
+</body>
+</html>
