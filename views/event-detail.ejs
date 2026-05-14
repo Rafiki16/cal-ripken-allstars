@@ -622,11 +622,13 @@
               const mParallelGroups = [...new Set(drills.map(d => d.parallel_group).filter(Boolean))];
             %>
 
+            <div id="block-sortable-container" data-event-id="<%= event.id %>">
             <% mBlocks.forEach((mBlock, mbi) => { %>
               <% if (mBlock.name) { %>
               <!-- Named Block Group -->
-              <details style="margin-bottom:12px;border:2px solid <%= mBlock.parallelGroup ? '#818cf8' : 'var(--navy)' %>;border-radius:10px;overflow:hidden;" open>
+              <details class="drag-block" data-block-name="<%= mBlock.name %>" style="margin-bottom:12px;border:2px solid <%= mBlock.parallelGroup ? '#818cf8' : 'var(--navy)' %>;border-radius:10px;overflow:hidden;" open>
                 <summary style="padding:10px 14px;cursor:pointer;background:<%= mBlock.parallelGroup ? '#4338ca' : 'var(--navy)' %>;color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;">
+                  <span class="drag-handle" title="Drag to reorder" style="cursor:grab;font-size:18px;opacity:0.7;user-select:none;">&#9776;</span>
                   <span style="flex:1;"><%= mBlock.name %></span>
                   <span style="font-size:12px;font-weight:600;opacity:0.8;"><%= mBlock.drills.length %> drills &middot; <%= mBlock.drills.reduce((s,d) => s + d.duration_minutes, 0) %> min</span>
                   <% if (mBlock.parallelGroup) { %>
@@ -740,8 +742,12 @@
               </details>
               <% } else { %>
               <!-- Unblocked drills -->
+              <div class="drag-block" data-block-name="" style="margin-bottom:12px;">
               <% if (mBlock.drills.length > 0 && mBlocks.some(b => b.name)) { %>
-              <div style="margin-bottom:4px;margin-top:<%= mbi > 0 ? '12px' : '0' %>;padding:6px 10px;background:var(--gray-100);border-radius:6px;font-size:12px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px;">Unassigned Drills</div>
+              <div style="margin-bottom:4px;padding:6px 10px;background:var(--gray-100);border-radius:6px;font-size:12px;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px;display:flex;align-items:center;gap:8px;">
+                <span class="drag-handle" title="Drag to reorder" style="cursor:grab;font-size:16px;opacity:0.5;user-select:none;">&#9776;</span>
+                Unassigned Drills
+              </div>
               <% } %>
               <% mBlock.drills.forEach(drill => { %>
               <details style="margin-bottom:6px;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden;">
@@ -803,8 +809,10 @@
                 </div>
               </details>
               <% }); %>
+              </div>
               <% } %>
             <% }); %>
+            </div><!-- end #block-sortable-container -->
 
             <datalist id="block-names-manage">
               <% mBlockNames.forEach(b => { %><option value="<%= b %>"><% }); %>
@@ -917,6 +925,130 @@
             if (touchClone) { touchClone.remove(); touchClone = null; }
             touchEl = null;
           });
+        })();
+        </script>
+        <% } %>
+
+        <% if (isAdmin && drills.length > 0) { %>
+        <script>
+        (function() {
+          const container = document.getElementById('block-sortable-container');
+          if (!container) return;
+          const eventId = container.dataset.eventId;
+          let dragBlock = null;
+
+          // Only drag from the handle
+          container.addEventListener('mousedown', function(e) {
+            const handle = e.target.closest('.drag-handle');
+            if (!handle) return;
+            const block = handle.closest('.drag-block');
+            if (block) block.setAttribute('draggable', 'true');
+          });
+          container.addEventListener('mouseup', function() {
+            container.querySelectorAll('.drag-block').forEach(b => b.removeAttribute('draggable'));
+          });
+
+          container.addEventListener('dragstart', function(e) {
+            const block = e.target.closest('.drag-block');
+            if (!block) return;
+            dragBlock = block;
+            block.style.opacity = '0.4';
+            e.dataTransfer.effectAllowed = 'move';
+          });
+
+          container.addEventListener('dragend', function() {
+            if (dragBlock) {
+              dragBlock.style.opacity = '';
+              dragBlock.removeAttribute('draggable');
+            }
+            container.querySelectorAll('.drag-block').forEach(b => {
+              b.classList.remove('block-drop-above', 'block-drop-below');
+            });
+            dragBlock = null;
+          });
+
+          container.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const block = e.target.closest('.drag-block');
+            container.querySelectorAll('.drag-block').forEach(b => {
+              b.classList.remove('block-drop-above', 'block-drop-below');
+            });
+            if (block && block !== dragBlock) {
+              const rect = block.getBoundingClientRect();
+              const mid = rect.top + rect.height / 2;
+              if (e.clientY < mid) block.classList.add('block-drop-above');
+              else block.classList.add('block-drop-below');
+            }
+          });
+
+          container.addEventListener('drop', function(e) {
+            e.preventDefault();
+            const target = e.target.closest('.drag-block');
+            if (!target || !dragBlock || target === dragBlock) return;
+            const rect = target.getBoundingClientRect();
+            const mid = rect.top + rect.height / 2;
+            if (e.clientY < mid) target.before(dragBlock);
+            else target.after(dragBlock);
+            saveBlockOrder();
+          });
+
+          // Touch support for blocks
+          let touchBlock = null, touchGhost = null;
+          container.addEventListener('touchstart', function(e) {
+            const handle = e.target.closest('.drag-handle');
+            if (!handle) return;
+            touchBlock = handle.closest('.drag-block');
+            if (!touchBlock) return;
+            touchGhost = touchBlock.cloneNode(true);
+            touchGhost.style.cssText = 'position:fixed;z-index:9999;opacity:0.8;pointer-events:none;width:' + touchBlock.offsetWidth + 'px;box-shadow:0 8px 24px rgba(0,0,0,0.2);border-radius:10px;';
+            document.body.appendChild(touchGhost);
+            touchBlock.style.opacity = '0.3';
+            e.preventDefault();
+          }, { passive: false });
+
+          document.addEventListener('touchmove', function(e) {
+            if (!touchBlock || !touchGhost) return;
+            e.preventDefault();
+            const y = e.touches[0].clientY;
+            touchGhost.style.top = y - 30 + 'px';
+            touchGhost.style.left = touchBlock.getBoundingClientRect().left + 'px';
+            const el = document.elementFromPoint(e.touches[0].clientX, y);
+            const target = el ? el.closest('.drag-block') : null;
+            container.querySelectorAll('.drag-block').forEach(b => {
+              b.classList.remove('block-drop-above', 'block-drop-below');
+            });
+            if (target && target !== touchBlock) {
+              const rect = target.getBoundingClientRect();
+              if (y < rect.top + rect.height / 2) target.classList.add('block-drop-above');
+              else target.classList.add('block-drop-below');
+            }
+          }, { passive: false });
+
+          document.addEventListener('touchend', function() {
+            if (!touchBlock) return;
+            const dropTarget = container.querySelector('.block-drop-above, .block-drop-below');
+            if (dropTarget) {
+              if (dropTarget.classList.contains('block-drop-above')) dropTarget.before(touchBlock);
+              else dropTarget.after(touchBlock);
+              saveBlockOrder();
+            }
+            touchBlock.style.opacity = '';
+            container.querySelectorAll('.drag-block').forEach(b => {
+              b.classList.remove('block-drop-above', 'block-drop-below');
+            });
+            if (touchGhost) { touchGhost.remove(); touchGhost = null; }
+            touchBlock = null;
+          });
+
+          function saveBlockOrder() {
+            const order = [...container.querySelectorAll('.drag-block')].map(b => b.dataset.blockName);
+            fetch('/event/' + eventId + '/drill/reorder-blocks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ order }),
+            }).then(r => { if (r.ok) location.reload(); });
+          }
         })();
         </script>
         <% } %>

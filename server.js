@@ -1500,6 +1500,42 @@ app.post('/event/:id/drill/reorder', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/event/:id/drill/reorder-blocks', requireAdmin, async (req, res) => {
+  const blockOrder = req.body.order; // array of block names in desired order, '' = unassigned
+  if (!Array.isArray(blockOrder)) return res.status(400).json({ error: 'Invalid order' });
+  const drills = await db.getDrills(Number(req.params.id));
+  // Group drills by block, preserving internal order
+  const blockDrills = {};
+  drills.forEach(d => {
+    const bn = d.block_name || '';
+    if (!blockDrills[bn]) blockDrills[bn] = [];
+    blockDrills[bn].push(d);
+  });
+  // Rebuild sort order based on new block sequence
+  let sortIndex = 0;
+  for (const bn of blockOrder) {
+    const group = blockDrills[bn] || [];
+    for (const d of group) {
+      if (d.sort_order !== sortIndex) {
+        await db.updateDrill(d.id, { ...d, sort_order: sortIndex });
+      }
+      sortIndex++;
+    }
+  }
+  // Any blocks not in the submitted order go at the end
+  for (const bn of Object.keys(blockDrills)) {
+    if (!blockOrder.includes(bn)) {
+      for (const d of blockDrills[bn]) {
+        if (d.sort_order !== sortIndex) {
+          await db.updateDrill(d.id, { ...d, sort_order: sortIndex });
+        }
+        sortIndex++;
+      }
+    }
+  }
+  res.json({ ok: true });
+});
+
 app.post('/event/:id/drill/:drillId/copy', requireAdmin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/admin');

@@ -1284,6 +1284,9 @@ main { flex: 1; padding-bottom: 40px; }
 .drill-dragging { opacity:0.4; border-style:dashed; }
 .drill-drop-target { border-color:var(--navy); background:#eef2ff; }
 .drill-touch-ghost { position:fixed; z-index:9999; opacity:0.85; pointer-events:none; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,0.15); }
+.drag-handle:hover { opacity:1 !important; }
+.block-drop-above { border-top:3px solid var(--navy) !important; margin-top:-3px; }
+.block-drop-below { border-bottom:3px solid var(--navy) !important; margin-bottom:-3px; }
 .drill-coach-notes { font-size:12px; color:#92400e; background:#fef3c7; padding:4px 8px; border-radius:6px; margin-top:4px; }
 .drill-in-block { border-radius:0; border-top:none; }
 .drill-in-block:last-child, .drill-card.drill-in-block:last-of-type { border-radius:0 0 10px 10px; }
