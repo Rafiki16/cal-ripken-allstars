@@ -98,6 +98,7 @@ async function init() {
       )
     `);
     try { await pool.query('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+    try { await pool.query("ALTER TABLE admins ADD COLUMN display_name TEXT DEFAULT 'Coach'"); } catch (e) { /* exists */ }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS team_events (
@@ -684,11 +685,12 @@ async function init() {
       },
       getAdminByUsername: async (username) => (await pool.query('SELECT * FROM admins WHERE username = $1', [username])).rows[0] || null,
       getAdminById: async (id) => (await pool.query('SELECT * FROM admins WHERE id = $1', [id])).rows[0] || null,
-      getAllAdmins: async () => (await pool.query('SELECT id, username, created_at FROM admins ORDER BY created_at')).rows,
+      getAllAdmins: async () => (await pool.query('SELECT id, username, display_name, created_at FROM admins ORDER BY created_at')).rows,
       countAdmins: async () => parseInt((await pool.query('SELECT COUNT(*) as c FROM admins')).rows[0].c),
       createAdmin: async (username, passwordHash) => pool.query('INSERT INTO admins (username, password_hash) VALUES ($1, $2)', [username, passwordHash]),
       updateAdminPassword: async (id, passwordHash) => pool.query('UPDATE admins SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
       updateAdminEmail: async (id, email) => pool.query('UPDATE admins SET email = $1 WHERE id = $2', [email, id]),
+      updateAdminDisplayName: async (id, displayName) => pool.query('UPDATE admins SET display_name = $1 WHERE id = $2', [displayName, id]),
       getAdminByEmail: async (email) => (await pool.query('SELECT * FROM admins WHERE LOWER(email) = LOWER($1)', [email])).rows[0] || null,
       removeAdmin: async (id) => pool.query('DELETE FROM admins WHERE id = $1', [id]),
       getRsvp: async (eventId, playerId) => (await pool.query('SELECT * FROM rsvps WHERE team_event_id = $1 AND player_id = $2', [eventId, playerId])).rows[0] || null,
@@ -1059,6 +1061,7 @@ async function init() {
       )
     `);
     try { sqliteDb.exec('ALTER TABLE admins ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec("ALTER TABLE admins ADD COLUMN display_name TEXT DEFAULT 'Coach'"); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS team_events (
@@ -1613,11 +1616,12 @@ async function init() {
       },
       getAdminByUsername: async (username) => sqliteDb.prepare('SELECT * FROM admins WHERE username = ?').get(username) || null,
       getAdminById: async (id) => sqliteDb.prepare('SELECT * FROM admins WHERE id = ?').get(id) || null,
-      getAllAdmins: async () => sqliteDb.prepare('SELECT id, username, created_at FROM admins ORDER BY created_at').all(),
+      getAllAdmins: async () => sqliteDb.prepare('SELECT id, username, display_name, created_at FROM admins ORDER BY created_at').all(),
       countAdmins: async () => sqliteDb.prepare('SELECT COUNT(*) as c FROM admins').get().c,
       createAdmin: async (username, passwordHash) => sqliteDb.prepare('INSERT INTO admins (username, password_hash) VALUES (?, ?)').run(username, passwordHash),
       updateAdminPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(passwordHash, id),
       updateAdminEmail: async (id, email) => sqliteDb.prepare('UPDATE admins SET email = ? WHERE id = ?').run(email, id),
+      updateAdminDisplayName: async (id, displayName) => sqliteDb.prepare('UPDATE admins SET display_name = ? WHERE id = ?').run(displayName, id),
       getAdminByEmail: async (email) => sqliteDb.prepare('SELECT * FROM admins WHERE LOWER(email) = LOWER(?)').get(email) || null,
       removeAdmin: async (id) => sqliteDb.prepare('DELETE FROM admins WHERE id = ?').run(id),
       getRsvp: async (eventId, playerId) => sqliteDb.prepare('SELECT * FROM rsvps WHERE team_event_id = ? AND player_id = ?').get(eventId, playerId) || null,
@@ -1983,6 +1987,7 @@ module.exports = {
   createAdmin: (...args) => impl.createAdmin(...args),
   updateAdminPassword: (...args) => impl.updateAdminPassword(...args),
   updateAdminEmail: (...args) => impl.updateAdminEmail(...args),
+  updateAdminDisplayName: (...args) => impl.updateAdminDisplayName(...args),
   getAdminByEmail: (...args) => impl.getAdminByEmail(...args),
   removeAdmin: (...args) => impl.removeAdmin(...args),
   getRsvp: (...args) => impl.getRsvp(...args),

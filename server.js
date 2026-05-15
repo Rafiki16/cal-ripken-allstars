@@ -1107,7 +1107,7 @@ app.post('/admin/login', async (req, res) => {
   if (!admin || !bcrypt.compareSync(password || '', admin.password_hash)) {
     return res.render('admin-login', { error: 'Invalid username or password.', success: null });
   }
-  req.session.admin = { id: admin.id, username: admin.username };
+  req.session.admin = { id: admin.id, username: admin.username, displayName: admin.display_name || 'Coach' };
   res.redirect('/admin');
 });
 
@@ -1137,7 +1137,7 @@ app.post('/admin/setup', async (req, res) => {
   const hash = bcrypt.hashSync(password, 10);
   await db.createAdmin(user, hash);
   const admin = await db.getAdminByUsername(user);
-  req.session.admin = { id: admin.id, username: admin.username };
+  req.session.admin = { id: admin.id, username: admin.username, displayName: admin.display_name || 'Coach' };
   res.redirect('/admin');
 });
 
@@ -1849,6 +1849,7 @@ app.get('/admin/settings', requireAdmin, async (req, res) => {
   res.render('admin-settings', {
     adminUser: req.session.admin,
     adminEmail: currentAdmin ? currentAdmin.email || '' : '',
+    adminDisplayName: currentAdmin ? currentAdmin.display_name || '' : '',
     admins,
     teamName: res.locals.teamName,
     success: req.query.success || null,
@@ -1884,6 +1885,16 @@ app.post('/admin/update-email', requireAdmin, async (req, res) => {
   const email = (req.body.email || '').trim();
   await db.updateAdminEmail(req.session.admin.id, email || null);
   res.redirect('/admin/settings?success=' + encodeURIComponent(email ? 'Email updated.' : 'Email removed.'));
+});
+
+app.post('/admin/update-display-name', requireAdmin, async (req, res) => {
+  const displayName = (req.body.display_name || '').trim();
+  if (!displayName) {
+    return res.redirect('/admin/settings?error=' + encodeURIComponent('Display name cannot be empty.'));
+  }
+  await db.updateAdminDisplayName(req.session.admin.id, displayName);
+  req.session.admin.displayName = displayName;
+  res.redirect('/admin/settings?success=' + encodeURIComponent('Display name updated.'));
 });
 
 app.post('/admin/add-admin', requireAdmin, async (req, res) => {
@@ -1935,7 +1946,7 @@ app.get('/messages', requireParentOrAdmin, async (req, res, next) => {
     const reactions = await db.getReactionsForMessages(allMsgIds);
     const isAdmin = !!req.session.admin;
     let currentUserName = null;
-    if (isAdmin) currentUserName = req.session.admin.username;
+    if (isAdmin) currentUserName = req.session.admin.displayName || 'Coach';
     else if (req.parentUser) currentUserName = req.parentUser.display_name;
     res.render('messages', { topics, topicReplies, reactions, currentUserName, isAdmin, parentUser: req.parentUser || null, error: req.query.error || null, success: req.query.success || null });
   } catch (err) {
@@ -1951,7 +1962,7 @@ app.post('/messages', async (req, res) => {
 
   let authorName, authorType;
   if (isAdmin) {
-    authorName = req.session.admin.username;
+    authorName = req.session.admin.displayName || 'Coach';
     authorType = 'admin';
   } else if (req.parentUser) {
     authorName = req.parentUser.display_name;
