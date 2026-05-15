@@ -262,11 +262,16 @@
     </div>
 
     <%
+      function fmtDate(d) {
+        if (!d) return '';
+        if (d instanceof Date) return d.toISOString().substring(0,10);
+        return String(d).substring(0,10);
+      }
       var commonStart = '';
       var commonEnd = '';
       if (assignments.length > 0) {
-        var starts = assignments.map(function(a) { return a.start_date ? a.start_date.toString().substring(0,10) : ''; }).filter(Boolean);
-        var ends = assignments.map(function(a) { return a.end_date ? a.end_date.toString().substring(0,10) : ''; }).filter(Boolean);
+        var starts = assignments.map(function(a) { return fmtDate(a.start_date); }).filter(Boolean);
+        var ends = assignments.map(function(a) { return fmtDate(a.end_date); }).filter(Boolean);
         if (starts.length > 0 && starts.every(function(s) { return s === starts[0]; })) commonStart = starts[0];
         if (ends.length > 0 && ends.every(function(s) { return s === ends[0]; })) commonEnd = ends[0];
       }
@@ -334,7 +339,7 @@
           <span style="font-size:13px; font-weight:600; flex:1; min-width:120px;"><%= a.player_name %></span>
           <% if (a.start_date || a.end_date) { %>
           <span style="font-size:11px; color:var(--gray-400); background:var(--gray-50); padding:2px 8px; border-radius:4px;">
-            <%= a.start_date ? a.start_date.toString().substring(0,10) : 'no start' %> &mdash; <%= a.end_date ? a.end_date.toString().substring(0,10) : 'no end' %>
+            <%= a.start_date ? fmtDate(a.start_date) : 'no start' %> &mdash; <%= a.end_date ? fmtDate(a.end_date) : 'no end' %>
           </span>
           <% } else { %>
           <span style="font-size:11px; color:var(--gray-300);">no dates</span>
@@ -356,6 +361,9 @@
             <% const assignedIds = assignments.map(a => a.player_id); %>
             <% const unassigned = players.filter(p => !assignedIds.includes(p.id)); %>
             <% if (unassigned.length > 0) { %>
+            <label style="display:flex; align-items:center; gap:8px; padding:4px 4px 8px; font-size:13px; font-weight:700; cursor:pointer; border-bottom:1px solid var(--gray-200); margin-bottom:4px; color:var(--navy);">
+              <input type="checkbox" id="select-all-players" onchange="document.querySelectorAll('input[name=player_ids]').forEach(cb => cb.checked = this.checked)"> Select All
+            </label>
             <% unassigned.forEach(p => { %>
             <label style="display:flex; align-items:center; gap:8px; padding:4px; font-size:13px; cursor:pointer;">
               <input type="checkbox" name="player_ids" value="<%= p.id %>"> <%= p.player_name %>

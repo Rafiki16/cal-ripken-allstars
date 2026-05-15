@@ -901,7 +901,8 @@ app.get('/profile/:id', requireParentOrAdmin, async (req, res) => {
   res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData, quizAssignments, quizAttemptData, error: null, success: null });
 });
 
-app.post('/profile/:id', async (req, res) => {
+app.post('/profile/:id', async (req, res, next) => {
+  try {
   const phone = normalizePhone(req.body.phone || '');
   const isAdmin = !!req.session.admin;
 
@@ -977,12 +978,26 @@ app.post('/profile/:id', async (req, res) => {
   const quizAssignments2 = await db.getPlayerQuizAssignments(updated.id);
   const quizAttemptData2 = {};
   for (const qa of quizAssignments2) { quizAttemptData2[qa.quiz_id] = await db.getQuizAttempts(qa.quiz_id, updated.id); }
+  const assignments = await db.getPlayerAssignments(updated.id);
+  const programData = [];
+  for (const a of assignments) {
+    const days = await db.getProgramDays(a.program_id);
+    const completions = await db.getCompletions(a.program_id, updated.id);
+    for (const day of days) {
+      day.activities = await db.getProgramActivities(day.id);
+    }
+    programData.push({ assignment: a, days, completions });
+  }
   res.render('profile', {
-    player: updated, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
+    player: updated, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData,
     quizAssignments: quizAssignments2, quizAttemptData: quizAttemptData2,
     error: null,
     success: `${player.player_name}'s profile has been saved.`
   });
+  } catch (err) {
+    console.error('Profile save error:', err.message, err.stack);
+    next(err);
+  }
 });
 
 app.post('/profile/:id/event', async (req, res) => {
