@@ -190,17 +190,16 @@
           .sort((a, b) => (a.start_date + (a.start_time || '')).localeCompare(b.start_date + (b.start_time || '')));
         const past = EVENTS.filter(isPast)
           .sort((a, b) => (b.start_date + (b.start_time || '')).localeCompare(a.start_date + (a.start_time || '')));
-        const ordered = upcoming.concat(past);
         const list = document.getElementById('events-list');
         const titleEl = document.getElementById('upcoming-title');
-        titleEl.textContent = filter === 'all' ? 'All Events' : 'Upcoming Events';
+        titleEl.textContent = 'Upcoming Events';
 
-        if (ordered.length === 0) {
+        if (upcoming.length === 0 && past.length === 0) {
           list.innerHTML = '<p style="color:#6b7280;font-size:14px;">No events.</p>';
           return;
         }
 
-        list.innerHTML = ordered.map(ev => {
+        function buildCard(ev) {
           const past_ = isPast(ev);
           const startDate = new Date(ev.start_date + 'T12:00:00');
           const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -261,7 +260,21 @@
           }
           html += '</div>';
           return html;
-        }).join('');
+        }
+
+        let html = '';
+        if (upcoming.length > 0) {
+          html += upcoming.map(buildCard).join('');
+        } else {
+          html += '<p style="color:#6b7280;font-size:14px;margin-bottom:16px;">No upcoming events.</p>';
+        }
+        if (past.length > 0) {
+          html += '<details class="past-events-group" style="margin-top:20px;">';
+          html += '<summary style="cursor:pointer;padding:10px 14px;background:#f3f4f6;border-radius:8px;font-weight:700;font-size:14px;color:#6b7280;user-select:none;">Previous Events (' + past.length + ')</summary>';
+          html += '<div style="margin-top:8px;">' + past.map(buildCard).join('') + '</div>';
+          html += '</details>';
+        }
+        list.innerHTML = html;
       }
 
       document.getElementById('cal-prev').onclick = () => { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); };

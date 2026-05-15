@@ -416,7 +416,13 @@
       })();
       </script>
 
+      <%
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const upcomingEvents = teamEvents.filter(ev => (ev.end_date || ev.start_date) >= todayStr);
+        const pastEvents = teamEvents.filter(ev => (ev.end_date || ev.start_date) < todayStr).reverse();
+      %>
       <% if (teamEvents.length > 0) { %>
+        <% if (upcomingEvents.length > 0) { %>
         <table class="admin-table" style="margin-top:20px; min-width:auto;">
           <thead>
             <tr>
@@ -430,40 +436,38 @@
             </tr>
           </thead>
           <tbody>
-            <% teamEvents.forEach(ev => { %>
-              <tr>
-                <td>
-                  <span class="te-type-badge" style="background:<%= ev.event_type === 'practice' ? '#16a34a' : ev.event_type === 'game' ? '#111827' : ev.event_type === 'tournament' ? '#2563eb' : '#6b7280' %>; font-size:10px;">
-                    <%= ev.event_type === 'practice' ? 'Practice' : ev.event_type === 'game' ? 'Game' : ev.event_type === 'tournament' ? 'Tournament' : 'Other' %>
-                  </span>
-                </td>
-                <td class="td-bold"><a href="/event/<%= ev.id %>" style="color:inherit;text-decoration:none;"><%= ev.title %></a><% if (ev.event_type === 'game' && ev.our_score != null) { %> <span style="font-weight:400;font-size:12px;color:<%= ev.our_score > ev.opponent_score ? '#16a34a' : ev.our_score < ev.opponent_score ? '#dc2626' : '#854d0e' %>;"><%= ev.our_score > ev.opponent_score ? 'W' : ev.our_score < ev.opponent_score ? 'L' : 'T' %> <%= ev.our_score %>-<%= ev.opponent_score %></span><% } %></td>
-                <td style="white-space:nowrap; font-size:13px;"><%= new Date(ev.start_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% if (ev.end_date) { %>&ndash;<%= new Date(ev.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %><% } %></td>
-                <td style="font-size:13px; white-space:nowrap;"><% if (ev.start_time) { const [_h,_m] = ev.start_time.split(':'); const _hr = parseInt(_h); %><%= (_hr % 12 || 12) + ':' + _m.slice(0,2) + ' ' + (_hr >= 12 ? 'PM' : 'AM') %><% if (ev.end_time) { const [_eh,_em] = ev.end_time.split(':'); const _ehr = parseInt(_eh); %><span style="color:var(--gray-400);"> &ndash; </span><%= (_ehr % 12 || 12) + ':' + _em.slice(0,2) + ' ' + (_ehr >= 12 ? 'PM' : 'AM') %><% } %><% } else { %>-<% } %></td>
-                <td style="font-size:13px;"><%= ev.location_name || ev.address || '-' %></td>
-                <td style="text-align:center; white-space:nowrap;">
-                  <% const rc = rsvpCounts[ev.id] || { yes: 0, no: 0, maybe: 0 }; %>
-                  <span style="cursor:pointer;" onclick="viewRsvps(<%= ev.id %>, '<%= ev.title.replace(/'/g, "\\'") %>')" title="Click for details">
-                    <span style="color:#16a34a;font-weight:800;font-size:13px;"><%= rc.yes %></span><span style="color:var(--gray-300);"> / </span><span style="color:#d97706;font-weight:800;font-size:13px;"><%= rc.maybe %></span><span style="color:var(--gray-300);"> / </span><span style="color:#dc2626;font-weight:800;font-size:13px;"><%= rc.no %></span>
-                  </span>
-                </td>
-                <td>
-                  <div class="admin-action-row">
-                    <a href="/event/<%= ev.id %>" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 8px;text-decoration:none;">View</a>
-                    <% if (ev.event_type === 'game') { %>
-                    <a href="/event/<%= ev.id %>#lineup-grid-section" class="btn-sm btn-sm-email" style="font-size:11px;padding:3px 8px;text-decoration:none;">Lineup</a>
-                    <% } %>
-                    <button type="button" class="btn-sm btn-sm-email" title="Edit" onclick='editTeamEvent(<%- JSON.stringify({id:ev.id,event_type:ev.event_type,title:ev.title,start_date:ev.start_date,start_time:ev.start_time||"",end_date:ev.end_date||"",end_time:ev.end_time||"",location_name:ev.location_name||"",address:ev.address||"",notes:ev.notes||"",hotel_info:ev.hotel_info||"",carpool_info:ev.carpool_info||"",opponent_name:ev.opponent_name||""}) %>)'>&#9998;</button>
-                    <form method="POST" action="/admin/remove-team-event" onsubmit="return confirm('Remove this event?')" style="margin:0;">
-                      <input type="hidden" name="event_id" value="<%= ev.id %>">
-                      <button type="submit" class="btn-sm btn-sm-remove">&times;</button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
+            <% upcomingEvents.forEach(ev => { %>
+              <%- include('partials/admin-event-row', { ev, rsvpCounts }) %>
             <% }); %>
           </tbody>
         </table>
+        <% } else { %>
+        <p style="color:#6b7280; margin-top:16px; font-size:14px;">No upcoming events.</p>
+        <% } %>
+
+        <% if (pastEvents.length > 0) { %>
+        <details style="margin-top:20px;">
+          <summary style="cursor:pointer;padding:10px 14px;background:#f3f4f6;border-radius:8px;font-weight:700;font-size:14px;color:#6b7280;user-select:none;">Previous Events (<%= pastEvents.length %>)</summary>
+          <table class="admin-table" style="margin-top:8px; min-width:auto;">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Title</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Location</th>
+                <th>RSVPs</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% pastEvents.forEach(ev => { %>
+                <%- include('partials/admin-event-row', { ev, rsvpCounts }) %>
+              <% }); %>
+            </tbody>
+          </table>
+        </details>
+        <% } %>
       <% } else { %>
         <p style="color:#6b7280; margin-top:16px; font-size:14px;">No events scheduled yet.</p>
       <% } %>
