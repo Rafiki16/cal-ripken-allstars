@@ -151,6 +151,19 @@ async function init() {
       }
     } catch (e) { /* best-effort */ }
 
+    // One-time fix: update Team Board posts from admin email to "Coach Matt"
+    try {
+      const m = await pool.query("SELECT 1 FROM migrations WHERE name = 'fix_admin_message_author_names_v1'");
+      if (m.rowCount === 0) {
+        await pool.query(`
+          UPDATE team_messages
+          SET author_name = 'Coach Matt'
+          WHERE LOWER(author_name) LIKE '%@%' AND author_type = 'admin'
+        `);
+        await pool.query("INSERT INTO migrations (name) VALUES ('fix_admin_message_author_names_v1')");
+      }
+    } catch (e) { /* best-effort */ }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS practice_drills (
         id SERIAL PRIMARY KEY,
