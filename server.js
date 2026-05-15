@@ -1417,6 +1417,9 @@ app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
   if (save_location && locName && locAddr) {
     await db.addSavedLocation(locName, locAddr);
   }
+  if (req.body.return_to) {
+    return res.redirect(req.body.return_to);
+  }
   const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
   res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" updated`));
 });
@@ -1903,22 +1906,27 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
 
 // --- Team Messages ---
 
-app.get('/messages', requireParentOrAdmin, async (req, res) => {
-  const topics = await db.getAllMessages();
-  const topicReplies = {};
-  for (const t of topics) {
-    topicReplies[t.id] = await db.getTopicReplies(t.id);
+app.get('/messages', requireParentOrAdmin, async (req, res, next) => {
+  try {
+    const topics = await db.getAllMessages();
+    const topicReplies = {};
+    for (const t of topics) {
+      topicReplies[t.id] = await db.getTopicReplies(t.id);
+    }
+    const allMsgIds = topics.map(t => t.id);
+    for (const replies of Object.values(topicReplies)) {
+      for (const r of replies) allMsgIds.push(r.id);
+    }
+    const reactions = await db.getReactionsForMessages(allMsgIds);
+    const isAdmin = !!req.session.admin;
+    let currentUserName = null;
+    if (isAdmin) currentUserName = req.session.admin.username;
+    else if (req.parentUser) currentUserName = req.parentUser.display_name;
+    res.render('messages', { topics, topicReplies, reactions, currentUserName, isAdmin, parentUser: req.parentUser || null, error: req.query.error || null, success: req.query.success || null });
+  } catch (err) {
+    console.error('Messages route error:', err.message, err.stack);
+    next(err);
   }
-  const allMsgIds = topics.map(t => t.id);
-  for (const replies of Object.values(topicReplies)) {
-    for (const r of replies) allMsgIds.push(r.id);
-  }
-  const reactions = await db.getReactionsForMessages(allMsgIds);
-  const isAdmin = !!req.session.admin;
-  let currentUserName = null;
-  if (isAdmin) currentUserName = req.session.admin.username;
-  else if (req.parentUser) currentUserName = req.parentUser.display_name;
-  res.render('messages', { topics, topicReplies, reactions, currentUserName, isAdmin, parentUser: req.parentUser || null, error: req.query.error || null, success: req.query.success || null });
 });
 
 app.post('/messages', async (req, res) => {
