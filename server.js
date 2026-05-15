@@ -1906,9 +1906,12 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
 
 // --- Team Messages ---
 
-app.get('/messages', requireParentOrAdmin, async (req, res, next) => {
+app.get('/messages/debug', requireAdmin, async (req, res) => {
+  const steps = [];
   try {
+    steps.push('1. Fetching topics...');
     const topics = await db.getAllMessages();
+    steps.push(`2. Got ${topics.length} topics`);
     const topicReplies = {};
     for (const t of topics) {
       topicReplies[t.id] = await db.getTopicReplies(t.id);
@@ -1917,12 +1920,52 @@ app.get('/messages', requireParentOrAdmin, async (req, res, next) => {
     for (const replies of Object.values(topicReplies)) {
       for (const r of replies) allMsgIds.push(r.id);
     }
+    steps.push(`3. Total message IDs: ${allMsgIds.length}`);
     const reactions = await db.getReactionsForMessages(allMsgIds);
+    steps.push(`4. Got reactions: ${JSON.stringify(reactions).substring(0, 200)}`);
+    steps.push('5. About to render template...');
+    const isAdmin = !!req.session.admin;
+    let currentUserName = null;
+    if (isAdmin) currentUserName = req.session.admin.username;
+    else if (req.parentUser) currentUserName = req.parentUser.display_name;
+    // Try rendering to string to catch template errors
+    const html = await new Promise((resolve, reject) => {
+      req.app.render('messages', { teamName: res.locals.teamName, topics, topicReplies, reactions, currentUserName, isAdmin, parentUser: req.parentUser || null, error: null, success: null }, (err, html) => {
+        if (err) reject(err);
+        else resolve(html);
+      });
+    });
+    steps.push(`6. Template rendered OK (${html.length} chars)`);
+    res.json({ ok: true, steps });
+  } catch (err) {
+    steps.push(`ERROR: ${err.message}`);
+    steps.push(`STACK: ${err.stack}`);
+    res.json({ ok: false, steps, error: err.message, stack: err.stack });
+  }
+});
+
+app.get('/messages', requireParentOrAdmin, async (req, res, next) => {
+  try {
+    console.log('Messages: fetching topics...');
+    const topics = await db.getAllMessages();
+    console.log('Messages: got', topics.length, 'topics');
+    const topicReplies = {};
+    for (const t of topics) {
+      topicReplies[t.id] = await db.getTopicReplies(t.id);
+    }
+    const allMsgIds = topics.map(t => t.id);
+    for (const replies of Object.values(topicReplies)) {
+      for (const r of replies) allMsgIds.push(r.id);
+    }
+    console.log('Messages: fetching reactions for', allMsgIds.length, 'messages');
+    const reactions = await db.getReactionsForMessages(allMsgIds);
+    console.log('Messages: got reactions, rendering template...');
     const isAdmin = !!req.session.admin;
     let currentUserName = null;
     if (isAdmin) currentUserName = req.session.admin.username;
     else if (req.parentUser) currentUserName = req.parentUser.display_name;
     res.render('messages', { topics, topicReplies, reactions, currentUserName, isAdmin, parentUser: req.parentUser || null, error: req.query.error || null, success: req.query.success || null });
+    console.log('Messages: render complete');
   } catch (err) {
     console.error('Messages route error:', err.message, err.stack);
     next(err);
