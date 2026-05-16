@@ -524,16 +524,24 @@
               <p style="font-size:13px; color:var(--gray-500); margin:0 0 10px;">Map your spreadsheet columns to practice plan fields:</p>
               <div style="display:flex; flex-direction:column; gap:8px;">
                 <div style="display:flex; align-items:center; gap:8px;">
-                  <label style="width:120px; font-size:13px; font-weight:600; color:var(--navy);">Drill Name *</label>
+                  <label style="width:140px; font-size:13px; font-weight:600; color:var(--navy);">Drill Name *</label>
                   <select id="map-name" class="form-input" style="flex:1;"></select>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
-                  <label style="width:120px; font-size:13px; font-weight:600; color:var(--navy);">Description</label>
+                  <label style="width:140px; font-size:13px; font-weight:600; color:var(--navy);">Description</label>
                   <select id="map-desc" class="form-input" style="flex:1;"><option value="">(skip)</option></select>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
-                  <label style="width:120px; font-size:13px; font-weight:600; color:var(--navy);">Duration (min)</label>
+                  <label style="width:140px; font-size:13px; font-weight:600; color:var(--navy);">Duration (min)</label>
                   <select id="map-dur" class="form-input" style="flex:1;"><option value="">(skip &mdash; default 10 min)</option></select>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label style="width:140px; font-size:13px; font-weight:600; color:var(--navy);">Block / Station</label>
+                  <select id="map-block" class="form-input" style="flex:1;"><option value="">(skip)</option></select>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <label style="width:140px; font-size:13px; font-weight:600; color:var(--navy);">Coach Notes</label>
+                  <select id="map-notes" class="form-input" style="flex:1;"><option value="">(skip)</option></select>
                 </div>
               </div>
 
@@ -554,6 +562,8 @@
             const mapName = document.getElementById('map-name');
             const mapDesc = document.getElementById('map-desc');
             const mapDur = document.getElementById('map-dur');
+            const mapBlock = document.getElementById('map-block');
+            const mapNotes = document.getElementById('map-notes');
             const preview = document.getElementById('import-preview');
             const errDiv = document.getElementById('import-error');
 
@@ -588,41 +598,57 @@
               mapName.innerHTML = '';
               mapDesc.innerHTML = '<option value="">(skip)</option>';
               mapDur.innerHTML = '<option value="">(skip — default 10 min)</option>';
+              mapBlock.innerHTML = '<option value="">(skip)</option>';
+              mapNotes.innerHTML = '<option value="">(skip)</option>';
 
               cols.forEach(c => {
-                const cl = c.toLowerCase();
-                const oN = document.createElement('option'); oN.value = c; oN.textContent = c; mapName.appendChild(oN);
-                const oD = document.createElement('option'); oD.value = c; oD.textContent = c; mapDesc.appendChild(oD);
-                const oDu = document.createElement('option'); oDu.value = c; oDu.textContent = c; mapDur.appendChild(oDu);
+                [mapName, mapDesc, mapDur, mapBlock, mapNotes].forEach(sel => {
+                  const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+                });
               });
 
+              // Auto-detect column mappings by name
               cols.forEach(c => {
                 const cl = c.toLowerCase();
                 if (cl.includes('name') || cl.includes('drill') || cl.includes('title') || cl.includes('activity')) mapName.value = c;
-                if (cl.includes('desc') || cl.includes('note') || cl.includes('detail') || cl.includes('focus')) mapDesc.value = c;
+                if (cl.includes('desc') || cl.includes('detail') || cl.includes('focus')) mapDesc.value = c;
                 if (cl.includes('dur') || cl.includes('min') || cl.includes('time') || cl.includes('length')) mapDur.value = c;
+                if (cl.includes('block') || cl.includes('station') || cl.includes('group') || cl.includes('section') || cl.includes('segment')) mapBlock.value = c;
+                if (cl.includes('note') || cl.includes('coach') || cl.includes('comment') || cl.includes('instruction')) mapNotes.value = c;
               });
 
               renderPreview(sheet);
-              mapName.onchange = mapDesc.onchange = mapDur.onchange = function() { renderPreview(sheet); };
+              [mapName, mapDesc, mapDur, mapBlock, mapNotes].forEach(sel => { sel.onchange = function() { renderPreview(sheet); }; });
             }
 
             function renderPreview(sheet) {
               const rows = sheet.preview;
-              const nameCol = mapName.value, descCol = mapDesc.value, durCol = mapDur.value;
+              var nameCol = mapName.value, descCol = mapDesc.value, durCol = mapDur.value, blockCol = mapBlock.value, notesCol = mapNotes.value;
+              var thStyle = 'padding:4px 8px; text-align:left; border-bottom:2px solid var(--gray-200); white-space:nowrap;';
+              var tdStyle = 'padding:4px 8px; border-bottom:1px solid var(--gray-100);';
               let html = '<table style="width:100%; font-size:12px; border-collapse:collapse;">';
-              html += '<thead><tr style="background:var(--gray-50);"><th style="padding:4px 8px; text-align:left; border-bottom:2px solid var(--gray-200);">Drill Name</th>';
-              html += '<th style="padding:4px 8px; text-align:left; border-bottom:2px solid var(--gray-200);">Description</th>';
-              html += '<th style="padding:4px 8px; text-align:left; border-bottom:2px solid var(--gray-200);">Duration</th></tr></thead><tbody>';
+              html += '<thead><tr style="background:var(--gray-50);">';
+              html += '<th style="' + thStyle + '">Drill Name</th>';
+              if (descCol) html += '<th style="' + thStyle + '">Description</th>';
+              html += '<th style="' + thStyle + '">Duration</th>';
+              if (blockCol) html += '<th style="' + thStyle + '">Block</th>';
+              if (notesCol) html += '<th style="' + thStyle + '">Coach Notes</th>';
+              html += '</tr></thead><tbody>';
+              var colCount = 2 + (descCol ? 1 : 0) + (blockCol ? 1 : 0) + (notesCol ? 1 : 0);
               rows.forEach(r => {
-                const name = nameCol ? (r[nameCol] || '') : '';
-                const desc = descCol ? (r[descCol] || '') : '';
-                const dur = durCol ? (r[durCol] || '') : '10';
-                html += '<tr><td style="padding:4px 8px; border-bottom:1px solid var(--gray-100);">' + escHtml(String(name)) + '</td>';
-                html += '<td style="padding:4px 8px; border-bottom:1px solid var(--gray-100); color:var(--gray-500);">' + escHtml(String(desc)) + '</td>';
-                html += '<td style="padding:4px 8px; border-bottom:1px solid var(--gray-100);">' + escHtml(String(dur)) + ' min</td></tr>';
+                var name = nameCol ? (r[nameCol] || '') : '';
+                var desc = descCol ? (r[descCol] || '') : '';
+                var dur = durCol ? (r[durCol] || '') : '10';
+                var block = blockCol ? (r[blockCol] || '') : '';
+                var notes = notesCol ? (r[notesCol] || '') : '';
+                html += '<tr><td style="' + tdStyle + '">' + escHtml(String(name)) + '</td>';
+                if (descCol) html += '<td style="' + tdStyle + ' color:var(--gray-500);">' + escHtml(String(desc)) + '</td>';
+                html += '<td style="' + tdStyle + '">' + escHtml(String(dur)) + ' min</td>';
+                if (blockCol) html += '<td style="' + tdStyle + ' color:#6366f1;">' + escHtml(String(block)) + '</td>';
+                if (notesCol) html += '<td style="' + tdStyle + ' color:var(--gray-500); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escHtml(String(notes)) + '</td>';
+                html += '</tr>';
               });
-              if (rows.length >= 5) html += '<tr><td colspan="3" style="padding:4px 8px; color:var(--gray-400); font-style:italic;">...more rows in file</td></tr>';
+              if (rows.length >= 5) html += '<tr><td colspan="' + colCount + '" style="padding:4px 8px; color:var(--gray-400); font-style:italic;">...more rows in file</td></tr>';
               html += '</tbody></table>';
               preview.innerHTML = html;
             }
@@ -637,13 +663,15 @@
               form.append('col_name', mapName.value);
               form.append('col_desc', mapDesc.value);
               form.append('col_duration', mapDur.value);
+              form.append('col_block', mapBlock.value);
+              form.append('col_notes', mapNotes.value);
               const f = document.createElement('form');
               f.method = 'POST'; f.action = '/event/<%= event.id %>/drill/import'; f.enctype = 'multipart/form-data'; f.style.display = 'none';
 
               const dt = new DataTransfer();
               dt.items.add(selectedFile);
               const fi = document.createElement('input'); fi.type = 'file'; fi.name = 'file'; fi.files = dt.files; f.appendChild(fi);
-              ['sheet','col_name','col_desc','col_duration'].forEach(k => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = form.get(k); f.appendChild(i); });
+              ['sheet','col_name','col_desc','col_duration','col_block','col_notes'].forEach(k => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = form.get(k); f.appendChild(i); });
               document.body.appendChild(f);
               f.submit();
             });

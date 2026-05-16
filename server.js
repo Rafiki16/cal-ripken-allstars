@@ -1689,7 +1689,7 @@ app.post('/event/:id/drill/import', requireAdmin, upload.single('file'), async (
   if (!req.file) return res.redirect('/event/' + req.params.id);
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/admin');
-  const { sheet, col_name, col_desc, col_duration } = req.body;
+  const { sheet, col_name, col_desc, col_duration, col_block, col_notes } = req.body;
   const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
   const ws = wb.Sheets[sheet || wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
@@ -1704,6 +1704,8 @@ app.post('/event/:id/drill/import', requireAdmin, upload.single('file'), async (
       description: col_desc ? String(row[col_desc] || '').trim() || null : null,
       duration_minutes: col_duration ? (parseInt(row[col_duration]) || 10) : 10,
       sort_order: order++,
+      block_name: col_block ? String(row[col_block] || '').trim() || null : null,
+      coach_notes: col_notes ? String(row[col_notes] || '').trim() || null : null,
     });
   }
   res.redirect('/event/' + event.id);
