@@ -664,6 +664,7 @@ async function init() {
       addDrill: async (d) => (await pool.query('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order, coach_notes, assigned_staff, block_name, parallel_group) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id', [d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, d.block_name || null, d.parallel_group || null])).rows[0],
       updateDrill: async (id, d) => pool.query('UPDATE practice_drills SET drill_name=$1, description=$2, duration_minutes=$3, sort_order=$4, coach_notes=$5, assigned_staff=$6, block_name=$7, parallel_group=$8 WHERE id=$9', [d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, d.block_name || null, d.parallel_group || null, id]),
       removeDrill: async (id) => pool.query('DELETE FROM practice_drills WHERE id = $1', [id]),
+      clearDrills: async (eventId) => pool.query('DELETE FROM practice_drills WHERE team_event_id = $1', [eventId]),
       getSubEvents: async (eventId) => (await pool.query('SELECT * FROM tournament_sub_events WHERE team_event_id = $1 ORDER BY start_date, start_time, sort_order', [eventId])).rows,
       getSubEvent: async (id) => (await pool.query('SELECT * FROM tournament_sub_events WHERE id = $1', [id])).rows[0] || null,
       addSubEvent: async (s) => (await pool.query('INSERT INTO tournament_sub_events (team_event_id, sub_type, title, start_date, start_time, end_time, location_name, opponent, notes, batting_all, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id', [s.team_event_id, s.sub_type, s.title, s.start_date, s.start_time, s.end_time, s.location_name, s.opponent, s.notes, s.batting_all || 0, s.sort_order || 0])).rows[0],
@@ -1593,6 +1594,7 @@ async function init() {
       },
       updateDrill: async (id, d) => sqliteDb.prepare('UPDATE practice_drills SET drill_name=?, description=?, duration_minutes=?, sort_order=?, coach_notes=?, assigned_staff=?, block_name=?, parallel_group=? WHERE id=?').run(d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, d.block_name || null, d.parallel_group || null, id),
       removeDrill: async (id) => sqliteDb.prepare('DELETE FROM practice_drills WHERE id = ?').run(id),
+      clearDrills: async (eventId) => sqliteDb.prepare('DELETE FROM practice_drills WHERE team_event_id = ?').run(eventId),
       getSubEvents: async (eventId) => sqliteDb.prepare('SELECT * FROM tournament_sub_events WHERE team_event_id = ? ORDER BY start_date, start_time, sort_order').all(eventId),
       getSubEvent: async (id) => sqliteDb.prepare('SELECT * FROM tournament_sub_events WHERE id = ?').get(id) || null,
       addSubEvent: async (s) => {
@@ -1983,6 +1985,7 @@ module.exports = {
   addDrill: (...args) => impl.addDrill(...args),
   updateDrill: (...args) => impl.updateDrill(...args),
   removeDrill: (...args) => impl.removeDrill(...args),
+  clearDrills: (...args) => impl.clearDrills(...args),
   getSubEvents: (...args) => impl.getSubEvents(...args),
   getSubEvent: (...args) => impl.getSubEvent(...args),
   addSubEvent: (...args) => impl.addSubEvent(...args),

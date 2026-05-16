@@ -1664,6 +1664,11 @@ app.post('/event/:id/drill/:drillId/delete', requireAdmin, async (req, res) => {
   res.redirect('/event/' + req.params.id);
 });
 
+app.post('/event/:id/drill/clear-all', requireAdmin, async (req, res) => {
+  await db.clearDrills(Number(req.params.id));
+  res.redirect('/event/' + req.params.id);
+});
+
 app.post('/event/:id/drill/parse-excel', requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) return res.json({ error: 'No file uploaded' });
   try {

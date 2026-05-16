@@ -214,6 +214,9 @@
           <% } %>
           <% if (isAdmin) { %>
           <a href="/event/<%= event.id %>/print" class="btn btn-secondary" style="display:inline-block;text-decoration:none;font-size:15px;padding:10px 24px;">&#128424; Print Practice Plan</a>
+          <form method="POST" action="/event/<%= event.id %>/drill/clear-all" onsubmit="return confirm('Remove ALL drills from this practice plan? This cannot be undone.')" style="margin:0;display:inline;">
+            <button type="submit" class="btn btn-secondary" style="font-size:15px;padding:10px 24px;color:#dc2626;border-color:#fecaca;">Reset Practice Plan</button>
+          </form>
           <% } %>
         </div>
         <%
