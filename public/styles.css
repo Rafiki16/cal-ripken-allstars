@@ -1400,114 +1400,144 @@ main { flex: 1; padding-bottom: 40px; }
   background: #fafafa;
 }
 
-/* Umpire Batting Order Card */
+/* Umpire Batting Order Card — MLB-style */
 .ump-card {
   max-width: 680px;
   margin: 0 auto;
   font-family: Arial, Helvetica, sans-serif;
   color: #000;
+  border: 2px solid #000;
 }
-.ump-header {
+.ump-hdr {
   text-align: center;
-  padding-bottom: 10px;
-  margin-bottom: 0;
-  border-bottom: 3px double #000;
+  padding: 10px 12px 8px;
+  border-bottom: 2px solid #000;
 }
-.ump-title {
-  font-size: 20px;
+.ump-hdr-title {
+  font-size: 18px;
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 3px;
-  margin-bottom: 6px;
 }
-.ump-team-info {
+.ump-hdr-team {
+  font-size: 16px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.ump-hdr-details {
+  font-size: 11px;
+  color: #444;
+  margin-top: 2px;
+}
+
+/* Main body: table + eligible sidebar */
+.ump-body {
   display: flex;
-  justify-content: center;
-  gap: 24px;
-  font-size: 12px;
-  flex-wrap: wrap;
 }
-.ump-team-info span { color: #666; }
-.ump-team-info strong { color: #000; }
-.ump-table {
-  width: 100%;
+.ump-tbl {
+  flex: 1;
   border-collapse: collapse;
 }
-.ump-table th,
-.ump-table td {
-  border: 1.5px solid #000;
-  padding: 7px 5px;
-  text-align: center;
-  font-size: 12px;
-}
-.ump-table th {
-  background: #e0e0e0;
+.ump-tbl th {
+  background: #e5e5e5;
   font-weight: 800;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1.5px solid #000;
+  padding: 4px 3px;
+  text-align: center;
+}
+.ump-tbl td {
+  border: 1px solid #000;
+  font-size: 12px;
+  text-align: center;
+}
+.ump-t-num {
+  width: 26px;
+  font-weight: 900;
+  font-size: 15px !important;
+  vertical-align: middle;
+  border-right: 1.5px solid #000 !important;
+}
+.ump-t-orig { min-width: 140px; }
+.ump-t-pos { width: 36px; }
+.ump-t-chg { width: 72px; }
+.ump-t-name {
+  text-align: left;
+  padding: 4px 6px;
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+  border-bottom: none !important;
+}
+.ump-t-sub {
+  text-align: left;
+  padding: 4px 6px;
+  height: 18px;
+  border-top: 1px dashed #999 !important;
+}
+.ump-t-box {
+  width: 36px;
+  height: 20px;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 2px;
+}
+.ump-row-top .ump-t-box { border-bottom: none !important; }
+.ump-row-bot .ump-t-box { border-top: 1px dashed #999 !important; height: 18px; }
+.ump-row-bot td { font-size: 11px; color: #666; }
+.ump-j { font-weight: 800; color: #333; margin-right: 2px; }
+
+/* Eligible sidebar */
+.ump-elig {
+  width: 170px;
+  border-left: 2px solid #000;
+  display: flex;
+  flex-direction: column;
+}
+.ump-elig-hdr {
+  background: #e5e5e5;
+  font-weight: 800;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+  padding: 4px 3px;
+  border-bottom: 1.5px solid #000;
+}
+.ump-elig-list {
+  flex: 1;
+  padding: 4px 6px;
+}
+.ump-elig-row {
+  font-size: 11px;
+  padding: 2px 0;
+  border-bottom: 1px solid #ddd;
+  white-space: nowrap;
+}
+.ump-elig-empty { color: #ccc; min-height: 18px; }
+.ump-elig-num { font-weight: 700; display: inline-block; width: 20px; }
+.ump-elig-pos { color: #666; font-size: 10px; }
+
+/* Footer */
+.ump-ft {
+  border-top: 2px solid #000;
+  padding: 10px 12px;
+}
+.ump-ft-sig {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 10px;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.ump-table .ump-num {
-  width: 28px;
-  font-weight: 900;
-  font-size: 15px;
-}
-.ump-table .ump-player {
-  text-align: left;
-  padding-left: 8px;
-  font-size: 13px;
-  min-width: 160px;
-}
-.ump-table .ump-jersey {
-  font-weight: 800;
-  color: #333;
-}
-.ump-table .ump-pos {
-  width: 38px;
-  font-weight: 700;
-}
-.ump-table .ump-inn {
-  width: 38px;
-  font-size: 11px;
-}
-.ump-table .ump-inn-head {
-  width: 38px;
-}
-.ump-table tr.ump-empty td {
-  height: 28px;
-}
-.ump-eligible {
-  border: 1.5px solid #000;
-  border-top: none;
-  padding: 8px 10px;
-}
-.ump-eligible-title {
-  font-weight: 900;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border-bottom: 1px solid #999;
-  padding-bottom: 4px;
-  margin-bottom: 6px;
-}
-.ump-eligible-players {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 20px;
-  font-size: 12px;
-}
-.ump-eligible-players div span { color: #666; font-size: 11px; }
-.ump-footer {
-  margin-top: 20px;
-  font-size: 12px;
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-}
-.ump-sig-line {
+.ump-ft-line {
   flex: 1;
   border-bottom: 1px solid #000;
-  padding-bottom: 2px;
+  min-height: 20px;
 }
 
 @media print {
@@ -1529,9 +1559,9 @@ main { flex: 1; padding-bottom: 40px; }
   #umpire-print { display: none; }
   body.print-umpire #umpire-print {
     display: block !important;
-    padding: 0.2in;
+    padding: 0.3in;
   }
-  body.print-umpire .ump-card { max-width: none; }
+  body.print-umpire .ump-card { max-width: none; border-width: 2px; }
 
   /* Blank lineup card page */
   body.print-blank > *:not(.blank-lineup-page) { display: none !important; }

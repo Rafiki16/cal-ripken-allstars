@@ -1350,6 +1350,7 @@
         let grid = []; // [{playerId, name, positions, cells: [null or {pos, status}]}]
         let battingNine = <%= (event.batting_all || 0) === 0 ? 'true' : 'false' %>;
         const eventDate = '<%= new Date(event.start_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %>';
+        const eventTime = '<%= event.start_time ? (function(){ var parts = event.start_time.split(":"); var hr = parseInt(parts[0]); return (hr % 12 || 12) + ":" + parts[1].slice(0,2) + " " + (hr >= 12 ? "PM" : "AM"); })() : "" %>';
         const eventTitle = '<%= event.title %>';
         const opponentName = '<%= event.opponent_name || "" %>';
 
@@ -1662,62 +1663,99 @@
           if (mode === 'umpire') {
             // Split players into starters (fielding inning 1) and subs (sitting inning 1)
             var starters = [];
-            var subs = [];
+            var eligible = [];
             grid.forEach(function(row, ri) {
               var c0 = row.cells[0];
               var pos = '';
               var isSitting = false;
               if (c0 && c0.status === 'field' && c0.pos) {
                 pos = POS_MAP[c0.pos] || String(c0.pos);
-              } else if (c0 && c0.status === 'sit') {
+              } else if (c0 && (c0.status === 'sit' || c0.status === 'sub_in')) {
+                isSitting = true;
+              } else if (!c0) {
                 isSitting = true;
               }
               var entry = { order: ri + 1, name: row.name, jersey: row.jersey, pos: pos, positions: row.positions };
-              if (isSitting) subs.push(entry);
+              if (isSitting) eligible.push(entry);
               else starters.push(entry);
             });
 
-            var html = '<div class="ump-card">';
-            html += '<div class="ump-header">';
-            html += '<div class="ump-title">Starting Lineup</div>';
-            html += '<div class="ump-team-info">';
-            html += '<div><span>Team:</span> <strong><%= teamName %></strong></div>';
-            html += '<div><span>Date:</span> <strong>' + eventDate + '</strong></div>';
-            if (opponentName) html += '<div><span>vs:</span> <strong>' + opponentName + '</strong></div>';
-            html += '</div></div>';
+            // Ensure 9 starter slots minimum
+            while (starters.length < 9) starters.push(null);
+            // Number eligible players
+            var eligNum = starters.filter(Boolean).length;
 
-            html += '<table class="ump-table"><thead><tr>';
-            html += '<th class="ump-num">#</th>';
-            html += '<th class="ump-player">Player</th>';
-            html += '<th class="ump-pos">Pos</th>';
+            var html = '<div class="ump-card">';
+
+            // Header
+            html += '<div class="ump-hdr">';
+            html += '<div class="ump-hdr-title">OFFICIAL BATTING ORDER</div>';
+            html += '<div class="ump-hdr-team"><%= teamName %></div>';
+            html += '<div class="ump-hdr-details">';
+            html += '<span>' + eventDate + '</span>';
+            if (eventTime) html += '<span> at ' + eventTime + '</span>';
+            if (opponentName) html += '<span> &mdash; vs ' + opponentName + '</span>';
+            html += '</div>';
+            html += '</div>';
+
+            // Main layout: table on left, eligible on right
+            html += '<div class="ump-body">';
+
+            // Left: main batting order table
+            html += '<table class="ump-tbl">';
+            html += '<thead><tr>';
+            html += '<th class="ump-t-num"></th>';
+            html += '<th class="ump-t-orig">ORIGINAL</th>';
+            html += '<th class="ump-t-pos">POS.</th>';
+            html += '<th class="ump-t-chg" colspan="2">CHANGE</th>';
             html += '</tr></thead><tbody>';
 
-            starters.forEach(function(p, idx) {
-              html += '<tr>';
-              html += '<td class="ump-num">' + (idx + 1) + '</td>';
-              html += '<td class="ump-player">';
-              html += (p.jersey ? '<span class="ump-jersey">#' + p.jersey + '</span> ' : '') + p.name;
+            for (var s = 0; s < starters.length; s++) {
+              var p = starters[s];
+              // Top row: starter info
+              html += '<tr class="ump-row-top">';
+              html += '<td class="ump-t-num" rowspan="2">' + (s + 1) + '</td>';
+              html += '<td class="ump-t-name">';
+              if (p) html += (p.jersey ? '<span class="ump-j">#' + p.jersey + '</span> ' : '') + p.name;
               html += '</td>';
-              html += '<td class="ump-pos">' + p.pos + '</td>';
+              html += '<td class="ump-t-box">' + (p ? p.pos : '') + '</td>';
+              html += '<td class="ump-t-box"></td>';
+              html += '<td class="ump-t-box"></td>';
               html += '</tr>';
-            });
+              // Bottom row: blank for defensive change / sub
+              html += '<tr class="ump-row-bot">';
+              html += '<td class="ump-t-sub"></td>';
+              html += '<td class="ump-t-box"></td>';
+              html += '<td class="ump-t-box"></td>';
+              html += '<td class="ump-t-box"></td>';
+              html += '</tr>';
+            }
             html += '</tbody></table>';
 
-            if (subs.length > 0) {
-              html += '<div class="ump-eligible">';
-              html += '<div class="ump-eligible-title">Available Subs</div>';
-              html += '<div class="ump-eligible-players">';
-              subs.forEach(function(s) {
-                html += '<div>';
-                html += (s.jersey ? '#' + s.jersey + ' ' : '') + s.name;
-                if (s.positions.length) html += ' <span>(' + s.positions.join(', ') + ')</span>';
-                html += '</div>';
-              });
-              html += '</div></div>';
+            // Right: Also Eligible sidebar
+            html += '<div class="ump-elig">';
+            html += '<div class="ump-elig-hdr">ALSO ELIGIBLE</div>';
+            html += '<div class="ump-elig-list">';
+            eligible.forEach(function(ep, idx) {
+              html += '<div class="ump-elig-row">';
+              html += '<span class="ump-elig-num">' + (eligNum + idx + 1) + '.</span> ';
+              html += (ep.jersey ? '#' + ep.jersey + ' ' : '') + ep.name;
+              if (ep.positions.length) html += ' <span class="ump-elig-pos">(' + ep.positions.join(', ') + ')</span>';
+              html += '</div>';
+            });
+            // Pad with empty numbered rows
+            for (var e = eligible.length; e < 6; e++) {
+              html += '<div class="ump-elig-row ump-elig-empty">';
+              html += '<span class="ump-elig-num">' + (eligNum + e + 1) + '.</span>';
+              html += '</div>';
             }
+            html += '</div></div>';
 
-            html += '<div class="ump-footer">';
-            html += '<div><span>Manager:</span> <span class="ump-sig-line">&nbsp;</span></div>';
+            html += '</div>'; // end ump-body
+
+            // Footer
+            html += '<div class="ump-ft">';
+            html += '<div class="ump-ft-sig"><span>MANAGER SIGNATURE:</span><span class="ump-ft-line"></span></div>';
             html += '</div>';
             html += '</div>';
 
