@@ -1783,11 +1783,18 @@
             html += '</div>';
             html += '</div>';
 
+            // Two copies side by side with cut line
+            var fullHtml = '<div class="ump-page">';
+            fullHtml += '<div class="ump-copy">' + html + '</div>';
+            fullHtml += '<div class="ump-cut"></div>';
+            fullHtml += '<div class="ump-copy">' + html + '</div>';
+            fullHtml += '</div>';
+
             var old = document.getElementById('umpire-print');
             if (old) old.remove();
             var div = document.createElement('div');
             div.id = 'umpire-print';
-            div.innerHTML = html;
+            div.innerHTML = fullHtml;
             document.body.appendChild(div);
             document.body.classList.add('print-umpire');
             setTimeout(function() {
