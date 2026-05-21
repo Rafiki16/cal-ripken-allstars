@@ -1660,13 +1660,26 @@
 
         window.printLineup = function(mode) {
           if (mode === 'umpire') {
-            var starters = battingNine ? grid.slice(0, 9) : grid;
-            var eligible = battingNine ? grid.slice(9) : [];
-            var numSlots = battingNine ? 9 : starters.length;
+            // Split players into starters (fielding inning 1) and subs (sitting inning 1)
+            var starters = [];
+            var subs = [];
+            grid.forEach(function(row, ri) {
+              var c0 = row.cells[0];
+              var pos = '';
+              var isSitting = false;
+              if (c0 && c0.status === 'field' && c0.pos) {
+                pos = POS_MAP[c0.pos] || String(c0.pos);
+              } else if (c0 && c0.status === 'sit') {
+                isSitting = true;
+              }
+              var entry = { order: ri + 1, name: row.name, jersey: row.jersey, pos: pos, positions: row.positions };
+              if (isSitting) subs.push(entry);
+              else starters.push(entry);
+            });
 
             var html = '<div class="ump-card">';
             html += '<div class="ump-header">';
-            html += '<div class="ump-title">Batting Order</div>';
+            html += '<div class="ump-title">Starting Lineup</div>';
             html += '<div class="ump-team-info">';
             html += '<div><span>Team:</span> <strong><%= teamName %></strong></div>';
             html += '<div><span>Date:</span> <strong>' + eventDate + '</strong></div>';
@@ -1677,44 +1690,27 @@
             html += '<th class="ump-num">#</th>';
             html += '<th class="ump-player">Player</th>';
             html += '<th class="ump-pos">Pos</th>';
-            for (var i = 1; i <= INNINGS; i++) html += '<th class="ump-inn-head">' + i + '</th>';
             html += '</tr></thead><tbody>';
 
-            for (var s = 0; s < numSlots; s++) {
-              var p = starters[s];
-              var startPos = '';
-              if (p) {
-                var c0 = p.cells[0];
-                if (c0 && c0.status === 'field' && c0.pos) startPos = POS_MAP[c0.pos] || c0.pos;
-              }
-              html += '<tr' + (!p ? ' class="ump-empty"' : '') + '>';
-              html += '<td class="ump-num">' + (s + 1) + '</td>';
+            starters.forEach(function(p, idx) {
+              html += '<tr>';
+              html += '<td class="ump-num">' + (idx + 1) + '</td>';
               html += '<td class="ump-player">';
-              if (p) html += (p.jersey ? '<span class="ump-jersey">#' + p.jersey + '</span> ' : '') + p.name;
+              html += (p.jersey ? '<span class="ump-jersey">#' + p.jersey + '</span> ' : '') + p.name;
               html += '</td>';
-              html += '<td class="ump-pos">' + startPos + '</td>';
-              for (var inn = 0; inn < INNINGS; inn++) {
-                var cv = '';
-                if (p) {
-                  var ci = p.cells[inn];
-                  if (ci && ci.status === 'field' && ci.pos) cv = POS_MAP[ci.pos] || ci.pos;
-                  else if (ci && ci.status === 'sit') cv = 'X';
-                  else if (ci && ci.status === 'sub_in') cv = 'SUB';
-                }
-                html += '<td class="ump-inn">' + cv + '</td>';
-              }
+              html += '<td class="ump-pos">' + p.pos + '</td>';
               html += '</tr>';
-            }
+            });
             html += '</tbody></table>';
 
-            if (battingNine && eligible.length > 0) {
+            if (subs.length > 0) {
               html += '<div class="ump-eligible">';
-              html += '<div class="ump-eligible-title">Also Eligible</div>';
+              html += '<div class="ump-eligible-title">Available Subs</div>';
               html += '<div class="ump-eligible-players">';
-              eligible.forEach(function(ep) {
+              subs.forEach(function(s) {
                 html += '<div>';
-                html += (ep.jersey ? '#' + ep.jersey + ' ' : '') + ep.name;
-                if (ep.positions.length) html += ' <span>(' + ep.positions.join(', ') + ')</span>';
+                html += (s.jersey ? '#' + s.jersey + ' ' : '') + s.name;
+                if (s.positions.length) html += ' <span>(' + s.positions.join(', ') + ')</span>';
                 html += '</div>';
               });
               html += '</div></div>';
