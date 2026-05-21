@@ -1378,6 +1378,15 @@ main { flex: 1; padding-bottom: 40px; }
 .lg-drag-over { outline: 2px solid var(--navy); outline-offset: -2px; background: #eef2ff; }
 .lg-cell-order { user-select: none; }
 
+/* "Need" row — unfilled positions per inning */
+.lg-need-row { border-top: 2px solid var(--gray-300); background: #f8fafc; }
+.lg-need-row td { border-bottom: none !important; }
+.lg-need-label { text-align: right !important; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--gray-400); padding-right: 8px !important; vertical-align: middle; }
+.lg-need-cell { font-size: 9px; line-height: 1.4; padding: 4px 2px !important; vertical-align: top; }
+.lg-need-pos { display: inline-block; background: #fef2f2; color: #dc2626; font-weight: 700; border-radius: 3px; padding: 1px 3px; margin: 1px; white-space: nowrap; font-size: 9px; }
+.lg-need-ok { color: #16a34a; font-weight: 800; font-size: 14px; }
+.lg-need-empty { color: var(--gray-300); font-size: 9px; font-weight: 600; }
+
 /* Also Eligible divider in lineup grid */
 .lg-eligible-divider td {
   text-align: center;

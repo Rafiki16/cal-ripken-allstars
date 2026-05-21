@@ -164,6 +164,24 @@ async function init() {
       }
     } catch (e) { /* best-effort */ }
 
+    // Catch any admin posts still showing email (posted between v1 migration and display_name fix)
+    try {
+      const m2 = await pool.query("SELECT 1 FROM migrations WHERE name = 'fix_admin_message_author_names_v2'");
+      if (m2.rowCount === 0) {
+        await pool.query(`
+          UPDATE team_messages
+          SET author_name = 'Coach Matt'
+          WHERE LOWER(author_name) LIKE '%@%' AND author_type = 'admin'
+        `);
+        await pool.query(`
+          UPDATE board_reactions
+          SET author_name = 'Coach Matt'
+          WHERE LOWER(author_name) LIKE '%@%'
+        `);
+        await pool.query("INSERT INTO migrations (name) VALUES ('fix_admin_message_author_names_v2')");
+      }
+    } catch (e) { /* best-effort */ }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS practice_drills (
         id SERIAL PRIMARY KEY,

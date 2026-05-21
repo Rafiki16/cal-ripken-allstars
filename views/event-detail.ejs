@@ -1505,6 +1505,44 @@
               body.appendChild(sep);
             }
           });
+          // Add "Need" row showing unfilled positions per inning
+          var needTr = document.createElement('tr');
+          needTr.className = 'lg-need-row';
+          var needLabelTd = document.createElement('td');
+          needLabelTd.colSpan = 2;
+          needLabelTd.className = 'lg-need-label';
+          needLabelTd.textContent = 'Need';
+          needTr.appendChild(needLabelTd);
+
+          for (var inn = 0; inn < INNINGS; inn++) {
+            var filledPositions = new Set();
+            grid.forEach(function(row) {
+              var cell = row.cells[inn];
+              if (cell && cell.status === 'field' && cell.pos) {
+                filledPositions.add(cell.pos);
+              }
+            });
+            var needTd = document.createElement('td');
+            needTd.className = 'lg-need-cell';
+            var missing = [];
+            for (var p = 1; p <= 9; p++) {
+              if (!filledPositions.has(p)) missing.push(POS_MAP[p]);
+            }
+            if (missing.length === 0) {
+              needTd.innerHTML = '<span class="lg-need-ok">&#10003;</span>';
+            } else if (missing.length === 9) {
+              needTd.innerHTML = '<span class="lg-need-empty">All</span>';
+            } else {
+              needTd.innerHTML = missing.map(function(m) { return '<span class="lg-need-pos">' + m + '</span>'; }).join(' ');
+            }
+            needTr.appendChild(needTd);
+          }
+          // Empty sit column
+          var needSitTd = document.createElement('td');
+          needSitTd.className = 'lg-need-cell';
+          needTr.appendChild(needSitTd);
+          body.appendChild(needTr);
+
           validateGrid();
         }
 
