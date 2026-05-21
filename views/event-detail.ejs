@@ -1718,11 +1718,19 @@
 
             // Left: main batting order table
             html += '<table class="ump-tbl">';
+            html += '<colgroup>';
+            html += '<col style="width:28px;">';   // #
+            html += '<col>';                        // Original (auto)
+            html += '<col style="width:38px;">';    // Pos
+            html += '<col>';                        // Change 1 (auto — write-in width)
+            html += '<col style="width:38px;">';    // Pos
+            html += '</colgroup>';
             html += '<thead><tr>';
             html += '<th class="ump-t-num"></th>';
-            html += '<th class="ump-t-orig">ORIGINAL</th>';
-            html += '<th class="ump-t-pos">POS.</th>';
-            html += '<th class="ump-t-chg" colspan="2">CHANGE</th>';
+            html += '<th class="ump-t-hd-orig">ORIGINAL</th>';
+            html += '<th class="ump-t-hd-pos">POS.</th>';
+            html += '<th class="ump-t-hd-chg">CHANGE</th>';
+            html += '<th class="ump-t-hd-pos">POS.</th>';
             html += '</tr></thead><tbody>';
 
             for (var s = 0; s < starters.length; s++) {
@@ -1733,16 +1741,16 @@
               html += '<td class="ump-t-name">';
               if (p) html += (p.jersey ? '<span class="ump-j">#' + p.jersey + '</span> ' : '') + p.name;
               html += '</td>';
-              html += '<td class="ump-t-box">' + (p ? p.pos : '') + '</td>';
-              html += '<td class="ump-t-box"></td>';
-              html += '<td class="ump-t-box"></td>';
+              html += '<td class="ump-t-posbox">' + (p ? p.pos : '') + '</td>';
+              html += '<td class="ump-t-writein"></td>';
+              html += '<td class="ump-t-posbox"></td>';
               html += '</tr>';
               // Bottom row: blank for defensive change / sub
               html += '<tr class="ump-row-bot">';
               html += '<td class="ump-t-sub"></td>';
-              html += '<td class="ump-t-box"></td>';
-              html += '<td class="ump-t-box"></td>';
-              html += '<td class="ump-t-box"></td>';
+              html += '<td class="ump-t-posbox"></td>';
+              html += '<td class="ump-t-writein"></td>';
+              html += '<td class="ump-t-posbox"></td>';
               html += '</tr>';
             }
             html += '</tbody></table>';
