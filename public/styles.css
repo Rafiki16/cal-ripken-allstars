@@ -1464,16 +1464,16 @@ main { flex: 1; padding-bottom: 40px; }
 .ump-t-pos { width: 36px; }
 .ump-t-chg { width: 72px; }
 .ump-t-name {
-  text-align: left;
-  padding: 4px 6px;
+  text-align: left !important;
+  padding: 5px 8px;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
   border-bottom: none !important;
 }
 .ump-t-sub {
-  text-align: left;
-  padding: 4px 6px;
+  text-align: left !important;
+  padding: 4px 8px;
   height: 18px;
   border-top: 1px dashed #999 !important;
 }
@@ -1518,7 +1518,9 @@ main { flex: 1; padding-bottom: 40px; }
 }
 .ump-elig-empty { color: #ccc; min-height: 18px; }
 .ump-elig-num { font-weight: 700; display: inline-block; width: 20px; }
-.ump-elig-pos { color: #666; font-size: 10px; }
+/* When batting all (no eligible sidebar) */
+.ump-no-elig .ump-tbl { width: 100%; }
+.ump-no-elig .ump-t-orig { min-width: 200px; }
 
 /* Footer */
 .ump-ft {

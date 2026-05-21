@@ -1661,31 +1661,46 @@
 
         window.printLineup = function(mode) {
           if (mode === 'umpire') {
-            // Split players into starters (fielding inning 1) and subs (sitting inning 1)
+            // When batting 9: starters = first 9 in order, eligible = everyone else
+            // When batting all: everyone is in the lineup, no eligible column
             var starters = [];
             var eligible = [];
-            grid.forEach(function(row, ri) {
-              var c0 = row.cells[0];
-              var pos = '';
-              var isSitting = false;
-              if (c0 && c0.status === 'field' && c0.pos) {
-                pos = POS_MAP[c0.pos] || String(c0.pos);
-              } else if (c0 && (c0.status === 'sit' || c0.status === 'sub_in')) {
-                isSitting = true;
-              } else if (!c0) {
-                isSitting = true;
-              }
-              var entry = { order: ri + 1, name: row.name, jersey: row.jersey, pos: pos, positions: row.positions };
-              if (isSitting) eligible.push(entry);
-              else starters.push(entry);
-            });
 
-            // Ensure 9 starter slots minimum
-            while (starters.length < 9) starters.push(null);
-            // Number eligible players
-            var eligNum = starters.filter(Boolean).length;
+            if (battingNine) {
+              // Batting 9: split into starters (fielding inning 1) and eligible (sitting)
+              grid.forEach(function(row, ri) {
+                var c0 = row.cells[0];
+                var pos = '';
+                var isSitting = false;
+                if (c0 && c0.status === 'field' && c0.pos) {
+                  pos = POS_MAP[c0.pos] || String(c0.pos);
+                } else if (c0 && (c0.status === 'sit' || c0.status === 'sub_in')) {
+                  isSitting = true;
+                } else if (!c0) {
+                  isSitting = true;
+                }
+                var entry = { name: row.name, jersey: row.jersey, pos: pos };
+                if (isSitting) eligible.push(entry);
+                else starters.push(entry);
+              });
+              // Ensure 9 starter slots
+              while (starters.length < 9) starters.push(null);
+            } else {
+              // Batting all: everyone is in the lineup
+              grid.forEach(function(row) {
+                var c0 = row.cells[0];
+                var pos = '';
+                if (c0 && c0.status === 'field' && c0.pos) {
+                  pos = POS_MAP[c0.pos] || String(c0.pos);
+                }
+                starters.push({ name: row.name, jersey: row.jersey, pos: pos });
+              });
+            }
 
-            var html = '<div class="ump-card">';
+            var showEligible = battingNine && eligible.length > 0;
+            var eligStartNum = starters.filter(Boolean).length;
+
+            var html = '<div class="ump-card' + (showEligible ? '' : ' ump-no-elig') + '">';
 
             // Header
             html += '<div class="ump-hdr">';
@@ -1698,7 +1713,7 @@
             html += '</div>';
             html += '</div>';
 
-            // Main layout: table on left, eligible on right
+            // Main layout: table on left, eligible sidebar on right (only if batting 9)
             html += '<div class="ump-body">';
 
             // Left: main batting order table
@@ -1732,24 +1747,25 @@
             }
             html += '</tbody></table>';
 
-            // Right: Also Eligible sidebar
-            html += '<div class="ump-elig">';
-            html += '<div class="ump-elig-hdr">ALSO ELIGIBLE</div>';
-            html += '<div class="ump-elig-list">';
-            eligible.forEach(function(ep, idx) {
-              html += '<div class="ump-elig-row">';
-              html += '<span class="ump-elig-num">' + (eligNum + idx + 1) + '.</span> ';
-              html += (ep.jersey ? '#' + ep.jersey + ' ' : '') + ep.name;
-              if (ep.positions.length) html += ' <span class="ump-elig-pos">(' + ep.positions.join(', ') + ')</span>';
-              html += '</div>';
-            });
-            // Pad with empty numbered rows
-            for (var e = eligible.length; e < 6; e++) {
-              html += '<div class="ump-elig-row ump-elig-empty">';
-              html += '<span class="ump-elig-num">' + (eligNum + e + 1) + '.</span>';
-              html += '</div>';
+            // Right: Also Eligible sidebar (only when batting 9)
+            if (showEligible) {
+              html += '<div class="ump-elig">';
+              html += '<div class="ump-elig-hdr">ALSO ELIGIBLE</div>';
+              html += '<div class="ump-elig-list">';
+              eligible.forEach(function(ep, idx) {
+                html += '<div class="ump-elig-row">';
+                html += '<span class="ump-elig-num">' + (eligStartNum + idx + 1) + '.</span> ';
+                html += (ep.jersey ? '#' + ep.jersey + ' ' : '') + ep.name;
+                html += '</div>';
+              });
+              // Pad with empty numbered rows
+              for (var e = eligible.length; e < 6; e++) {
+                html += '<div class="ump-elig-row ump-elig-empty">';
+                html += '<span class="ump-elig-num">' + (eligStartNum + e + 1) + '.</span>';
+                html += '</div>';
+              }
+              html += '</div></div>';
             }
-            html += '</div></div>';
 
             html += '</div>'; // end ump-body
 
