@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const ROSTER = [
   ['Miguel Cardenas',       'Major', 'DeVittori',                     11, 'Rosa Robledo',       '9419619200'],
@@ -163,6 +164,29 @@ async function init() {
         await pool.query("INSERT INTO migrations (name) VALUES ('fix_admin_message_author_names_v1')");
       }
     } catch (e) { /* best-effort */ }
+
+    // Every staff member is automatically a scorekeeper. Backfill any existing
+    // staff who don't yet have a score_keepers row (matched by phone). New
+    // staff get synced at add-time in server.js; this catches everyone who
+    // existed before that wiring was in place. Idempotent on re-run thanks to
+    // the migrations marker, but the underlying check is also self-skipping.
+    try {
+      const m = await pool.query("SELECT 1 FROM migrations WHERE name = 'staff_are_scorekeepers_v1'");
+      if (m.rowCount === 0) {
+        const { rows: staffRows } = await pool.query('SELECT name, phone, email FROM staff');
+        for (const s of staffRows) {
+          if (!s.phone) continue;
+          const existing = await pool.query('SELECT 1 FROM score_keepers WHERE phone = $1', [s.phone]);
+          if (existing.rowCount > 0) continue;
+          const token = crypto.randomBytes(24).toString('hex');
+          await pool.query(
+            'INSERT INTO score_keepers (name, phone, email, access_token) VALUES ($1,$2,$3,$4)',
+            [s.name, s.phone, s.email || null, token]
+          );
+        }
+        await pool.query("INSERT INTO migrations (name) VALUES ('staff_are_scorekeepers_v1')");
+      }
+    } catch (e) { console.error('staff_are_scorekeepers_v1 backfill failed:', e.message); }
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS practice_drills (
@@ -807,6 +831,21 @@ async function init() {
       },
       removeScoreKeeper: async (id) => pool.query('DELETE FROM score_keepers WHERE id = $1', [id]),
       getScoreKeeperByToken: async (token) => (await pool.query('SELECT * FROM score_keepers WHERE access_token = $1', [token])).rows[0] || null,
+      getScoreKeeperByPhone: async (phone) => (await pool.query('SELECT * FROM score_keepers WHERE phone = $1', [phone])).rows[0] || null,
+      removeScoreKeeperByPhone: async (phone) => pool.query('DELETE FROM score_keepers WHERE phone = $1', [phone]),
+      updateScoreKeeperContact: async (phone, name, email) => pool.query('UPDATE score_keepers SET name = $1, email = $2 WHERE phone = $3', [name, email || null, phone]),
+      // Staff are automatically scorekeepers. Returns { keeper, created } so the
+      // caller can decide whether to send the link to a brand-new scorekeeper.
+      ensureScoreKeeperForStaff: async (staff) => {
+        const existing = (await pool.query('SELECT * FROM score_keepers WHERE phone = $1', [staff.phone])).rows[0];
+        if (existing) return { keeper: existing, created: false };
+        const token = crypto.randomBytes(24).toString('hex');
+        const r = await pool.query(
+          'INSERT INTO score_keepers (name, phone, email, access_token) VALUES ($1,$2,$3,$4) RETURNING *',
+          [staff.name, staff.phone, staff.email || null, token]
+        );
+        return { keeper: r.rows[0], created: true };
+      },
 
       createLiveGame: async (g) => {
         const r = await pool.query(
@@ -1266,6 +1305,23 @@ async function init() {
         created_at TEXT DEFAULT (datetime('now'))
       )
     `);
+
+    // Backfill: every staff member is automatically a scorekeeper.
+    try {
+      sqliteDb.exec(`CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`);
+      const applied = sqliteDb.prepare("SELECT 1 FROM migrations WHERE name = 'staff_are_scorekeepers_v1'").get();
+      if (!applied) {
+        const staffRows = sqliteDb.prepare('SELECT name, phone, email FROM staff').all();
+        const ins = sqliteDb.prepare('INSERT INTO score_keepers (name, phone, email, access_token) VALUES (?,?,?,?)');
+        const exists = sqliteDb.prepare('SELECT 1 FROM score_keepers WHERE phone = ?');
+        for (const s of staffRows) {
+          if (!s.phone) continue;
+          if (exists.get(s.phone)) continue;
+          ins.run(s.name, s.phone, s.email || null, crypto.randomBytes(24).toString('hex'));
+        }
+        sqliteDb.prepare("INSERT INTO migrations (name) VALUES ('staff_are_scorekeepers_v1')").run();
+      }
+    } catch (e) { console.error('staff_are_scorekeepers_v1 backfill failed:', e.message); }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS live_games (
@@ -1745,6 +1801,17 @@ async function init() {
       },
       removeScoreKeeper: async (id) => sqliteDb.prepare('DELETE FROM score_keepers WHERE id = ?').run(id),
       getScoreKeeperByToken: async (token) => sqliteDb.prepare('SELECT * FROM score_keepers WHERE access_token = ?').get(token) || null,
+      getScoreKeeperByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM score_keepers WHERE phone = ?').get(phone) || null,
+      removeScoreKeeperByPhone: async (phone) => sqliteDb.prepare('DELETE FROM score_keepers WHERE phone = ?').run(phone),
+      updateScoreKeeperContact: async (phone, name, email) => sqliteDb.prepare('UPDATE score_keepers SET name = ?, email = ? WHERE phone = ?').run(name, email || null, phone),
+      ensureScoreKeeperForStaff: async (staff) => {
+        const existing = sqliteDb.prepare('SELECT * FROM score_keepers WHERE phone = ?').get(staff.phone);
+        if (existing) return { keeper: existing, created: false };
+        const token = crypto.randomBytes(24).toString('hex');
+        sqliteDb.prepare('INSERT INTO score_keepers (name, phone, email, access_token) VALUES (?,?,?,?)').run(staff.name, staff.phone, staff.email || null, token);
+        const keeper = sqliteDb.prepare('SELECT * FROM score_keepers WHERE phone = ?').get(staff.phone);
+        return { keeper, created: true };
+      },
 
       createLiveGame: async (g) => {
         const r = sqliteDb.prepare('INSERT INTO live_games (team_event_id, sub_event_id, home_away, opp_team_name, total_innings, status) VALUES (?,?,?,?,?,?)').run(g.team_event_id || null, g.sub_event_id || null, g.home_away, g.opp_team_name, g.total_innings || 6, 'setup');
@@ -2052,6 +2119,10 @@ module.exports = {
   addScoreKeeper: (...args) => impl.addScoreKeeper(...args),
   removeScoreKeeper: (...args) => impl.removeScoreKeeper(...args),
   getScoreKeeperByToken: (...args) => impl.getScoreKeeperByToken(...args),
+  getScoreKeeperByPhone: (...args) => impl.getScoreKeeperByPhone(...args),
+  removeScoreKeeperByPhone: (...args) => impl.removeScoreKeeperByPhone(...args),
+  updateScoreKeeperContact: (...args) => impl.updateScoreKeeperContact(...args),
+  ensureScoreKeeperForStaff: (...args) => impl.ensureScoreKeeperForStaff(...args),
   createLiveGame: (...args) => impl.createLiveGame(...args),
   getLiveGame: (...args) => impl.getLiveGame(...args),
   getLiveGameByEvent: (...args) => impl.getLiveGameByEvent(...args),

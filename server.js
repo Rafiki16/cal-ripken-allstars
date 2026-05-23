@@ -1324,7 +1324,9 @@ app.post('/admin/add-staff', requireAdmin, async (req, res) => {
   if (!name || !name.trim() || normalized.length !== 10) {
     return res.redirect('/admin?error=' + encodeURIComponent('Staff name and valid phone required.'));
   }
-  await db.addStaff({ name: name.trim(), role: (role || 'Coach').trim(), phone: normalized, email: (email || '').trim() || null });
+  const staffData = { name: name.trim(), role: (role || 'Coach').trim(), phone: normalized, email: (email || '').trim() || null };
+  await db.addStaff(staffData);
+  await grantScorekeeperToStaff(staffData);
   res.redirect('/admin?success=' + encodeURIComponent(`${name.trim()} added as staff`));
 });
 
@@ -1334,12 +1336,30 @@ app.post('/admin/edit-staff', requireAdmin, async (req, res) => {
   if (!name || !name.trim() || normalized.length !== 10) {
     return res.redirect('/admin?error=' + encodeURIComponent('Staff name and valid phone required.'));
   }
-  await db.updateStaff(Number(staff_id), { name: name.trim(), role: (role || 'Coach').trim(), phone: normalized, email: (email || '').trim() || null });
+  const id = Number(staff_id);
+  const prior = await db.getStaff(id);
+  const next = { name: name.trim(), role: (role || 'Coach').trim(), phone: normalized, email: (email || '').trim() || null };
+  await db.updateStaff(id, next);
+  // Keep scorekeeper directory in sync. If the staff phone changed, drop the
+  // old scorekeeper row so the link doesn't outlive its owner, then create a
+  // fresh one for the new phone.
+  if (prior && prior.phone && prior.phone !== next.phone) {
+    try { await db.removeScoreKeeperByPhone(prior.phone); } catch (e) { console.error('removeScoreKeeperByPhone failed:', e.message); }
+  }
+  await grantScorekeeperToStaff(next);
+  if (prior && prior.phone === next.phone) {
+    try { await db.updateScoreKeeperContact(next.phone, next.name, next.email); } catch (e) { console.error('updateScoreKeeperContact failed:', e.message); }
+  }
   res.redirect('/admin?success=' + encodeURIComponent(`${name.trim()} updated`));
 });
 
 app.post('/admin/remove-staff', requireAdmin, async (req, res) => {
-  await db.removeStaff(Number(req.body.staff_id));
+  const id = Number(req.body.staff_id);
+  const prior = await db.getStaff(id);
+  await db.removeStaff(id);
+  if (prior && prior.phone) {
+    try { await db.removeScoreKeeperByPhone(prior.phone); } catch (e) { console.error('removeScoreKeeperByPhone failed:', e.message); }
+  }
   res.redirect('/admin?success=Staff+member+removed');
 });
 
@@ -2057,6 +2077,39 @@ async function refreshScorerHeartbeat(req) {
   if (name) await db.updateGameState(gameId, { active_scorer_name: name, active_scorer_at: new Date().toISOString() });
 }
 
+async function sendScorekeeperWelcome({ name, phone, email, token }) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const link = `${baseUrl}/score/${token}`;
+  if (email && smtpTransport) {
+    try {
+      await smtpTransport.sendMail({
+        from: `"Cal Ripken All-Stars" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: 'Scorekeeper Access — Cal Ripken All-Stars',
+        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;"><div style="background:#1a2744;color:#fff;padding:24px;text-align:center;"><h1 style="margin:0;font-size:22px;">Cal Ripken All-Stars</h1><p style="margin:4px 0 0;color:#d4a843;">Live Scoring Access</p></div><div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;"><p>Hi ${name},</p><p>You've been added as a scorekeeper. Use this link to access the live scoring system whenever there's an active game:</p><p style="text-align:center;margin:24px 0;"><a href="${link}" style="background:#1a2744;color:#fff;padding:14px 36px;border-radius:6px;text-decoration:none;font-weight:bold;">Open Scoring</a></p><p style="font-size:13px;color:#6b7280;">Or copy: ${link}</p></div></div>`
+      });
+    } catch (e) { console.error('Scorekeeper email failed:', e.message); }
+  }
+  if (phone) {
+    try { await sendSMS(phone, `Cal Ripken All-Stars: You've been added as a scorekeeper. Access live scoring here: ${link}`); }
+    catch (e) { console.error('Scorekeeper SMS failed:', e.message); }
+  }
+  return link;
+}
+
+// Staff are automatically scorekeepers. Creates a score_keepers row if one
+// doesn't already exist for this phone, and sends the welcome link only when
+// a brand-new entry is created (so re-adds / edits don't spam).
+async function grantScorekeeperToStaff(staff) {
+  if (!staff || !staff.phone) return;
+  try {
+    const { keeper, created } = await db.ensureScoreKeeperForStaff(staff);
+    if (created) {
+      await sendScorekeeperWelcome({ name: staff.name, phone: staff.phone, email: staff.email, token: keeper.access_token });
+    }
+  } catch (e) { console.error('grantScorekeeperToStaff failed:', e.message); }
+}
+
 app.get('/admin/scorekeepers', requireAdmin, async (req, res) => {
   const keepers = await db.getAllScoreKeepers();
   res.json(keepers);
@@ -2201,7 +2254,9 @@ app.post('/admin/accounts/:id/make-staff', requireAdmin, async (req, res) => {
   if (!account) return res.json({ ok: false, error: 'Account not found.' });
   const existing = await db.getStaffByPhone(account.phone);
   if (existing) return res.json({ ok: false, error: 'Already a staff member.' });
-  await db.addStaff({ name: account.display_name, role: 'Parent', phone: account.phone, email: null });
+  const staffData = { name: account.display_name, role: 'Parent', phone: account.phone, email: null };
+  await db.addStaff(staffData);
+  await grantScorekeeperToStaff(staffData);
   res.json({ ok: true });
 });
 
