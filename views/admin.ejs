@@ -1139,7 +1139,7 @@
       if (!confirm('Make ' + name + ' a scorekeeper? They will receive a text with their scoring link.')) return;
       fetch('/admin/accounts/' + id + '/make-scorekeeper', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
         .then(r => r.json()).then(function(d) {
-          if (d.ok) { alert(name + ' is now a scorekeeper. Link sent via text.'); }
+          if (d.ok) { alert(name + ' is now a scorekeeper. Link sent via text.'); loadScoreKeepers(); }
           else alert(d.error);
         });
     }
