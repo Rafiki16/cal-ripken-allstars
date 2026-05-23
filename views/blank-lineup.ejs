@@ -8,71 +8,164 @@
   <link rel="stylesheet" href="/styles.css">
   <style>
     body { margin: 0; padding: 20px; font-family: Arial, Helvetica, sans-serif; }
-    .blank-controls { text-align: center; margin-bottom: 20px; }
-    .blank-controls button { margin: 0 6px; }
-    .blank-controls label { font-size: 13px; margin: 0 12px; cursor: pointer; }
-    .blank-card-wrap { max-width: 700px; margin: 0 auto; }
+    .blank-controls { text-align: center; margin-bottom: 20px; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    .blank-controls label { font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
     @media print {
       .blank-controls { display: none !important; }
-      @page { margin: 0.4in; }
+      @page { size: landscape; margin: 0.2in; }
     }
+    /* Blank card print layout */
+    .blank-page {
+      display: flex;
+      align-items: flex-start;
+      gap: 0;
+      width: 100%;
+    }
+    .blank-copy {
+      flex: 1;
+      padding: 0.15in;
+      overflow: hidden;
+    }
+    .blank-cut {
+      width: 0;
+      border-left: 1.5px dashed #999;
+      align-self: stretch;
+    }
+    /* Scale down to fit half page */
+    .blank-copy .ump-card { max-width: none; border-width: 1.5px; font-size: 11px; }
+    .blank-copy .ump-hdr { padding: 6px 8px 5px; }
+    .blank-copy .ump-hdr-title { font-size: 13px; letter-spacing: 2px; }
+    .blank-copy .ump-hdr-team { font-size: 12px; }
+    .blank-copy .ump-hdr-details { font-size: 9px; }
+    .blank-copy .ump-tbl th { font-size: 8px; padding: 3px 2px; }
+    .blank-copy .ump-tbl td { font-size: 10px; }
+    .blank-copy .ump-t-name { font-size: 11px; padding: 3px 6px; }
+    .blank-copy .ump-t-sub { padding: 2px 6px; height: 14px; }
+    .blank-copy .ump-t-posbox { font-size: 11px; }
+    .blank-copy .ump-t-num { font-size: 13px !important; }
+    .blank-copy .ump-elig-hdr { font-size: 8px; padding: 3px 2px; }
+    .blank-copy .ump-elig-row { font-size: 9px; padding: 1px 0; }
+    .blank-copy .ump-elig { width: 140px; }
+    .blank-copy .ump-ft { padding: 6px 8px; }
+    .blank-copy .ump-ft-sig { font-size: 8px; }
+    .blank-copy .ump-hdr-writein { border-bottom: 1px solid #000; min-width: 120px; display: inline-block; }
   </style>
 </head>
 <body>
   <div class="blank-controls no-print">
     <a href="/admin" class="btn btn-secondary" style="text-decoration:none;">&larr; Back to Admin</a>
     <button class="btn btn-confirm" onclick="window.print()">Print Cards</button>
-    <label><input type="number" id="card-count" value="2" min="1" max="10" style="width:50px;text-align:center;"> cards</label>
     <label><input type="checkbox" id="show-team" checked> Show team name</label>
+    <label><input type="checkbox" id="show-eligible" checked> Show eligible sidebar</label>
+    <label>Batting spots: <input type="number" id="slot-count" value="9" min="1" max="20" style="width:50px;text-align:center;"></label>
+    <label>Eligible rows: <input type="number" id="elig-count" value="6" min="1" max="12" style="width:50px;text-align:center;"></label>
   </div>
 
-  <div id="cards-container" class="blank-card-wrap"></div>
+  <div id="cards-container"></div>
 
   <script>
   function renderCards() {
-    var count = parseInt(document.getElementById('card-count').value) || 2;
     var showTeam = document.getElementById('show-team').checked;
-    var container = document.getElementById('cards-container');
-    var html = '';
-    for (var c = 0; c < count; c++) {
-      if (c > 0) html += '<div style="page-break-before:always;"></div>';
-      html += '<div class="ump-card" style="margin-bottom:40px;">';
-      html += '<div class="ump-header">';
-      html += '<div class="ump-title">Batting Order</div>';
-      html += '<div class="ump-team-info">';
-      html += '<div><span>Team:</span> <strong>' + (showTeam ? '<%= teamName %>' : '________________________') + '</strong></div>';
-      html += '<div><span>Date:</span> <strong>_______________</strong></div>';
-      html += '<div><span>vs:</span> <strong>________________________</strong></div>';
-      html += '</div></div>';
+    var showEligible = document.getElementById('show-eligible').checked;
+    var slots = parseInt(document.getElementById('slot-count').value) || 9;
+    var eligRows = parseInt(document.getElementById('elig-count').value) || 6;
+    var teamName = '<%= teamName %>';
 
-      html += '<table class="ump-table"><thead><tr>';
-      html += '<th class="ump-num">#</th>';
-      html += '<th class="ump-player">Player</th>';
-      html += '<th class="ump-pos">Pos</th>';
-      for (var i = 1; i <= 6; i++) html += '<th class="ump-inn-head">' + i + '</th>';
+    function buildCard() {
+      var html = '<div class="ump-card' + (showEligible ? '' : ' ump-no-elig') + '">';
+
+      // Header
+      html += '<div class="ump-hdr">';
+      html += '<div class="ump-hdr-title">OFFICIAL BATTING ORDER</div>';
+      if (showTeam) {
+        html += '<div class="ump-hdr-team">' + teamName + '</div>';
+      } else {
+        html += '<div class="ump-hdr-team">Team: <span class="ump-hdr-writein">&nbsp;</span></div>';
+      }
+      html += '<div class="ump-hdr-details">';
+      html += '<span>Date: <span class="ump-hdr-writein" style="min-width:100px;">&nbsp;</span></span>';
+      html += '<span style="margin-left:12px;">Time: <span class="ump-hdr-writein" style="min-width:60px;">&nbsp;</span></span>';
+      html += '<span style="margin-left:12px;">vs <span class="ump-hdr-writein" style="min-width:100px;">&nbsp;</span></span>';
+      html += '</div>';
+      html += '</div>';
+
+      // Body
+      html += '<div class="ump-body">';
+
+      // Table
+      html += '<table class="ump-tbl">';
+      html += '<colgroup>';
+      html += '<col style="width:28px;">';
+      html += '<col>';
+      html += '<col style="width:38px;">';
+      html += '<col>';
+      html += '<col style="width:38px;">';
+      html += '</colgroup>';
+      html += '<thead><tr>';
+      html += '<th class="ump-t-num"></th>';
+      html += '<th class="ump-t-hd-orig">ORIGINAL</th>';
+      html += '<th class="ump-t-hd-pos">POS.</th>';
+      html += '<th class="ump-t-hd-chg">CHANGE</th>';
+      html += '<th class="ump-t-hd-pos">POS.</th>';
       html += '</tr></thead><tbody>';
 
-      var slots = <%= rosterSize || 9 %>;
-      for (var s = 1; s <= slots; s++) {
-        html += '<tr class="ump-empty">';
-        html += '<td class="ump-num">' + s + '</td>';
-        html += '<td class="ump-player"></td>';
-        html += '<td class="ump-pos"></td>';
-        for (var inn = 0; inn < 6; inn++) html += '<td class="ump-inn"></td>';
+      for (var s = 0; s < slots; s++) {
+        // Top row
+        html += '<tr class="ump-row-top">';
+        html += '<td class="ump-t-num" rowspan="2">' + (s + 1) + '</td>';
+        html += '<td class="ump-t-name"></td>';
+        html += '<td class="ump-t-posbox"></td>';
+        html += '<td class="ump-t-writein"></td>';
+        html += '<td class="ump-t-posbox"></td>';
+        html += '</tr>';
+        // Bottom row
+        html += '<tr class="ump-row-bot">';
+        html += '<td class="ump-t-sub"></td>';
+        html += '<td class="ump-t-posbox"></td>';
+        html += '<td class="ump-t-writein"></td>';
+        html += '<td class="ump-t-posbox"></td>';
         html += '</tr>';
       }
       html += '</tbody></table>';
 
-      html += '<div class="ump-footer">';
-      html += '<div><span>Manager:</span> <span class="ump-sig-line">&nbsp;</span></div>';
+      // Eligible sidebar
+      if (showEligible) {
+        html += '<div class="ump-elig">';
+        html += '<div class="ump-elig-hdr">ALSO ELIGIBLE</div>';
+        html += '<div class="ump-elig-list">';
+        for (var e = 0; e < eligRows; e++) {
+          html += '<div class="ump-elig-row ump-elig-empty">';
+          html += '<span class="ump-elig-num">' + (slots + e + 1) + '.</span>';
+          html += '</div>';
+        }
+        html += '</div></div>';
+      }
+
+      html += '</div>'; // end ump-body
+
+      // Footer
+      html += '<div class="ump-ft">';
+      html += '<div class="ump-ft-sig"><span>MANAGER SIGNATURE:</span><span class="ump-ft-line"></span></div>';
       html += '</div>';
       html += '</div>';
+
+      return html;
     }
-    container.innerHTML = html;
+
+    var card = buildCard();
+    var fullHtml = '<div class="blank-page">';
+    fullHtml += '<div class="blank-copy">' + card + '</div>';
+    fullHtml += '<div class="blank-cut"></div>';
+    fullHtml += '<div class="blank-copy">' + card + '</div>';
+    fullHtml += '</div>';
+
+    document.getElementById('cards-container').innerHTML = fullHtml;
   }
 
-  document.getElementById('card-count').addEventListener('change', renderCards);
   document.getElementById('show-team').addEventListener('change', renderCards);
+  document.getElementById('show-eligible').addEventListener('change', renderCards);
+  document.getElementById('slot-count').addEventListener('change', renderCards);
+  document.getElementById('elig-count').addEventListener('change', renderCards);
   renderCards();
   </script>
 </body>
