@@ -1806,6 +1806,31 @@ app.post('/event/:id/lineup-grid', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// API: get past games with lineups for "copy from" feature
+app.get('/api/games-with-lineups', requireAdmin, async (req, res) => {
+  try {
+    const events = await db.getAllTeamEvents();
+    const games = events.filter(e => e.event_type === 'game');
+    const results = [];
+    for (const g of games) {
+      const grid = await db.getLineupGrid(g.id, null);
+      if (grid.length > 0) {
+        results.push({
+          id: g.id,
+          title: g.title,
+          start_date: g.start_date,
+          opponent_name: g.opponent_name || '',
+          grid: grid.map(r => ({ player_id: r.player_id, batting_order: r.batting_order, inning: r.inning, position_number: r.position_number, status: r.status }))
+        });
+      }
+    }
+    results.sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
+    res.json(results);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
 app.post('/event/:id/batting-nine', requireAdmin, async (req, res) => {
   const { batting_all } = req.body;
   await db.updateBattingAll(Number(req.params.id), !!batting_all);

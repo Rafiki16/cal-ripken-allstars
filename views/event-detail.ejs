@@ -1309,9 +1309,12 @@
           </label>
           <span class="lg-save-msg" id="lg-save-msg"></span>
         </div>
-        <div class="lg-add-player" id="lg-add-player">
-          <select id="lg-player-select" class="form-input">
+        <div class="lg-add-player" id="lg-add-player" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+          <select id="lg-player-select" class="form-input" style="flex:none; width:auto;">
             <option value="">+ Add player to lineup...</option>
+          </select>
+          <select id="lg-copy-from" class="form-input" style="flex:none; width:auto;">
+            <option value="">Copy lineup from previous game...</option>
           </select>
         </div>
         <% } %>
@@ -1821,6 +1824,66 @@
         };
 
         initGrid();
+
+        // Load past games for "Copy from" dropdown
+        var copySelect = document.getElementById('lg-copy-from');
+        if (copySelect) {
+          var pastGames = null;
+          fetch('/api/games-with-lineups').then(r => r.json()).then(function(games) {
+            pastGames = {};
+            games.forEach(function(g) {
+              if (g.id === <%= event.id %>) return; // skip current game
+              pastGames[g.id] = g.grid;
+              var d = g.start_date ? new Date(g.start_date + 'T12:00:00') : null;
+              var label = g.title;
+              if (g.opponent_name) label += ' vs ' + g.opponent_name;
+              if (d) label += ' (' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ')';
+              var opt = document.createElement('option');
+              opt.value = g.id;
+              opt.textContent = label;
+              copySelect.appendChild(opt);
+            });
+          });
+
+          copySelect.addEventListener('change', function() {
+            var gid = this.value;
+            if (!gid || !pastGames || !pastGames[gid]) return;
+            if (!confirm('Replace current lineup with the one from this game?')) { this.value = ''; return; }
+
+            var copied = pastGames[gid];
+            // Build new grid from copied data, matching player IDs to current allPlayers
+            var playerMap = {};
+            copied.forEach(function(entry) {
+              if (!playerMap[entry.player_id]) playerMap[entry.player_id] = { order: entry.batting_order, cells: {} };
+              playerMap[entry.player_id].cells[entry.inning] = { pos: entry.position_number, status: entry.status };
+            });
+
+            grid = [];
+            var usedIds = new Set();
+            var sorted = Object.entries(playerMap).sort(function(a, b) { return a[1].order - b[1].order; });
+            sorted.forEach(function(pair) {
+              var pid = Number(pair[0]);
+              var data = pair[1];
+              var p = allPlayers.find(function(x) { return x.id === pid; });
+              if (!p) return; // player no longer on roster
+              usedIds.add(p.id);
+              var cells = [];
+              for (var i = 1; i <= INNINGS; i++) {
+                var c = data.cells[i];
+                cells.push(c ? { pos: c.pos, status: c.status } : null);
+              }
+              grid.push({ playerId: p.id, name: p.name, jersey: p.jersey || '', positions: p.positions, cells: cells });
+            });
+
+            renderGrid();
+            updateAddSelect();
+            this.value = '';
+            var msgEl = document.getElementById('lg-save-msg');
+            msgEl.textContent = 'Lineup copied — click Save to keep it';
+            msgEl.style.color = '#d97706';
+            setTimeout(function() { msgEl.textContent = ''; }, 5000);
+          });
+        }
 
         var b9cb = document.getElementById('batting-nine-cb');
         if (b9cb) {
