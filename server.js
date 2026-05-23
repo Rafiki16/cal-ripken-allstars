@@ -492,6 +492,13 @@ app.get('/event/:id', requireLogin, async (req, res) => {
   const isAdmin = !!req.session.admin;
   const staffPhone = req.parentUser ? req.parentUser.phone : null;
   const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone)) : false);
+  // Scorekeeper = admin OR session has a valid scorekeeper token OR the
+  // logged-in parent's phone matches a score_keepers row (covers staff, who
+  // are auto-promoted to scorekeepers). scoreToken is passed to the template
+  // so non-admin scorekeepers' "Start Live Game" link carries their token.
+  const scoreCtx = await resolveScoreKeeper(req);
+  const isScoreKeeper = scoreCtx.isAdmin || !!scoreCtx.keeper;
+  const scoreToken = scoreCtx.token;
   let drills = [], subEvents = [], lineup = [], subLineups = {}, lineupGrid = [], subGrids = {};
   const staffList = await db.getAllStaff();
   if (event.event_type === 'practice') drills = await db.getDrills(event.id);
@@ -509,7 +516,7 @@ app.get('/event/:id', requireLogin, async (req, res) => {
     lineupGrid = await db.getLineupGrid(event.id, null);
   }
   const practiceTemplates = (event.event_type === 'practice' && isAdmin) ? (await db.getAllPrograms()).filter(p => p.program_type === 'practice_template') : [];
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null, practiceTemplates });
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, isScoreKeeper, scoreToken, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null, practiceTemplates });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -2050,6 +2057,35 @@ app.post('/messages/react', async (req, res) => {
 
 // --- Live Scoring System ---
 
+// Resolves the current request's scorekeeper identity from any of the three
+// auth sources: admin session, an explicit ?token= / session.scoreToken, or a
+// logged-in parent account whose phone matches a score_keepers row (which is
+// how staff get scoring access — staff are auto-promoted to scorekeepers).
+// Returns { isAdmin, token, keeper } with token populated whenever the user
+// has scorekeeper rights but isn't admin, so UI links can carry it forward.
+async function resolveScoreKeeper(req) {
+  if (req.session.admin) return { isAdmin: true, token: null, keeper: null };
+  const token = req.query.token || req.session.scoreToken;
+  if (token) {
+    const keeper = await db.getScoreKeeperByToken(token);
+    if (keeper) {
+      if (!req.session.scoreToken) req.session.scoreToken = token;
+      return { isAdmin: false, token, keeper };
+    }
+  }
+  if (req.parentUser && req.parentUser.phone) {
+    const keeper = await db.getScoreKeeperByPhone(req.parentUser.phone);
+    if (keeper) {
+      // Cache the token in session so subsequent score-route hits work
+      // without parentUser auth (the live scoring middleware only checks
+      // admin/token, not parent session).
+      req.session.scoreToken = keeper.access_token;
+      return { isAdmin: false, token: keeper.access_token, keeper };
+    }
+  }
+  return { isAdmin: false, token: null, keeper: null };
+}
+
 function requireScoreKeeper(req, res, next) {
   const token = req.query.token || req.session.scoreToken;
   if (token) {
@@ -2061,8 +2097,21 @@ function requireScoreKeeper(req, res, next) {
     req.isAdminScorer = true;
     return next();
   }
+  // Parent-account scorekeeper (e.g. staff): match by phone.
+  if (req.parentUser && req.parentUser.phone) {
+    return db.getScoreKeeperByPhone(req.parentUser.phone).then(keeper => {
+      if (!keeper) return res.status(401).send('Scoring access required. Use your scorekeeper link.');
+      req.scoreToken = keeper.access_token;
+      req.session.scoreToken = keeper.access_token;
+      return next();
+    }).catch(() => res.status(401).send('Scoring access required.'));
+  }
   return res.status(401).send('Scoring access required. Use your scorekeeper link.');
 }
+
+// Setup / create / start flows are admin-or-scorekeeper. Same identity rules
+// as requireScoreKeeper but a clearer name at the call site.
+const requireAdminOrScoreKeeper = requireScoreKeeper;
 
 async function refreshScorerHeartbeat(req) {
   const gameId = Number(req.params.id);
@@ -2317,7 +2366,7 @@ app.get('/score/:token', async (req, res) => {
   res.render('score-home', { keeper, games, token: req.params.token });
 });
 
-app.get('/game/setup/:eventId', requireAdmin, async (req, res) => {
+app.get('/game/setup/:eventId', requireAdminOrScoreKeeper, async (req, res) => {
   const eventId = Number(req.params.eventId);
   const subEventId = req.query.sub ? Number(req.query.sub) : null;
   const event = subEventId ? await db.getSubEvent(subEventId) : await db.getTeamEvent(eventId);
@@ -2331,7 +2380,7 @@ app.get('/game/setup/:eventId', requireAdmin, async (req, res) => {
   res.render('game-setup', { event, parentEvent, eventId, subEventId, players, grid, existingGame });
 });
 
-app.post('/game/create', requireAdmin, async (req, res) => {
+app.post('/game/create', requireAdminOrScoreKeeper, async (req, res) => {
   const { team_event_id, sub_event_id, home_away, opp_team_name, total_innings, roster, opponent } = req.body;
   const game = await db.createLiveGame({
     team_event_id: team_event_id ? Number(team_event_id) : null,
@@ -2358,7 +2407,7 @@ app.post('/game/create', requireAdmin, async (req, res) => {
   res.json({ ok: true, gameId: game.id });
 });
 
-app.post('/game/:id/start', requireAdmin, async (req, res) => {
+app.post('/game/:id/start', requireAdminOrScoreKeeper, async (req, res) => {
   const id = Number(req.params.id);
   const game = await db.getLiveGame(id);
   if (!game) return res.status(404).json({ error: 'Game not found' });
@@ -2367,7 +2416,7 @@ app.post('/game/:id/start', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/game/:id/end', requireAdmin, async (req, res) => {
+app.post('/game/:id/end', requireAdminOrScoreKeeper, async (req, res) => {
   const id = Number(req.params.id);
   const game = await db.getLiveGame(id);
   if (!game) return res.status(404).json({ error: 'Game not found' });

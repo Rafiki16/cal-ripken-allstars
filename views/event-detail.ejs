@@ -1235,6 +1235,11 @@
               </form>
             </div>
             <% } %>
+            <% if (se.sub_type === 'game' && isScoreKeeper && !isAdmin) { %>
+            <div style="margin-top:8px;">
+              <a href="/game/setup/<%= event.id %>?sub=<%= se.id %><%= scoreToken ? '&token=' + scoreToken : '' %>" class="btn btn-confirm" style="background:#16a34a; color:white; text-decoration:none; display:inline-block;">Score this Game</a>
+            </div>
+            <% } %>
           </div>
           <% }); %>
         </div>
@@ -1733,6 +1738,15 @@
         }
       })();
       </script>
+      <% } %>
+
+      <!-- ============ SCORE LIVE GAME (admin + scorekeeper, non-admin only) ============ -->
+      <% if (event.event_type === 'game' && isScoreKeeper && !isAdmin) { %>
+      <div class="ed-section">
+        <h3 class="ed-section-title">Live Scoring</h3>
+        <p style="font-size:13px; color:#6b7280; margin:0 0 12px;">Set up the lineup and innings, then start scoring live pitches.</p>
+        <a href="/game/setup/<%= event.id %><%= scoreToken ? '?token=' + scoreToken : '' %>" class="btn btn-confirm" style="background:#16a34a; color:white; text-decoration:none; display:inline-block;">Score this Game</a>
+      </div>
       <% } %>
 
       <!-- ============ RSVP ============ -->
