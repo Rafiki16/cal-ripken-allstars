@@ -2962,7 +2962,14 @@ app.get('/api/player-stats/:playerId', async (req, res) => {
     pitching.games = Object.keys(gameGroups).length;
   }
 
-  res.json({ player: { id: player.id, player_name: player.player_name, jersey_number: player.jersey_number }, batting, pitching });
+  // Include GameChanger imported stats if available
+  const gcBatting = (await db.getGcImportedStats('batting')).find(s => s.player_id === playerId);
+  const gcPitching = (await db.getGcImportedStats('pitching')).find(s => s.player_id === playerId);
+  const imported = {};
+  if (gcBatting) imported.batting = JSON.parse(gcBatting.stats_json || '{}');
+  if (gcPitching) imported.pitching = JSON.parse(gcPitching.stats_json || '{}');
+
+  res.json({ player: { id: player.id, player_name: player.player_name, jersey_number: player.jersey_number }, batting, pitching, imported });
 });
 
 app.get('/api/team-stats', async (req, res) => {
@@ -2998,7 +3005,132 @@ app.get('/api/team-stats', async (req, res) => {
       pitching.push({ player_id: p.id, player_name: p.player_name, jersey_number: p.jersey_number, totalPitches: pitchData.length, strikes, balls: pitchData.length - strikes, strikePercent: Math.round((strikes / pitchData.length) * 100), games: Object.keys(gameGroups).length });
     }
   }
-  res.json({ batting, pitching });
+
+  // Include GameChanger imported data
+  const gcBattingAll = await db.getGcImportedStats('batting');
+  const gcPitchingAll = await db.getGcImportedStats('pitching');
+  const gcBatting = {};
+  gcBattingAll.forEach(s => { if (s.player_id) gcBatting[s.player_id] = JSON.parse(s.stats_json || '{}'); });
+  const gcPitching = {};
+  gcPitchingAll.forEach(s => { if (s.player_id) gcPitching[s.player_id] = JSON.parse(s.stats_json || '{}'); });
+
+  res.json({ batting, pitching, gcBatting, gcPitching });
+});
+
+// ── GameChanger Import ──
+app.get('/admin/import-stats', requireAdmin, async (req, res) => {
+  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  const existing = await db.getAllGcStats();
+  res.render('import-stats', { players, existing, success: req.query.success || null, error: req.query.error || null });
+});
+
+app.post('/admin/import-stats', requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.redirect('/admin/import-stats?error=No+file+uploaded');
+    const statType = req.body.stat_type || 'batting';
+    const source = req.body.source || 'gamechanger';
+
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    if (!rows.length) return res.redirect('/admin/import-stats?error=File+is+empty');
+
+    const headers = Object.keys(rows[0]);
+    const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+
+    // Detect name columns — GameChanger uses # / Last / First or Player / #
+    const hasLast = headers.some(h => h.toLowerCase() === 'last');
+    const hasFirst = headers.some(h => h.toLowerCase() === 'first');
+    const hasPlayer = headers.some(h => h.toLowerCase() === 'player');
+    const hasNum = headers.some(h => h === '#' || h.toLowerCase() === 'number');
+
+    // Clear old data for this type+source before re-importing
+    await db.deleteGcStats(statType, source);
+
+    let imported = 0;
+    for (const row of rows) {
+      // Build player name from CSV
+      let gcName = '';
+      if (hasLast && hasFirst) {
+        const last = (row['Last'] || row['last'] || '').toString().trim();
+        const first = (row['First'] || row['first'] || '').toString().trim();
+        if (!last && !first) continue;
+        gcName = first + ' ' + last;
+      } else if (hasPlayer) {
+        gcName = (row['Player'] || row['player'] || '').toString().trim();
+        if (!gcName) continue;
+      } else {
+        // Try first text column
+        const firstKey = headers[0];
+        gcName = (row[firstKey] || '').toString().trim();
+        if (!gcName || /^[0-9.]+$/.test(gcName)) continue;
+      }
+
+      // Skip totals/summary rows
+      if (/^total/i.test(gcName) || /^team/i.test(gcName)) continue;
+
+      const gcNum = hasNum ? (row['#'] || row['Number'] || row['number'] || '').toString().trim() : '';
+
+      // Auto-match to our roster
+      let matchedPlayer = null;
+      const gcLower = gcName.toLowerCase().replace(/[^a-z]/g, '');
+      for (const p of players) {
+        const pLower = p.player_name.toLowerCase().replace(/[^a-z]/g, '');
+        // Match by full name
+        if (pLower === gcLower) { matchedPlayer = p; break; }
+        // Match by last name + jersey number
+        const gcParts = gcName.toLowerCase().split(/\s+/);
+        const pParts = p.player_name.toLowerCase().split(/\s+/);
+        if (gcParts.length && pParts.length && gcParts[gcParts.length - 1] === pParts[pParts.length - 1]) {
+          if (gcNum && p.jersey_number && gcNum === p.jersey_number.toString()) { matchedPlayer = p; break; }
+          if (!matchedPlayer) matchedPlayer = p; // tentative last name match
+        }
+      }
+
+      // Override match if admin mapped this player via form
+      const manualMap = req.body['map_' + imported];
+      if (manualMap) {
+        matchedPlayer = players.find(p => p.id === Number(manualMap)) || matchedPlayer;
+      }
+
+      // Build stats object from all numeric columns
+      const stats = {};
+      for (const h of headers) {
+        const key = h.toLowerCase().replace(/[^a-z0-9_]/g, '').replace(/^_+|_+$/g, '');
+        if (['last','first','player','name'].includes(key)) continue;
+        const val = row[h];
+        if (val === '' || val === null || val === undefined) continue;
+        const num = parseFloat(val);
+        stats[key] = isNaN(num) ? val.toString() : num;
+      }
+
+      await db.upsertGcStats(
+        matchedPlayer ? matchedPlayer.id : null,
+        gcName,
+        statType,
+        JSON.stringify(stats),
+        source
+      );
+      imported++;
+    }
+
+    res.redirect('/admin/import-stats?success=Imported+' + imported + '+' + statType + '+rows');
+  } catch (err) {
+    console.error('GC import error:', err);
+    res.redirect('/admin/import-stats?error=' + encodeURIComponent(err.message || 'Import failed'));
+  }
+});
+
+app.post('/admin/import-stats/clear', requireAdmin, async (req, res) => {
+  const statType = req.body.stat_type || 'batting';
+  const source = req.body.source || 'gamechanger';
+  await db.deleteGcStats(statType, source);
+  res.redirect('/admin/import-stats?success=Cleared+' + statType + '+imported+data');
+});
+
+app.get('/api/gc-stats', requireAdmin, async (req, res) => {
+  const stats = await db.getAllGcStats();
+  res.json(stats.map(s => ({ ...s, stats: JSON.parse(s.stats_json || '{}') })));
 });
 
 function getMonday(d) {

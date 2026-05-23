@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>Import Stats</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { margin:0; font-family:Arial,sans-serif; background:#f9fafb; }
+    .page-hdr { background:#1a2744; color:#fff; padding:16px 20px; }
+    .page-hdr h1 { margin:0; font-size:20px; }
+    .page-hdr p { margin:4px 0 0; font-size:13px; color:#94a3b8; }
+    .wrap { max-width:800px; margin:0 auto; padding:16px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:16px; }
+    .card h2 { margin:0 0 12px; font-size:16px; color:#1a2744; }
+    .card p { font-size:13px; color:#6b7280; margin:0 0 12px; }
+    .form-row { margin-bottom:12px; }
+    .form-row label { display:block; font-size:13px; font-weight:600; color:#374151; margin-bottom:4px; }
+    .form-row select, .form-row input[type="file"] { width:100%; padding:8px; border:1px solid #d1d5db; border-radius:6px; font-size:14px; }
+    .btn-import { background:#1a2744; color:#fff; border:none; padding:10px 24px; border-radius:6px; font-size:14px; font-weight:600; cursor:pointer; }
+    .btn-import:hover { background:#0f172a; }
+    .btn-danger { background:#dc2626; color:#fff; border:none; padding:6px 16px; border-radius:6px; font-size:12px; cursor:pointer; }
+    .btn-danger:hover { background:#b91c1c; }
+    .existing-tbl { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+    .existing-tbl th { background:#f3f4f6; padding:8px 6px; text-align:left; font-size:11px; text-transform:uppercase; color:#6b7280; border-bottom:2px solid #e5e7eb; }
+    .existing-tbl td { padding:6px; border-bottom:1px solid #f3f4f6; }
+    .existing-tbl .unmatched { color:#dc2626; font-style:italic; }
+    .existing-tbl .matched { color:#16a34a; }
+    .alert { padding:10px 14px; border-radius:6px; margin-bottom:12px; font-size:13px; }
+    .alert-success { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+    .alert-error { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
+    .help-section { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:16px; }
+    .help-section h3 { margin:0 0 8px; font-size:14px; color:#334155; }
+    .help-section ol { margin:0; padding-left:20px; font-size:13px; color:#475569; line-height:1.8; }
+    .stat-pills { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+    .stat-pill { font-size:11px; background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:10px; }
+    .back-link { color:#fff; text-decoration:none; font-size:13px; }
+    .tabs { display:flex; gap:8px; margin-bottom:12px; }
+    .tab-btn { padding:6px 14px; border:1px solid #d1d5db; background:#fff; border-radius:6px; font-size:13px; cursor:pointer; font-weight:600; color:#6b7280; }
+    .tab-btn.active { background:#1a2744; color:#fff; border-color:#1a2744; }
+  </style>
+</head>
+<body>
+  <div class="page-hdr">
+    <a href="/admin" class="back-link">&larr; Back to Admin</a>
+    <h1 style="margin-top:8px;">Import Stats</h1>
+    <p>Import batting or pitching stats from GameChanger or other sources</p>
+  </div>
+
+  <div class="wrap">
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+
+    <!-- How-to -->
+    <div class="help-section">
+      <h3>How to Export from GameChanger</h3>
+      <ol>
+        <li>Open GameChanger and go to your team</li>
+        <li>Tap <strong>Stats</strong> tab, then select <strong>Batting</strong> or <strong>Pitching</strong></li>
+        <li>Tap the <strong>share/export icon</strong> and choose <strong>Export to CSV</strong></li>
+        <li>Save the file and upload it below</li>
+      </ol>
+      <p style="font-size:12px;color:#64748b;margin-top:8px;">Supports CSV and Excel files. Players are auto-matched by name and jersey number.</p>
+    </div>
+
+    <!-- Upload form -->
+    <div class="card">
+      <h2>Upload Stats File</h2>
+      <form action="/admin/import-stats" method="POST" enctype="multipart/form-data">
+        <div class="form-row">
+          <label>Stat Type</label>
+          <select name="stat_type">
+            <option value="batting">Batting Stats</option>
+            <option value="pitching">Pitching Stats</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Source</label>
+          <select name="source">
+            <option value="gamechanger">GameChanger</option>
+            <option value="other">Other / Manual</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>CSV or Excel File</label>
+          <input type="file" name="file" accept=".csv,.xlsx,.xls" required>
+        </div>
+        <button type="submit" class="btn-import">Import Stats</button>
+      </form>
+    </div>
+
+    <!-- Existing imported data -->
+    <% const battingStats = existing.filter(e => e.stat_type === 'batting'); %>
+    <% const pitchingStats = existing.filter(e => e.stat_type === 'pitching'); %>
+
+    <% if (battingStats.length > 0) { %>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>Imported Batting (<%= battingStats.length %> players)</h2>
+        <form action="/admin/import-stats/clear" method="POST" style="display:inline;" onsubmit="return confirm('Clear all imported batting data?')">
+          <input type="hidden" name="stat_type" value="batting">
+          <button type="submit" class="btn-danger">Clear All</button>
+        </form>
+      </div>
+      <table class="existing-tbl">
+        <thead>
+          <tr><th>GC Name</th><th>Matched To</th><th>AB</th><th>H</th><th>AVG</th><th>RBI</th><th>HR</th><th>BB</th><th>SO</th></tr>
+        </thead>
+        <tbody>
+          <% battingStats.forEach(function(s) {
+            var st = JSON.parse(s.stats_json || '{}');
+          %>
+          <tr>
+            <td><%= s.gc_player_name %></td>
+            <td class="<%= s.player_id ? 'matched' : 'unmatched' %>">
+              <%= s.player_id ? (s.matched_name + (s.jersey_number ? ' #' + s.jersey_number : '')) : 'Not matched' %>
+            </td>
+            <td><%= st.ab || st.AB || '-' %></td>
+            <td><%= st.h || st.H || '-' %></td>
+            <td><%= st.avg || st.AVG || '-' %></td>
+            <td><%= st.rbi || st.RBI || '-' %></td>
+            <td><%= st.hr || st.HR || '-' %></td>
+            <td><%= st.bb || st.BB || '-' %></td>
+            <td><%= st.so || st.SO || st.k || '-' %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+
+    <% if (pitchingStats.length > 0) { %>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>Imported Pitching (<%= pitchingStats.length %> players)</h2>
+        <form action="/admin/import-stats/clear" method="POST" style="display:inline;" onsubmit="return confirm('Clear all imported pitching data?')">
+          <input type="hidden" name="stat_type" value="pitching">
+          <button type="submit" class="btn-danger">Clear All</button>
+        </form>
+      </div>
+      <table class="existing-tbl">
+        <thead>
+          <tr><th>GC Name</th><th>Matched To</th><th>IP</th><th>H</th><th>ER</th><th>BB</th><th>SO</th><th>ERA</th><th>#P</th></tr>
+        </thead>
+        <tbody>
+          <% pitchingStats.forEach(function(s) {
+            var st = JSON.parse(s.stats_json || '{}');
+          %>
+          <tr>
+            <td><%= s.gc_player_name %></td>
+            <td class="<%= s.player_id ? 'matched' : 'unmatched' %>">
+              <%= s.player_id ? (s.matched_name + (s.jersey_number ? ' #' + s.jersey_number : '')) : 'Not matched' %>
+            </td>
+            <td><%= st.ip || st.IP || '-' %></td>
+            <td><%= st.h || st.H || '-' %></td>
+            <td><%= st.er || st.ER || '-' %></td>
+            <td><%= st.bb || st.BB || '-' %></td>
+            <td><%= st.so || st.SO || st.k || '-' %></td>
+            <td><%= st.era || st.ERA || '-' %></td>
+            <td><%= st.p || st['#p'] || st.np || '-' %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+
+    <% if (!battingStats.length && !pitchingStats.length) { %>
+    <div class="card">
+      <p style="text-align:center;color:#6b7280;margin:0;">No imported stats yet. Upload a GameChanger CSV above to get started.</p>
+    </div>
+    <% } %>
+  </div>
+</body>
+</html>

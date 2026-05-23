@@ -620,6 +620,18 @@ async function init() {
       )
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS gc_imported_stats (
+        id SERIAL PRIMARY KEY,
+        player_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
+        gc_player_name TEXT NOT NULL,
+        stat_type TEXT NOT NULL DEFAULT 'batting',
+        stats_json TEXT NOT NULL DEFAULT '{}',
+        source TEXT NOT NULL DEFAULT 'gamechanger',
+        imported_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
@@ -1034,6 +1046,21 @@ async function init() {
       getAllQuizAttempts: async (quizId) => (await pool.query('SELECT qa.*, p.player_name FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id WHERE qa.quiz_id = $1 ORDER BY qa.completed_at DESC', [quizId])).rows,
       addQuizAttempt: async (a) => (await pool.query('INSERT INTO quiz_attempts (quiz_id, player_id, score, total, answers_json) VALUES ($1,$2,$3,$4,$5) RETURNING id', [a.quiz_id, a.player_id, a.score, a.total, a.answers_json || null])).rows[0],
       getQuizAttempt: async (id) => (await pool.query('SELECT qa.*, p.player_name, q.title as quiz_title, q.position as quiz_position FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = $1', [id])).rows[0] || null,
+
+      // GameChanger imports
+      getGcImportedStats: async (statType) => (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.stat_type = $1 ORDER BY gs.gc_player_name', [statType])).rows,
+      upsertGcStats: async (playerId, gcName, statType, statsJson, source) => {
+        if (playerId) {
+          const existing = (await pool.query('SELECT id FROM gc_imported_stats WHERE player_id = $1 AND stat_type = $2 AND source = $3', [playerId, statType, source])).rows[0];
+          if (existing) {
+            await pool.query('UPDATE gc_imported_stats SET stats_json = $1, gc_player_name = $2, imported_at = NOW() WHERE id = $3', [statsJson, gcName, existing.id]);
+            return;
+          }
+        }
+        await pool.query('INSERT INTO gc_imported_stats (player_id, gc_player_name, stat_type, stats_json, source) VALUES ($1,$2,$3,$4,$5)', [playerId, gcName, statType, statsJson, source]);
+      },
+      deleteGcStats: async (statType, source) => pool.query('DELETE FROM gc_imported_stats WHERE stat_type = $1 AND source = $2', [statType, source || 'gamechanger']),
+      getAllGcStats: async () => (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id ORDER BY gs.stat_type, gs.gc_player_name')).rows,
     };
   } else {
     const Database = require('better-sqlite3');
@@ -1552,6 +1579,18 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS gc_imported_stats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
+        gc_player_name TEXT NOT NULL,
+        stat_type TEXT NOT NULL DEFAULT 'batting',
+        stats_json TEXT NOT NULL DEFAULT '{}',
+        source TEXT NOT NULL DEFAULT 'gamechanger',
+        imported_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
       const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
@@ -1970,6 +2009,21 @@ async function init() {
       getAllQuizAttempts: async (quizId) => sqliteDb.prepare('SELECT qa.*, p.player_name FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id WHERE qa.quiz_id = ? ORDER BY qa.completed_at DESC').all(quizId),
       addQuizAttempt: async (a) => ({ id: sqliteDb.prepare('INSERT INTO quiz_attempts (quiz_id, player_id, score, total, answers_json) VALUES (?,?,?,?,?)').run(a.quiz_id, a.player_id, a.score, a.total, a.answers_json || null).lastInsertRowid }),
       getQuizAttempt: async (id) => sqliteDb.prepare('SELECT qa.*, p.player_name, q.title as quiz_title, q.position as quiz_position FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = ?').get(id) || null,
+
+      // GameChanger imports
+      getGcImportedStats: async (statType) => sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.stat_type = ? ORDER BY gs.gc_player_name').all(statType),
+      upsertGcStats: async (playerId, gcName, statType, statsJson, source) => {
+        if (playerId) {
+          const existing = sqliteDb.prepare('SELECT id FROM gc_imported_stats WHERE player_id = ? AND stat_type = ? AND source = ?').get(playerId, statType, source);
+          if (existing) {
+            sqliteDb.prepare('UPDATE gc_imported_stats SET stats_json = ?, gc_player_name = ?, imported_at = datetime(\'now\') WHERE id = ?').run(statsJson, gcName, existing.id);
+            return;
+          }
+        }
+        sqliteDb.prepare('INSERT INTO gc_imported_stats (player_id, gc_player_name, stat_type, stats_json, source) VALUES (?,?,?,?,?)').run(playerId, gcName, statType, statsJson, source);
+      },
+      deleteGcStats: async (statType, source) => sqliteDb.prepare('DELETE FROM gc_imported_stats WHERE stat_type = ? AND source = ?').run(statType, source || 'gamechanger'),
+      getAllGcStats: async () => sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id ORDER BY gs.stat_type, gs.gc_player_name').all(),
     };
   }
 }
@@ -2149,4 +2203,8 @@ module.exports = {
   getAllQuizAttempts: (...args) => impl.getAllQuizAttempts(...args),
   addQuizAttempt: (...args) => impl.addQuizAttempt(...args),
   getQuizAttempt: (...args) => impl.getQuizAttempt(...args),
+  getGcImportedStats: (...args) => impl.getGcImportedStats(...args),
+  upsertGcStats: (...args) => impl.upsertGcStats(...args),
+  deleteGcStats: (...args) => impl.deleteGcStats(...args),
+  getAllGcStats: (...args) => impl.getAllGcStats(...args),
 };

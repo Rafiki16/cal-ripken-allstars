@@ -74,6 +74,7 @@
         <div class="section-label" style="margin-top:16px;">Pitching</div>
         <div class="stat-grid" id="detail-pitching-grid"></div>
       </div>
+      <div id="detail-gc" style="display:none;margin-top:16px;padding-top:12px;border-top:1px dashed #bfdbfe;"></div>
     </div>
 
     <div id="tab-batting" class="tab-content active">
@@ -166,6 +167,31 @@
       } else {
         ps.style.display = 'none';
       }
+
+      // Show GameChanger imported stats if available
+      var gcDiv = document.getElementById('detail-gc');
+      if (d.imported && (d.imported.batting || d.imported.pitching)) {
+        var gh = '<h4 style="margin:0 0 8px;font-size:13px;color:#6b7280;">GameChanger Import</h4><div class="stat-grid">';
+        if (d.imported.batting) {
+          var gb = d.imported.batting;
+          gh += box(gb.avg || gb.AVG || '-', 'GC AVG') + box(gb.h || gb.H || 0, 'GC H') + box(gb.ab || gb.AB || 0, 'GC AB');
+          gh += box(gb.rbi || gb.RBI || 0, 'GC RBI') + box(gb.bb || gb.BB || 0, 'GC BB') + box(gb.so || gb.SO || gb.k || 0, 'GC K');
+          if (gb.obp || gb.OBP) gh += box(gb.obp || gb.OBP, 'OBP');
+          if (gb.slg || gb.SLG) gh += box(gb.slg || gb.SLG, 'SLG');
+          if (gb.ops || gb.OPS) gh += box(gb.ops || gb.OPS, 'OPS');
+        }
+        if (d.imported.pitching) {
+          var gp = d.imported.pitching;
+          gh += box(gp.ip || gp.IP || '-', 'GC IP') + box(gp.so || gp.SO || 0, 'GC SO') + box(gp.era || gp.ERA || '-', 'GC ERA');
+          if (gp.whip || gp.WHIP) gh += box(gp.whip || gp.WHIP, 'WHIP');
+        }
+        gh += '</div>';
+        gcDiv.innerHTML = gh;
+        gcDiv.style.display = '';
+      } else {
+        gcDiv.style.display = 'none';
+      }
+
       card.classList.add('visible');
       card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });

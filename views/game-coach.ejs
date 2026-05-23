@@ -2,205 +2,285 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <title>Coach Dashboard &middot; Cal Ripken All-Stars</title>
-  <link rel="stylesheet" href="/styles.css">
+  <title>Coach Dashboard</title>
   <style>
-    body { margin:0; font-family:Arial,sans-serif; background:#f9fafb; }
-    .dash-header { background:#1a2744; color:#fff; padding:16px 20px; }
-    .dash-header h1 { margin:0; font-size:20px; }
-    .dash-header .score-line { font-size:28px; font-weight:bold; color:#d4a843; margin-top:4px; }
-    .dash-header .game-info { font-size:13px; color:#94a3b8; }
-    .dash-nav { display:flex; background:#1e293b; }
-    .dash-nav button { flex:1; padding:10px; border:none; background:transparent; color:#94a3b8; font-size:13px; font-weight:bold; cursor:pointer; border-bottom:3px solid transparent; }
-    .dash-nav button.active { color:#d4a843; border-bottom-color:#d4a843; }
-    .dash-content { max-width:900px; margin:0 auto; padding:16px; }
-    .dash-card { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:16px; margin-bottom:16px; }
-    .dash-card h3 { margin:0 0 12px; color:#1a2744; font-size:16px; }
-    .stat-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .stat-table th { background:#f3f4f6; padding:8px 6px; text-align:left; font-size:11px; text-transform:uppercase; color:#6b7280; border-bottom:2px solid #e5e7eb; }
-    .stat-table td { padding:7px 6px; border-bottom:1px solid #f3f4f6; }
-    .stat-table tr:hover { background:#f9fafb; }
-    .pitch-meter { display:flex; align-items:center; gap:8px; }
-    .pitch-bar { flex:1; height:14px; background:#e5e7eb; border-radius:7px; overflow:hidden; }
-    .pitch-bar-fill { height:100%; border-radius:7px; transition:width 0.3s; }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; -webkit-text-size-adjust:100%; }
+
+    /* ── Scoreboard header ── */
+    .sb { background:#1a2744; padding:12px 16px; position:sticky; top:0; z-index:10; border-bottom:2px solid #d4a843; }
+    .sb-top { display:flex; justify-content:space-between; align-items:center; }
+    .sb-score { font-size:36px; font-weight:800; letter-spacing:2px; color:#fff; }
+    .sb-score .sep { color:#475569; margin:0 4px; }
+    .sb-inning { text-align:right; }
+    .sb-inning .half { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#94a3b8; }
+    .sb-inning .inn-num { font-size:22px; font-weight:700; color:#d4a843; }
+    .sb-detail { display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:12px; color:#94a3b8; }
+    .sb-outs { display:flex; gap:4px; align-items:center; }
+    .sb-dot { width:10px; height:10px; border-radius:50%; border:1.5px solid #475569; }
+    .sb-dot.on { background:#d4a843; border-color:#d4a843; }
+
+    /* ── Section cards ── */
+    .content { padding:8px; max-width:500px; margin:0 auto; }
+    .card { background:#1e293b; border-radius:10px; margin-bottom:8px; overflow:hidden; }
+    .card-hdr { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+    .card-hdr h2 { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#94a3b8; }
+    .card-hdr .badge { font-size:11px; background:#334155; color:#cbd5e1; padding:2px 8px; border-radius:10px; }
+    .card-body { padding:0 12px 12px; }
+
+    /* ── Linescore ── */
+    .ls-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -12px; padding:0 12px; }
+    .ls { width:100%; border-collapse:collapse; font-size:12px; text-align:center; white-space:nowrap; }
+    .ls th { padding:5px 6px; color:#64748b; font-weight:600; font-size:10px; border-bottom:1px solid #334155; }
+    .ls td { padding:5px 6px; border-bottom:1px solid #1a2744; }
+    .ls .team-name { text-align:left; font-weight:700; color:#e2e8f0; max-width:60px; overflow:hidden; text-overflow:ellipsis; }
+    .ls .r-col { font-weight:700; color:#d4a843; background:#1a2744; }
+    .ls .cur-inn { color:#d4a843; font-weight:700; }
+
+    /* ── Pitching ── */
+    .pitch-row { margin-bottom:14px; }
+    .pitch-row:last-child { margin-bottom:0; }
+    .pitch-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+    .pitch-name { font-size:14px; font-weight:700; color:#fff; }
+    .pitch-name .active-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e; margin-left:6px; vertical-align:middle; }
+    .pitch-ct { font-size:14px; font-weight:700; }
+    .pitch-ct.green { color:#22c55e; }
+    .pitch-ct.yellow { color:#eab308; }
+    .pitch-ct.red { color:#ef4444; }
+    .pitch-bar { height:8px; background:#334155; border-radius:4px; overflow:hidden; margin-bottom:4px; }
+    .pitch-bar-fill { height:100%; border-radius:4px; transition:width 0.4s ease; }
     .pitch-bar-fill.green { background:#22c55e; }
     .pitch-bar-fill.yellow { background:#eab308; }
     .pitch-bar-fill.red { background:#ef4444; }
-    .pitch-num { font-weight:bold; min-width:32px; text-align:right; }
-    .linescore { width:100%; border-collapse:collapse; text-align:center; font-size:13px; margin-bottom:12px; }
-    .linescore th, .linescore td { padding:6px 8px; border:1px solid #e5e7eb; min-width:28px; }
-    .linescore th { background:#1a2744; color:#fff; font-size:11px; }
-    .linescore .total { font-weight:bold; background:#f3f4f6; }
-    .error-list { font-size:13px; }
-    .error-list li { margin-bottom:4px; }
-    .stat-highlight { font-size:24px; font-weight:bold; color:#1a2744; }
-    .stat-small { font-size:11px; color:#6b7280; }
-    .pitcher-stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); gap:12px; margin-top:8px; }
-    .pitcher-stat-box { text-align:center; padding:8px; background:#f9fafb; border-radius:6px; }
-    .rest-info { font-size:12px; color:#6b7280; margin-top:4px; }
+    .pitch-meta { font-size:11px; color:#64748b; margin-bottom:6px; }
+    .pitch-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; }
+    .ps-box { text-align:center; background:#0f172a; border-radius:6px; padding:6px 2px; }
+    .ps-val { font-size:16px; font-weight:700; color:#fff; line-height:1.2; }
+    .ps-lbl { font-size:9px; color:#64748b; text-transform:uppercase; letter-spacing:0.3px; }
+
+    /* ── Batting lineup ── */
+    .bt { width:100%; border-collapse:collapse; font-size:12px; }
+    .bt th { padding:6px 4px; color:#64748b; font-weight:600; font-size:10px; text-transform:uppercase; border-bottom:1px solid #334155; text-align:center; }
+    .bt th:nth-child(2) { text-align:left; }
+    .bt td { padding:5px 4px; border-bottom:1px solid #1a2744; text-align:center; }
+    .bt td:nth-child(2) { text-align:left; font-weight:600; color:#fff; }
+    .bt .pos-cell { color:#94a3b8; }
+    .bt .has-hit { color:#22c55e; font-weight:700; }
+    .bt .has-k { color:#ef4444; }
+    .bt .has-bb { color:#3b82f6; }
+    .bt tr:active { background:#334155; }
+
+    /* ── Errors ── */
+    .err-row { display:flex; justify-content:space-between; font-size:12px; padding:4px 0; border-bottom:1px solid #1a2744; color:#f87171; }
+    .err-row:last-child { border:none; }
+
+    /* ── Footer ── */
+    .footer { text-align:center; padding:16px 12px 24px; font-size:12px; }
+    .footer a { color:#64748b; text-decoration:none; margin:0 10px; }
+    .footer a:active { color:#d4a843; }
+
+    /* ── No-data state ── */
+    .no-data { color:#475569; font-size:13px; padding:8px 0; text-align:center; }
   </style>
 </head>
 <body>
-  <div class="dash-header">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <div>
-        <h1>Coach Dashboard</h1>
-        <div class="game-info"><span id="half-text"></span> <span id="inning-text"></span> &middot; <span id="outs-text">0</span> out(s)</div>
+
+  <!-- Sticky scoreboard -->
+  <div class="sb">
+    <div class="sb-top">
+      <div class="sb-score">
+        <span id="us-score">0</span><span class="sep">-</span><span id="opp-score">0</span>
       </div>
-      <div class="score-line">
-        <span id="us-score">0</span> - <span id="opp-score">0</span>
+      <div class="sb-inning">
+        <div class="half" id="half-text">TOP</div>
+        <div class="inn-num" id="inning-text">1</div>
       </div>
     </div>
-    <div class="game-info" style="margin-top:4px;">vs <span id="opp-name"><%= game.opp_team_name %></span></div>
+    <div class="sb-detail">
+      <span>vs <span id="opp-name"><%= game.opp_team_name %></span></span>
+      <div class="sb-outs">
+        <span style="margin-right:4px;">Outs:</span>
+        <div class="sb-dot" id="out1"></div>
+        <div class="sb-dot" id="out2"></div>
+        <div class="sb-dot" id="out3"></div>
+      </div>
+    </div>
   </div>
 
-  <div class="dash-nav">
-    <button class="active" onclick="showTab('lineup')">Lineup</button>
-    <button onclick="showTab('pitching')">Pitching</button>
-    <button onclick="showTab('linescore')">Linescore</button>
-  </div>
+  <div class="content">
 
-  <div class="dash-content">
-    <div id="tab-lineup">
-      <div class="dash-card">
-        <h3>Batting Lineup</h3>
-        <table class="stat-table">
-          <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>AB</th><th>H</th><th>AVG</th><th>RBI</th><th>K</th><th>BB</th></tr></thead>
+    <!-- Linescore -->
+    <div class="card">
+      <div class="card-hdr"><h2>Linescore</h2></div>
+      <div class="card-body">
+        <div class="ls-wrap">
+          <table class="ls" id="linescore-table"></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pitching -->
+    <div class="card">
+      <div class="card-hdr">
+        <h2>Pitching</h2>
+        <span class="badge" id="pitch-badge">0 pitches</span>
+      </div>
+      <div class="card-body" id="pitcher-details">
+        <div class="no-data">No pitching data yet</div>
+      </div>
+    </div>
+
+    <!-- Batting -->
+    <div class="card">
+      <div class="card-hdr">
+        <h2>Batting</h2>
+        <span class="badge" id="hit-badge">0 H</span>
+      </div>
+      <div class="card-body" style="padding:0 0 4px;">
+        <table class="bt">
+          <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>AB</th><th>H</th><th>RBI</th><th>K</th><th>BB</th></tr></thead>
           <tbody id="batting-body"></tbody>
         </table>
       </div>
-      <div class="dash-card">
-        <h3>Defensive Errors</h3>
-        <ul class="error-list" id="error-list"><li style="color:#6b7280;">None yet</li></ul>
-      </div>
     </div>
 
-    <div id="tab-pitching" style="display:none;">
-      <div class="dash-card" id="pitcher-card">
-        <h3>Pitching</h3>
-        <div id="pitcher-details"></div>
-      </div>
+    <!-- Errors -->
+    <div class="card" id="error-card" style="display:none;">
+      <div class="card-hdr"><h2>Errors</h2><span class="badge" id="err-badge" style="background:#7f1d1d;color:#fca5a5;">0</span></div>
+      <div class="card-body" id="error-list"></div>
     </div>
 
-    <div id="tab-linescore" style="display:none;">
-      <div class="dash-card">
-        <h3>Linescore</h3>
-        <table class="linescore" id="linescore-table"></table>
-      </div>
-    </div>
   </div>
 
-  <div style="text-align:center;padding:16px;">
-    <a href="/game/<%= game.id %>/stream" style="color:#1a2744;margin-right:16px;">Live Stream</a>
-    <a href="/admin" style="color:#6b7280;">Back to Admin</a>
+  <div class="footer">
+    <a href="/game/<%= game.id %>/stream">Live Stream</a>
+    <a href="/admin">Back to Admin</a>
   </div>
 
   <script>
   var GAME_ID = <%= game.id %>;
-  var POS_MAP = {1:'P',2:'C',3:'1B',4:'2B',5:'3B',6:'SS',7:'LF',8:'CF',9:'RF',10:'EH'};
+  var POS = {1:'P',2:'C',3:'1B',4:'2B',5:'3B',6:'SS',7:'LF',8:'CF',9:'RF',10:'EH'};
 
-  function showTab(tab) {
-    document.querySelectorAll('.dash-nav button').forEach(function(b) { b.classList.remove('active'); });
-    event.target.classList.add('active');
-    document.getElementById('tab-lineup').style.display = tab === 'lineup' ? 'block' : 'none';
-    document.getElementById('tab-pitching').style.display = tab === 'pitching' ? 'block' : 'none';
-    document.getElementById('tab-linescore').style.display = tab === 'linescore' ? 'block' : 'none';
-  }
-
-  function pitchColor(count) {
-    if (count <= 50) return 'green';
-    if (count <= 70) return 'yellow';
-    return 'red';
-  }
-
-  function restDays(count) {
-    if (count <= 20) return '0 days rest';
-    if (count <= 35) return '1 day rest';
-    if (count <= 50) return '2 days rest';
-    if (count <= 65) return '3 days rest';
+  function pitchColor(c) { return c <= 50 ? 'green' : c <= 70 ? 'yellow' : 'red'; }
+  function restDays(c) {
+    if (c <= 20) return '0 days rest';
+    if (c <= 35) return '1 day rest';
+    if (c <= 50) return '2 days rest';
+    if (c <= 65) return '3 days rest';
     return '4 days rest';
   }
 
   function update() {
     fetch('/api/game/' + GAME_ID + '/dashboard?t=' + Date.now(), { cache: 'no-store' }).then(function(r) {
-      if (!r.ok) throw new Error('Dashboard API returned ' + r.status);
+      if (!r.ok) throw new Error('API ' + r.status);
       return r.json();
     }).then(function(d) {
       var g = d.game;
+
+      /* ── Scoreboard ── */
       document.getElementById('us-score').textContent = g.our_score;
       document.getElementById('opp-score').textContent = g.opp_score;
-      document.getElementById('half-text').textContent = g.current_half === 'top' ? 'Top' : 'Bot';
+      document.getElementById('half-text').textContent = g.current_half === 'top' ? 'TOP' : 'BOT';
       document.getElementById('inning-text').textContent = g.current_inning;
-      document.getElementById('outs-text').textContent = g.outs;
       document.getElementById('opp-name').textContent = g.opp_team_name;
+      var outs = g.outs || 0;
+      document.getElementById('out1').className = 'sb-dot' + (outs >= 1 ? ' on' : '');
+      document.getElementById('out2').className = 'sb-dot' + (outs >= 2 ? ' on' : '');
+      document.getElementById('out3').className = 'sb-dot' + (outs >= 3 ? ' on' : '');
 
-      var tbody = document.getElementById('batting-body');
-      var html = '';
-      d.roster.forEach(function(r, i) {
-        var bs = d.batterStats[r.player_id] || {};
-        html += '<tr><td>' + (i + 1) + '</td><td><strong>' + r.player_name + '</strong></td>';
-        html += '<td>' + (POS_MAP[r.current_position] || '-') + '</td>';
-        html += '<td>' + (bs.abs || 0) + '</td><td>' + (bs.hits || 0) + '</td>';
-        html += '<td>' + (bs.avg || '-') + '</td><td>' + (bs.rbis || 0) + '</td>';
-        html += '<td>' + (bs.ks || 0) + '</td><td>' + (bs.bbs || 0) + '</td></tr>';
-      });
-      tbody.innerHTML = html;
-
-      var errList = document.getElementById('error-list');
-      if (d.errors.length === 0) {
-        errList.innerHTML = '<li style="color:#6b7280;">None</li>';
-      } else {
-        errList.innerHTML = d.errors.map(function(e) {
-          var pName = d.roster.find(function(r) { return r.player_id === e.player_id; });
-          return '<li>Inning ' + e.inning + ': ' + (pName ? pName.player_name : 'Unknown') + ' (Pos ' + (POS_MAP[e.position] || e.position) + ')</li>';
-        }).join('');
+      /* ── Linescore ── */
+      var ti = g.total_innings || 6;
+      var ls = '<tr><th></th>';
+      for (var i = 1; i <= ti; i++) {
+        var isCur = (i === g.current_inning);
+        ls += '<th' + (isCur ? ' class="cur-inn"' : '') + '>' + i + '</th>';
       }
+      ls += '<th class="r-col">R</th></tr>';
+      ls += '<tr><td class="team-name">Us</td>';
+      for (var i = 1; i <= ti; i++) {
+        var v = d.inningScores.us[i];
+        var isCur = (i === g.current_inning);
+        ls += '<td' + (isCur ? ' class="cur-inn"' : '') + '>' + (v !== undefined ? v : '-') + '</td>';
+      }
+      ls += '<td class="r-col">' + g.our_score + '</td></tr>';
+      ls += '<tr><td class="team-name">' + g.opp_team_name.substring(0,8) + '</td>';
+      for (var i = 1; i <= ti; i++) {
+        var v = d.inningScores.opp[i];
+        var isCur = (i === g.current_inning);
+        ls += '<td' + (isCur ? ' class="cur-inn"' : '') + '>' + (v !== undefined ? v : '-') + '</td>';
+      }
+      ls += '<td class="r-col">' + g.opp_score + '</td></tr>';
+      document.getElementById('linescore-table').innerHTML = ls;
 
-      var pHtml = '';
+      /* ── Pitching ── */
+      var ph = '';
+      var totalPitches = 0;
       d.roster.forEach(function(r) {
         var pc = d.pitchCounts[r.player_id] || 0;
         if (pc === 0) return;
+        totalPitches += pc;
         var ps = d.pitcherStats[r.player_id] || {};
         var pct = Math.min(100, Math.round((pc / 85) * 100));
+        var col = pitchColor(pc);
         var isActive = g.current_pitcher_us === r.player_id;
-        pHtml += '<div style="margin-bottom:20px;' + (isActive ? 'border-left:4px solid #d4a843;padding-left:12px;' : '') + '">';
-        pHtml += '<strong>' + r.player_name + (isActive ? ' (Active)' : '') + '</strong>';
-        pHtml += '<div class="pitch-meter"><div class="pitch-bar"><div class="pitch-bar-fill ' + pitchColor(pc) + '" style="width:' + pct + '%"></div></div><span class="pitch-num">' + pc + '/85</span></div>';
-        pHtml += '<div class="rest-info">Requires: ' + restDays(pc) + '</div>';
-        pHtml += '<div class="pitcher-stats-grid">';
-        pHtml += '<div class="pitcher-stat-box"><div class="stat-highlight">' + (ps.strikePercent || 0) + '%</div><div class="stat-small">Strike %</div></div>';
-        pHtml += '<div class="pitcher-stat-box"><div class="stat-highlight">' + (ps.firstPitchStrikePercent || 0) + '%</div><div class="stat-small">1st Pitch K%</div></div>';
-        pHtml += '<div class="pitcher-stat-box"><div class="stat-highlight">' + (ps.bbHbp || 0) + '</div><div class="stat-small">BB+HBP</div></div>';
-        pHtml += '<div class="pitcher-stat-box"><div class="stat-highlight">' + (ps.twoStrikePutAway || 0) + '%</div><div class="stat-small">2-Strike Put Away</div></div>';
-        pHtml += '<div class="pitcher-stat-box"><div class="stat-highlight">' + (ps.gfRatio || '-') + '</div><div class="stat-small">G/F Ratio</div></div>';
-        pHtml += '<div class="pitcher-stat-box"><div class="stat-highlight">' + (ps.hardContactPercent || 0) + '%</div><div class="stat-small">Hard Contact</div></div>';
-        pHtml += '<div class="pitcher-stat-box"><div class="stat-highlight">' + (ps.stressPitches || 0) + '</div><div class="stat-small">Stress Pitches</div></div>';
-        pHtml += '<div class="pitcher-stat-box"><div class="stat-highlight">' + (ps.battersFaced || 0) + '</div><div class="stat-small">Batters Faced</div></div>';
-        pHtml += '</div></div>';
-      });
-      document.getElementById('pitcher-details').innerHTML = pHtml || '<p style="color:#6b7280;">No pitching data yet</p>';
 
-      var totalInnings = g.total_innings || 6;
-      var ls = '<tr><th></th>';
-      for (var i = 1; i <= totalInnings; i++) ls += '<th>' + i + '</th>';
-      ls += '<th class="total">R</th></tr>';
-      ls += '<tr><td style="font-weight:bold;text-align:left;">Us</td>';
-      var usTotal = 0;
-      for (var i = 1; i <= totalInnings; i++) {
-        var r = d.inningScores.us[i] || 0;
-        usTotal += r;
-        ls += '<td>' + (d.inningScores.us[i] !== undefined ? r : '-') + '</td>';
+        ph += '<div class="pitch-row">';
+        ph += '<div class="pitch-hdr"><span class="pitch-name">' + r.player_name + (isActive ? '<span class="active-dot"></span>' : '') + '</span>';
+        ph += '<span class="pitch-ct ' + col + '">' + pc + '/85</span></div>';
+        ph += '<div class="pitch-bar"><div class="pitch-bar-fill ' + col + '" style="width:' + pct + '%"></div></div>';
+        ph += '<div class="pitch-meta">' + restDays(pc) + ' &middot; ' + (ps.battersFaced || 0) + ' BF</div>';
+        ph += '<div class="pitch-stats">';
+        ph += '<div class="ps-box"><div class="ps-val">' + (ps.strikePercent || 0) + '%</div><div class="ps-lbl">Strike%</div></div>';
+        ph += '<div class="ps-box"><div class="ps-val">' + (ps.firstPitchStrikePercent || 0) + '%</div><div class="ps-lbl">FPS%</div></div>';
+        ph += '<div class="ps-box"><div class="ps-val">' + (ps.bbHbp || 0) + '</div><div class="ps-lbl">BB+HBP</div></div>';
+        ph += '<div class="ps-box"><div class="ps-val">' + (ps.twoStrikePutAway || 0) + '%</div><div class="ps-lbl">PutAway</div></div>';
+        ph += '</div>';
+        ph += '<div class="pitch-stats" style="margin-top:4px;">';
+        ph += '<div class="ps-box"><div class="ps-val">' + (ps.gfRatio || '-') + '</div><div class="ps-lbl">G/F</div></div>';
+        ph += '<div class="ps-box"><div class="ps-val">' + (ps.hardContactPercent || 0) + '%</div><div class="ps-lbl">Hard%</div></div>';
+        ph += '<div class="ps-box"><div class="ps-val">' + (ps.stressPitches || 0) + '</div><div class="ps-lbl">Stress</div></div>';
+        ph += '<div class="ps-box"><div class="ps-val">' + (ps.battersFaced || 0) + '</div><div class="ps-lbl">BF</div></div>';
+        ph += '</div>';
+        ph += '</div>';
+      });
+      document.getElementById('pitcher-details').innerHTML = ph || '<div class="no-data">No pitching data yet</div>';
+      document.getElementById('pitch-badge').textContent = totalPitches + ' pitches';
+
+      /* ── Batting ── */
+      var bh = '';
+      var totalHits = 0;
+      d.roster.forEach(function(r, i) {
+        var bs = d.batterStats[r.player_id] || {};
+        totalHits += (bs.hits || 0);
+        bh += '<tr>';
+        bh += '<td style="color:#64748b;">' + (i + 1) + '</td>';
+        bh += '<td>' + r.player_name + '</td>';
+        bh += '<td class="pos-cell">' + (POS[r.current_position] || '-') + '</td>';
+        bh += '<td>' + (bs.abs || 0) + '</td>';
+        bh += '<td' + (bs.hits > 0 ? ' class="has-hit"' : '') + '>' + (bs.hits || 0) + '</td>';
+        bh += '<td>' + (bs.rbis || 0) + '</td>';
+        bh += '<td' + (bs.ks > 0 ? ' class="has-k"' : '') + '>' + (bs.ks || 0) + '</td>';
+        bh += '<td' + (bs.bbs > 0 ? ' class="has-bb"' : '') + '>' + (bs.bbs || 0) + '</td>';
+        bh += '</tr>';
+      });
+      document.getElementById('batting-body').innerHTML = bh;
+      document.getElementById('hit-badge').textContent = totalHits + ' H';
+
+      /* ── Errors ── */
+      var errCard = document.getElementById('error-card');
+      if (d.errors.length > 0) {
+        errCard.style.display = '';
+        document.getElementById('err-badge').textContent = d.errors.length;
+        document.getElementById('error-list').innerHTML = d.errors.map(function(e) {
+          var p = d.roster.find(function(r) { return r.player_id === e.player_id; });
+          return '<div class="err-row"><span>' + (p ? p.player_name : 'Unknown') + ' (' + (POS[e.position] || e.position) + ')</span><span>Inn ' + e.inning + '</span></div>';
+        }).join('');
+      } else {
+        errCard.style.display = 'none';
       }
-      ls += '<td class="total">' + g.our_score + '</td></tr>';
-      ls += '<tr><td style="font-weight:bold;text-align:left;">' + g.opp_team_name + '</td>';
-      for (var i = 1; i <= totalInnings; i++) {
-        var r = d.inningScores.opp[i] || 0;
-        ls += '<td>' + (d.inningScores.opp[i] !== undefined ? r : '-') + '</td>';
-      }
-      ls += '<td class="total">' + g.opp_score + '</td></tr>';
-      document.getElementById('linescore-table').innerHTML = ls;
+
     }).catch(function(err) {
       console.error('Dashboard update error:', err);
     });
