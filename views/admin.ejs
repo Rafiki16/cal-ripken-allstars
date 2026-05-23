@@ -1013,6 +1013,7 @@
           html += '<a href="/admin/impersonate/' + a.id + '" style="background:#7c3aed;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;text-decoration:none;margin-right:4px;" title="View site as this user">View As</a>';
           if (a.role === 'parent') {
             html += '<button onclick="makeStaff(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#059669;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Add as staff member">Staff</button>';
+            html += '<button onclick="makeScorekeeper(' + a.id + ',\'' + a.display_name.replace(/'/g, "\\'") + '\')" style="background:#d97706;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Make scorekeeper">Scorer</button>';
           }
           if (a.role === 'fan') {
             html += '<button onclick="setRole(' + a.id + ',\'parent\')" style="background:#059669;color:#fff;border:none;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;margin-right:4px;" title="Upgrade to parent">Upgrade</button>';
@@ -1130,6 +1131,15 @@
       fetch('/admin/accounts/' + id + '/make-staff', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
         .then(r => r.json()).then(function(d) {
           if (d.ok) { alert(name + ' added to staff.'); location.reload(); }
+          else alert(d.error);
+        });
+    }
+
+    function makeScorekeeper(id, name) {
+      if (!confirm('Make ' + name + ' a scorekeeper? They will receive a text with their scoring link.')) return;
+      fetch('/admin/accounts/' + id + '/make-scorekeeper', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+        .then(r => r.json()).then(function(d) {
+          if (d.ok) { alert(name + ' is now a scorekeeper. Link sent via text.'); }
           else alert(d.error);
         });
     }

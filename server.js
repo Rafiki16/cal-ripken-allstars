@@ -2230,6 +2230,26 @@ app.post('/admin/accounts/:id/make-staff', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/admin/accounts/:id/make-scorekeeper', requireAdmin, async (req, res) => {
+  const account = await db.getParentAccountById(Number(req.params.id));
+  if (!account) return res.json({ ok: false, error: 'Account not found.' });
+  // Check if already a scorekeeper (by phone)
+  const existing = await db.getAllScoreKeepers();
+  if (existing.some(k => k.phone === account.phone)) {
+    return res.json({ ok: false, error: account.display_name + ' is already a scorekeeper.' });
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  await db.addScoreKeeper({ name: account.display_name, phone: account.phone || null, email: null, access_token: token });
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const link = `${baseUrl}/score/${token}`;
+  // Send SMS with scorekeeper link
+  if (account.phone) {
+    const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+    await sendSMS(account.phone, `${teamName}: You've been added as a scorekeeper! Access live scoring here: ${link}`);
+  }
+  res.json({ ok: true, link });
+});
+
 app.post('/admin/accounts/:id/approve', requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   const account = await db.getParentAccountById(id);
