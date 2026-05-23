@@ -124,7 +124,10 @@
   }
 
   function update() {
-    fetch('/api/game/' + GAME_ID + '/dashboard').then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/api/game/' + GAME_ID + '/dashboard?t=' + Date.now(), { cache: 'no-store' }).then(function(r) {
+      if (!r.ok) throw new Error('Dashboard API returned ' + r.status);
+      return r.json();
+    }).then(function(d) {
       var g = d.game;
       document.getElementById('us-score').textContent = g.our_score;
       document.getElementById('opp-score').textContent = g.opp_score;
@@ -198,11 +201,13 @@
       }
       ls += '<td class="total">' + g.opp_score + '</td></tr>';
       document.getElementById('linescore-table').innerHTML = ls;
+    }).catch(function(err) {
+      console.error('Dashboard update error:', err);
     });
   }
 
   update();
-  setInterval(update, 4000);
+  setInterval(update, 3000);
   </script>
 </body>
 </html>

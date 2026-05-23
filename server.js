@@ -2353,7 +2353,14 @@ app.post('/game/:id/start', requireAdmin, async (req, res) => {
   const game = await db.getLiveGame(id);
   if (!game) return res.status(404).json({ error: 'Game not found' });
   const half = game.home_away === 'home' ? 'top' : 'bot';
-  await db.updateGameState(id, { status: 'active', current_half: half, started_at: new Date().toISOString() });
+  const updates = { status: 'active', current_half: half, started_at: new Date().toISOString() };
+  // Auto-set starting pitcher from roster if not already set
+  if (!game.current_pitcher_us) {
+    const roster = await db.getGameRoster(id);
+    const pitcher = roster.find(r => r.current_position === 1);
+    if (pitcher) updates.current_pitcher_us = pitcher.player_id;
+  }
+  await db.updateGameState(id, updates);
   res.json({ ok: true });
 });
 
@@ -2398,6 +2405,7 @@ app.get('/game/:id/score', requireScoreKeeper, async (req, res) => {
 });
 
 app.get('/api/game/:id/state', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const game = await db.getLiveGame(Number(req.params.id));
   if (!game) return res.status(404).json({ error: 'Game not found' });
   const roster = await db.getGameRoster(game.id);
@@ -2801,80 +2809,89 @@ app.get('/game/:id/coach', async (req, res) => {
 });
 
 app.get('/api/game/:id/dashboard', async (req, res) => {
-  const gameId = Number(req.params.id);
-  const game = await db.getLiveGame(gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
-  const roster = await db.getGameRoster(gameId);
-  const oppRoster = await db.getOppRoster(gameId);
-  const atBats = await db.getAtBatsForGame(gameId);
-  const allPitches = await db.getPitchesForGame(gameId);
+  res.set('Cache-Control', 'no-store');
+  try {
+    const gameId = Number(req.params.id);
+    const game = await db.getLiveGame(gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+    const roster = await db.getGameRoster(gameId);
+    const oppRoster = await db.getOppRoster(gameId);
+    const atBats = await db.getAtBatsForGame(gameId);
+    const allPitches = await db.getPitchesForGame(gameId);
 
-  const pitchCounts = {};
-  const pitcherStats = {};
-  for (const r of roster) {
-    const cnt = await db.getPitchCountForPitcher(gameId, r.player_id);
-    pitchCounts[r.player_id] = cnt;
-    if (cnt > 0) {
-      const pp = allPitches.filter(p => p.pitcher_player_id === r.player_id);
-      const strikes = pp.filter(p => ['called_strike','swinging_strike','foul','foul_tip','in_play'].includes(p.result)).length;
-      const battersFaced = [...new Set(pp.map(p => p.at_bat_id))].length;
-      const firstPitchStrikes = pp.filter(p => p.pitch_number_in_ab === 1 && p.result !== 'ball').length;
-      const abIds = [...new Set(pp.map(p => p.at_bat_id))];
-      const relevantABs = atBats.filter(ab => abIds.includes(ab.id) && ab.result);
-      const walks = relevantABs.filter(ab => ab.result === 'BB' || ab.result === 'HBP').length;
-      const ks = relevantABs.filter(ab => ab.result === 'K').length;
-      const twoStrikeABs = relevantABs.filter(ab => ab.strikes_in_count >= 2 || ab.result === 'K').length;
-      const hitInPlay = relevantABs.filter(ab => ab.hit_type);
-      const groundBalls = hitInPlay.filter(ab => ab.hit_type === 'ground').length;
-      const flyBalls = hitInPlay.filter(ab => ab.hit_type === 'fly').length;
-      const hardContact = hitInPlay.filter(ab => ab.is_hard_contact).length;
-      const stressPitches = pp.filter(p => {
-        const ro = p.runners_on ? JSON.parse(p.runners_on) : {};
-        const rISP = ro.second || ro.third;
-        return rISP || p.pitch_number_in_ab >= 5;
-      }).length;
+    const pitchCounts = {};
+    const pitcherStats = {};
+    for (const r of roster) {
+      const cnt = await db.getPitchCountForPitcher(gameId, r.player_id);
+      pitchCounts[r.player_id] = cnt;
+      if (cnt > 0) {
+        const pp = allPitches.filter(p => p.pitcher_player_id === r.player_id);
+        const strikes = pp.filter(p => ['called_strike','swinging_strike','foul','foul_tip','in_play'].includes(p.result)).length;
+        const battersFaced = [...new Set(pp.map(p => p.at_bat_id))].length;
+        const firstPitchStrikes = pp.filter(p => p.pitch_number_in_ab === 1 && p.result !== 'ball').length;
+        const abIds = [...new Set(pp.map(p => p.at_bat_id))];
+        const relevantABs = atBats.filter(ab => abIds.includes(ab.id) && ab.result);
+        const walks = relevantABs.filter(ab => ab.result === 'BB' || ab.result === 'HBP').length;
+        const ks = relevantABs.filter(ab => ab.result === 'K').length;
+        const twoStrikeABs = relevantABs.filter(ab => ab.strikes_in_count >= 2 || ab.result === 'K').length;
+        const hitInPlay = relevantABs.filter(ab => ab.hit_type);
+        const groundBalls = hitInPlay.filter(ab => ab.hit_type === 'ground').length;
+        const flyBalls = hitInPlay.filter(ab => ab.hit_type === 'fly').length;
+        const hardContact = hitInPlay.filter(ab => ab.is_hard_contact).length;
+        let stressPitches = 0;
+        for (const p of pp) {
+          try {
+            const ro = p.runners_on ? JSON.parse(p.runners_on) : {};
+            const rISP = ro.second || ro.third;
+            if (rISP || p.pitch_number_in_ab >= 5) stressPitches++;
+          } catch (e) { /* skip malformed runners_on */ }
+        }
 
-      pitcherStats[r.player_id] = {
-        pitchCount: cnt,
-        strikePercent: cnt > 0 ? Math.round((strikes / cnt) * 100) : 0,
-        firstPitchStrikePercent: battersFaced > 0 ? Math.round((firstPitchStrikes / battersFaced) * 100) : 0,
-        bbHbp: walks,
-        twoStrikePutAway: twoStrikeABs > 0 ? Math.round((ks / twoStrikeABs) * 100) : 0,
-        gfRatio: flyBalls > 0 ? (groundBalls / flyBalls).toFixed(1) : groundBalls > 0 ? 'INF' : '-',
-        hardContactPercent: hitInPlay.length > 0 ? Math.round((hardContact / hitInPlay.length) * 100) : 0,
-        stressPitches,
-        battersFaced,
-      };
+        pitcherStats[r.player_id] = {
+          pitchCount: cnt,
+          strikePercent: cnt > 0 ? Math.round((strikes / cnt) * 100) : 0,
+          firstPitchStrikePercent: battersFaced > 0 ? Math.round((firstPitchStrikes / battersFaced) * 100) : 0,
+          bbHbp: walks,
+          twoStrikePutAway: twoStrikeABs > 0 ? Math.round((ks / twoStrikeABs) * 100) : 0,
+          gfRatio: flyBalls > 0 ? (groundBalls / flyBalls).toFixed(1) : groundBalls > 0 ? 'INF' : '-',
+          hardContactPercent: hitInPlay.length > 0 ? Math.round((hardContact / hitInPlay.length) * 100) : 0,
+          stressPitches,
+          battersFaced,
+        };
+      }
     }
-  }
 
-  const batterStats = {};
-  for (const r of roster) {
-    const playerABs = atBats.filter(ab => ab.batter_player_id === r.player_id && ab.result);
-    const hits = playerABs.filter(ab => ['1B','2B','3B','HR'].includes(ab.result)).length;
-    const abs = playerABs.filter(ab => !['BB','HBP','SAC'].includes(ab.result)).length;
-    const rbis = playerABs.reduce((s, ab) => s + (ab.rbi_count || 0), 0);
-    const ks = playerABs.filter(ab => ab.result === 'K').length;
-    const bbs = playerABs.filter(ab => ab.result === 'BB' || ab.result === 'HBP').length;
-    batterStats[r.player_id] = { hits, abs, rbis, ks, bbs, avg: abs > 0 ? (hits / abs).toFixed(3) : '-' };
-  }
-
-  const errors = atBats.filter(ab => ab.error_player_id).map(ab => ({
-    player_id: ab.error_player_id,
-    position: ab.error_position,
-    inning: ab.inning,
-  }));
-
-  const inningScores = { us: {}, opp: {} };
-  for (const ab of atBats) {
-    if (ab.result && ab.rbi_count > 0) {
-      const key = ab.is_our_team ? 'us' : 'opp';
-      if (!inningScores[key][ab.inning]) inningScores[key][ab.inning] = 0;
-      inningScores[key][ab.inning] += ab.rbi_count;
+    const batterStats = {};
+    for (const r of roster) {
+      const playerABs = atBats.filter(ab => ab.batter_player_id === r.player_id && ab.result);
+      const hits = playerABs.filter(ab => ['1B','2B','3B','HR'].includes(ab.result)).length;
+      const abs = playerABs.filter(ab => !['BB','HBP','SAC'].includes(ab.result)).length;
+      const rbis = playerABs.reduce((s, ab) => s + (ab.rbi_count || 0), 0);
+      const ks = playerABs.filter(ab => ab.result === 'K').length;
+      const bbs = playerABs.filter(ab => ab.result === 'BB' || ab.result === 'HBP').length;
+      batterStats[r.player_id] = { hits, abs, rbis, ks, bbs, avg: abs > 0 ? (hits / abs).toFixed(3) : '-' };
     }
-  }
 
-  res.json({ game, roster, oppRoster, batterStats, pitcherStats, pitchCounts, errors, inningScores });
+    const errors = atBats.filter(ab => ab.error_player_id).map(ab => ({
+      player_id: ab.error_player_id,
+      position: ab.error_position,
+      inning: ab.inning,
+    }));
+
+    const inningScores = { us: {}, opp: {} };
+    for (const ab of atBats) {
+      if (ab.result && ab.rbi_count > 0) {
+        const key = ab.is_our_team ? 'us' : 'opp';
+        if (!inningScores[key][ab.inning]) inningScores[key][ab.inning] = 0;
+        inningScores[key][ab.inning] += ab.rbi_count;
+      }
+    }
+
+    res.json({ game, roster, oppRoster, batterStats, pitcherStats, pitchCounts, errors, inningScores });
+  } catch (err) {
+    console.error('Dashboard API error:', err);
+    res.status(500).json({ error: 'Dashboard error' });
+  }
 });
 
 app.get('/game/:id/stream', async (req, res) => {
