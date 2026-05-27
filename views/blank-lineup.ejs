@@ -47,10 +47,16 @@
     // Body
     html += '<div class="ump-body">';
 
-    // Table
+    // Table — columns: # | Uni# | Name | Pos | Name | Pos | Name | Pos
+    // Cols 1 & 2 match width (batting order, uniform number).
+    // Cols 3, 5, 7 are equal-width player-name slots (auto-balanced by flex).
+    // Cols 4, 6, 8 keep the existing Pos box width.
     html += '<table class="ump-tbl">';
     html += '<colgroup>';
     html += '<col style="width:28px;">';
+    html += '<col style="width:28px;">';
+    html += '<col>';
+    html += '<col style="width:38px;">';
     html += '<col>';
     html += '<col style="width:38px;">';
     html += '<col>';
@@ -58,22 +64,30 @@
     html += '</colgroup>';
     html += '<thead><tr>';
     html += '<th class="ump-t-num"></th>';
+    html += '<th class="ump-t-uni">UNI</th>';
     html += '<th class="ump-t-hd-orig">ORIGINAL</th>';
     html += '<th class="ump-t-hd-pos">POS.</th>';
-    html += '<th class="ump-t-hd-chg">CHANGE</th>';
+    html += '<th class="ump-t-hd-chg">SUB 1</th>';
+    html += '<th class="ump-t-hd-pos">POS.</th>';
+    html += '<th class="ump-t-hd-chg">SUB 2</th>';
     html += '<th class="ump-t-hd-pos">POS.</th>';
     html += '</tr></thead><tbody>';
 
     for (var s = 0; s < slots; s++) {
       html += '<tr class="ump-row-top">';
       html += '<td class="ump-t-num" rowspan="2">' + (s + 1) + '</td>';
+      html += '<td class="ump-t-uni" rowspan="2"></td>';
       html += '<td class="ump-t-name"></td>';
+      html += '<td class="ump-t-posbox"></td>';
+      html += '<td class="ump-t-writein"></td>';
       html += '<td class="ump-t-posbox"></td>';
       html += '<td class="ump-t-writein"></td>';
       html += '<td class="ump-t-posbox"></td>';
       html += '</tr>';
       html += '<tr class="ump-row-bot">';
       html += '<td class="ump-t-sub"></td>';
+      html += '<td class="ump-t-posbox"></td>';
+      html += '<td class="ump-t-writein"></td>';
       html += '<td class="ump-t-posbox"></td>';
       html += '<td class="ump-t-writein"></td>';
       html += '<td class="ump-t-posbox"></td>';

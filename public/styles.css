@@ -1460,6 +1460,15 @@ main { flex: 1; padding-bottom: 40px; }
   vertical-align: middle;
   border-right: 1.5px solid #000 !important;
 }
+/* Uniform number column — same width as batting-order # column, blank for write-in. */
+.ump-t-uni {
+  width: 26px;
+  font-weight: 700;
+  font-size: 13px;
+  vertical-align: middle;
+  text-align: center;
+  border-right: 1.5px solid #000 !important;
+}
 .ump-t-hd-orig, .ump-t-hd-chg { text-align: center; }
 .ump-t-hd-pos { text-align: center; width: 38px; }
 .ump-t-name {
