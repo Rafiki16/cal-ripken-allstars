@@ -1443,11 +1443,16 @@ main { flex: 1; padding-bottom: 40px; }
   font-weight: 900;
   font-size: 15px;
 }
+.ump-table .ump-uniform {
+  width: 28px;
+  font-weight: 700;
+  font-size: 13px;
+}
 .ump-table .ump-player {
   text-align: left;
   padding-left: 8px;
   font-size: 13px;
-  min-width: 480px;
+  min-width: 160px;
 }
 .ump-table .ump-jersey {
   font-weight: 800;

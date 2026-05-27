@@ -47,18 +47,26 @@
 
       html += '<table class="ump-table"><thead><tr>';
       html += '<th class="ump-num">#</th>';
+      html += '<th class="ump-uniform">Uni</th>';
       html += '<th class="ump-player">Player</th>';
       html += '<th class="ump-pos">Pos</th>';
-      for (var i = 1; i <= 6; i++) html += '<th class="ump-inn-head">' + i + '</th>';
+      html += '<th class="ump-player">Player</th>';
+      html += '<th class="ump-pos">Pos</th>';
+      html += '<th class="ump-player">Player</th>';
+      html += '<th class="ump-pos">Pos</th>';
       html += '</tr></thead><tbody>';
 
       var slots = <%= rosterSize || 9 %>;
       for (var s = 1; s <= slots; s++) {
         html += '<tr class="ump-empty">';
         html += '<td class="ump-num">' + s + '</td>';
+        html += '<td class="ump-uniform"></td>';
         html += '<td class="ump-player"></td>';
         html += '<td class="ump-pos"></td>';
-        for (var inn = 0; inn < 6; inn++) html += '<td class="ump-inn"></td>';
+        html += '<td class="ump-player"></td>';
+        html += '<td class="ump-pos"></td>';
+        html += '<td class="ump-player"></td>';
+        html += '<td class="ump-pos"></td>';
         html += '</tr>';
       }
       html += '</tbody></table>';
