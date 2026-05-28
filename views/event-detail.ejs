@@ -1304,8 +1304,10 @@
           <button type="button" class="btn" onclick="printLineup('full')" style="margin-left:8px;">Print Full Lineup</button>
           <button type="button" class="btn" onclick="clearEntireLineup()" style="margin-left:8px; background:#dc2626; color:white;">Clear All</button>
           <a href="/game/setup/<%= event.id %><%= typeof subEventId !== 'undefined' && subEventId ? '?sub=' + subEventId : '' %>" class="btn" style="margin-left:8px; background:#16a34a; color:white; text-decoration:none;">Start Live Game</a>
-          <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer; margin-left:12px;">
-            <input type="checkbox" id="batting-nine-cb" <%= (event.batting_all || 0) === 0 ? 'checked' : '' %>> Batting 9
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600; margin-left:12px;">
+            Batting
+            <input type="number" id="lineup-size-input" min="1" max="20" value="<%= event.lineup_size || 9 %>" style="width:60px; text-align:center; padding:4px;">
+            <span style="font-weight:400; color:var(--gray-500); font-size:12px;">(rest go to Eligible)</span>
           </label>
           <span class="lg-save-msg" id="lg-save-msg"></span>
         </div>
@@ -1351,7 +1353,9 @@
         const savedGrid = <%- JSON.stringify(lineupGrid) %>;
 
         let grid = []; // [{playerId, name, positions, cells: [null or {pos, status}]}]
-        let battingNine = <%= (event.batting_all || 0) === 0 ? 'true' : 'false' %>;
+        // Number of batters in the lineup. Anyone past slot `lineupSize` is
+        // treated as Eligible (subs). Replaces the old battingNine boolean.
+        let lineupSize = <%= event.lineup_size || 9 %>;
         const eventDate = '<%= new Date(event.start_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) %>';
         const eventTime = '<%= event.start_time ? (function(){ var parts = event.start_time.split(":"); var hr = parseInt(parts[0]); return (hr % 12 || 12) + ":" + parts[1].slice(0,2) + " " + (hr >= 12 ? "PM" : "AM"); })() : "" %>';
         const eventTitle = '<%= event.title %>';
@@ -1502,7 +1506,8 @@
 
             body.appendChild(tr);
 
-            if (battingNine && ri === 8 && grid.length > 9) {
+            // Divider between starters (slots 1..lineupSize) and eligibles.
+            if (ri === lineupSize - 1 && grid.length > lineupSize) {
               var sep = document.createElement('tr');
               sep.className = 'lg-eligible-divider';
               sep.innerHTML = '<td colspan="' + (INNINGS + 3) + '">Also Eligible</td>';
@@ -1664,43 +1669,25 @@
 
         window.printLineup = function(mode) {
           if (mode === 'umpire') {
-            // When batting 9: starters = first 9 in order, eligible = everyone else
-            // When batting all: everyone is in the lineup, no eligible column
+            // Starters = first `lineupSize` rows of the grid (the batting order).
+            // Anyone past that — regardless of inning-1 status — is Eligible.
             var starters = [];
             var eligible = [];
 
-            if (battingNine) {
-              // Batting 9: split into starters (fielding inning 1) and eligible (sitting)
-              grid.forEach(function(row, ri) {
-                var c0 = row.cells[0];
-                var pos = '';
-                var isSitting = false;
-                if (c0 && c0.status === 'field' && c0.pos) {
-                  pos = POS_MAP[c0.pos] || String(c0.pos);
-                } else if (c0 && (c0.status === 'sit' || c0.status === 'sub_in')) {
-                  isSitting = true;
-                } else if (!c0) {
-                  isSitting = true;
-                }
-                var entry = { name: row.name, jersey: row.jersey, pos: pos };
-                if (isSitting) eligible.push(entry);
-                else starters.push(entry);
-              });
-              // Ensure 9 starter slots
-              while (starters.length < 9) starters.push(null);
-            } else {
-              // Batting all: everyone is in the lineup
-              grid.forEach(function(row) {
-                var c0 = row.cells[0];
-                var pos = '';
-                if (c0 && c0.status === 'field' && c0.pos) {
-                  pos = POS_MAP[c0.pos] || String(c0.pos);
-                }
-                starters.push({ name: row.name, jersey: row.jersey, pos: pos });
-              });
-            }
+            grid.forEach(function(row, ri) {
+              var c0 = row.cells[0];
+              var pos = '';
+              if (c0 && c0.status === 'field' && c0.pos) {
+                pos = POS_MAP[c0.pos] || String(c0.pos);
+              }
+              var entry = { name: row.name, jersey: row.jersey, pos: pos };
+              if (ri < lineupSize) starters.push(entry);
+              else eligible.push(entry);
+            });
+            // Ensure `lineupSize` starter slots (pad with nulls if grid is short).
+            while (starters.length < lineupSize) starters.push(null);
 
-            var showEligible = battingNine && eligible.length > 0;
+            var showEligible = eligible.length > 0;
             var eligStartNum = starters.filter(Boolean).length;
 
             var html = '<div class="ump-card' + (showEligible ? '' : ' ump-no-elig') + '">';
@@ -1885,15 +1872,19 @@
           });
         }
 
-        var b9cb = document.getElementById('batting-nine-cb');
-        if (b9cb) {
-          b9cb.addEventListener('change', function() {
-            battingNine = this.checked;
+        var lsInput = document.getElementById('lineup-size-input');
+        if (lsInput) {
+          lsInput.addEventListener('change', function() {
+            var n = parseInt(this.value, 10);
+            if (!Number.isFinite(n) || n < 1) n = 1;
+            if (n > 20) n = 20;
+            this.value = n;
+            lineupSize = n;
             renderGrid();
-            fetch('/event/<%= event.id %>/batting-nine', {
+            fetch('/event/<%= event.id %>/lineup-size', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ batting_all: battingNine ? 0 : 1 })
+              body: JSON.stringify({ lineup_size: n })
             });
           });
         }

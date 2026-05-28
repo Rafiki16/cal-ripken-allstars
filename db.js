@@ -119,6 +119,11 @@ async function init() {
     `);
 
     try { await pool.query('ALTER TABLE team_events ADD COLUMN batting_all INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* exists */ }
+    // Lineup size = exact number of batters in the order. Replaces the legacy
+    // "Batting 9 vs Bat All" checkbox. Default 9. Anyone past slot N goes in
+    // the Eligible list. Backfill (further down, after migrations table is
+    // created) maps the legacy batting_all flag to a sensible lineup_size.
+    try { await pool.query('ALTER TABLE team_events ADD COLUMN lineup_size INTEGER NOT NULL DEFAULT 9'); } catch (e) { /* exists */ }
 
     // Salvage start_time/end_time rows that were stored as Postgres array
     // literals (e.g. {"","18:00"}) when the multi-day form posted duplicate
@@ -148,6 +153,17 @@ async function init() {
             AND EXTRACT(DOW FROM start_date::date) BETWEEN 1 AND 5
         `);
         await pool.query("INSERT INTO migrations (name) VALUES ('normalize_weekday_practice_times_v1')");
+      }
+    } catch (e) { /* best-effort */ }
+
+    // Backfill lineup_size from the legacy batting_all flag (one-time).
+    //   batting_all=1 (bat everyone) -> 20  (effectively all)
+    //   batting_all=0 (bat 9)        -> 9   (current default)
+    try {
+      const m = await pool.query("SELECT 1 FROM migrations WHERE name = 'lineup_size_from_batting_all_v1'");
+      if (m.rowCount === 0) {
+        await pool.query("UPDATE team_events SET lineup_size = CASE WHEN batting_all = 1 THEN 20 ELSE 9 END");
+        await pool.query("INSERT INTO migrations (name) VALUES ('lineup_size_from_batting_all_v1')");
       }
     } catch (e) { /* best-effort */ }
 
@@ -690,6 +706,7 @@ async function init() {
       ),
       removeTeamEvent: async (id) => pool.query('DELETE FROM team_events WHERE id = $1', [id]),
       updateBattingAll: async (id, val) => pool.query('UPDATE team_events SET batting_all = $1 WHERE id = $2', [val ? 1 : 0, id]),
+      updateLineupSize: async (id, size) => pool.query('UPDATE team_events SET lineup_size = $1 WHERE id = $2', [Math.max(1, Math.min(20, Number(size) || 9)), id]),
       getDrills: async (eventId) => (await pool.query('SELECT * FROM practice_drills WHERE team_event_id = $1 ORDER BY sort_order', [eventId])).rows,
       addDrill: async (d) => (await pool.query('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order, coach_notes, assigned_staff, block_name, parallel_group) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id', [d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, d.block_name || null, d.parallel_group || null])).rows[0],
       updateDrill: async (id, d) => pool.query('UPDATE practice_drills SET drill_name=$1, description=$2, duration_minutes=$3, sort_order=$4, coach_notes=$5, assigned_staff=$6, block_name=$7, parallel_group=$8 WHERE id=$9', [d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, d.block_name || null, d.parallel_group || null, id]),
@@ -1141,6 +1158,15 @@ async function init() {
     `);
 
     try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN batting_all INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE team_events ADD COLUMN lineup_size INTEGER NOT NULL DEFAULT 9'); } catch (e) { /* exists */ }
+    try {
+      sqliteDb.exec(`CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`);
+      const applied = sqliteDb.prepare("SELECT 1 FROM migrations WHERE name = 'lineup_size_from_batting_all_v1'").get();
+      if (!applied) {
+        sqliteDb.prepare("UPDATE team_events SET lineup_size = CASE WHEN batting_all = 1 THEN 20 ELSE 9 END").run();
+        sqliteDb.prepare("INSERT INTO migrations (name) VALUES ('lineup_size_from_batting_all_v1')").run();
+      }
+    } catch (e) { /* best-effort */ }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS practice_drills (
@@ -1644,6 +1670,7 @@ async function init() {
       ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null, id),
       removeTeamEvent: async (id) => sqliteDb.prepare('DELETE FROM team_events WHERE id = ?').run(id),
       updateBattingAll: async (id, val) => sqliteDb.prepare('UPDATE team_events SET batting_all = ? WHERE id = ?').run(val ? 1 : 0, id),
+      updateLineupSize: async (id, size) => sqliteDb.prepare('UPDATE team_events SET lineup_size = ? WHERE id = ?').run(Math.max(1, Math.min(20, Number(size) || 9)), id),
       getDrills: async (eventId) => sqliteDb.prepare('SELECT * FROM practice_drills WHERE team_event_id = ? ORDER BY sort_order').all(eventId),
       addDrill: async (d) => {
         const r = sqliteDb.prepare('INSERT INTO practice_drills (team_event_id, drill_name, description, duration_minutes, sort_order, coach_notes, assigned_staff, block_name, parallel_group) VALUES (?,?,?,?,?,?,?,?,?)').run(d.team_event_id, d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, d.block_name || null, d.parallel_group || null);
@@ -2053,6 +2080,7 @@ module.exports = {
   updateTeamEvent: (...args) => impl.updateTeamEvent(...args),
   removeTeamEvent: (...args) => impl.removeTeamEvent(...args),
   updateBattingAll: (...args) => impl.updateBattingAll(...args),
+  updateLineupSize: (...args) => impl.updateLineupSize(...args),
   getDrills: (...args) => impl.getDrills(...args),
   addDrill: (...args) => impl.addDrill(...args),
   updateDrill: (...args) => impl.updateDrill(...args),

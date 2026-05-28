@@ -1837,6 +1837,16 @@ app.post('/event/:id/batting-nine', requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+// New: explicit lineup size (replaces the binary Batting 9 / Bat All toggle).
+app.post('/event/:id/lineup-size', requireAdmin, async (req, res) => {
+  const size = Number(req.body.lineup_size);
+  if (!Number.isFinite(size) || size < 1 || size > 20) {
+    return res.status(400).json({ ok: false, error: 'lineup_size must be 1-20' });
+  }
+  await db.updateLineupSize(Number(req.params.id), size);
+  res.json({ ok: true });
+});
+
 app.post('/event/:id/sub-event/:subId/lineup-grid', requireAdmin, async (req, res) => {
   const subId = Number(req.params.subId);
   const { entries } = req.body;
