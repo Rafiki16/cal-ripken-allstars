@@ -74,8 +74,11 @@
       <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
         <h2 class="profile-section-title" style="margin:0;">Manage Roster</h2>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-confirm" style="font-size:13px; padding:8px 16px;" onclick="textRoster()">
+            Text All (<%= (typeof rosterPhones !== 'undefined' ? rosterPhones : []).length %>)
+          </button>
           <button type="button" class="btn btn-secondary" style="font-size:13px; padding:8px 16px;" onclick="copyRosterPhones()">
-            Copy All Phone Numbers (<%= (typeof rosterPhones !== 'undefined' ? rosterPhones : []).length %>)
+            Copy Numbers
           </button>
           <span id="phones-copied-msg" style="font-size:12px; font-weight:700;"></span>
         </div>
@@ -1514,6 +1517,27 @@
 
 <script>
   var ROSTER_PHONES = <%- JSON.stringify(typeof rosterPhones !== 'undefined' ? rosterPhones : []) %>;
+  // Apple Messages discards all but the first recipient when you paste a
+  // comma-separated list into the To: field. Handing the numbers to the sms:
+  // URL scheme instead makes Messages open with everyone already added.
+  function textRoster() {
+    var msg = document.getElementById('phones-copied-msg');
+    if (!ROSTER_PHONES.length) {
+      msg.style.color = 'var(--red-status)';
+      msg.textContent = 'No phone numbers on the roster.';
+      return;
+    }
+    // E.164 is what Messages matches against contacts most reliably.
+    var addresses = ROSTER_PHONES.map(function(n) {
+      var d = String(n).replace(/\D/g, '');
+      return d.length === 10 ? '+1' + d : (d.length === 11 && d[0] === '1' ? '+' + d : d);
+    }).join(',');
+    msg.style.color = 'var(--gray-500)';
+    msg.textContent = 'Opening Messages with ' + ROSTER_PHONES.length + ' recipients...';
+    window.location.href = 'sms:/open?addresses=' + encodeURIComponent(addresses);
+    setTimeout(function() { msg.textContent = ''; }, 5000);
+  }
+
   function copyRosterPhones() {
     var msg = document.getElementById('phones-copied-msg');
     if (!ROSTER_PHONES.length) {
