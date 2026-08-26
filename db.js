@@ -907,6 +907,11 @@ async function init() {
       updatePlayerParentPhone: async (playerId, phone) => pool.query('UPDATE players SET parent_phone = $1 WHERE id = $2', [phone, playerId]),
       linkPlayerToAccount: async (playerId, accountId) => pool.query('INSERT INTO player_parents (player_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [playerId, accountId]),
       unlinkPlayerFromAccount: async (playerId, accountId) => pool.query('DELETE FROM player_parents WHERE player_id = $1 AND account_id = $2', [playerId, accountId]),
+      fillBlankParentName: async (phone, name) => pool.query(
+        "UPDATE players SET parent_name = $1 WHERE parent_phone = $2 AND (parent_name IS NULL OR TRIM(parent_name) = '')",
+        [name, phone]
+      ),
+      setPlayerContacts: async (playerId, contactsJson) => pool.query('UPDATE players SET contacts = $1 WHERE id = $2', [contactsJson, playerId]),
       getLinkedPlayersByAccount: async (accountId, teamId) => teamId
         ? (await pool.query('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = $1 AND p.team_id = $2 ORDER BY p.player_name', [accountId, teamId])).rows
         : (await pool.query('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = $1 ORDER BY p.player_name', [accountId])).rows,
@@ -2014,6 +2019,10 @@ async function init() {
       updatePlayerParentPhone: async (playerId, phone) => sqliteDb.prepare('UPDATE players SET parent_phone = ? WHERE id = ?').run(phone, playerId),
       linkPlayerToAccount: async (playerId, accountId) => sqliteDb.prepare('INSERT OR IGNORE INTO player_parents (player_id, account_id) VALUES (?, ?)').run(playerId, accountId),
       unlinkPlayerFromAccount: async (playerId, accountId) => sqliteDb.prepare('DELETE FROM player_parents WHERE player_id = ? AND account_id = ?').run(playerId, accountId),
+      fillBlankParentName: async (phone, name) => sqliteDb.prepare(
+        "UPDATE players SET parent_name = ? WHERE parent_phone = ? AND (parent_name IS NULL OR TRIM(parent_name) = '')"
+      ).run(name, phone),
+      setPlayerContacts: async (playerId, contactsJson) => sqliteDb.prepare('UPDATE players SET contacts = ? WHERE id = ?').run(contactsJson, playerId),
       getLinkedPlayersByAccount: async (accountId, teamId) => teamId
         ? sqliteDb.prepare('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = ? AND p.team_id = ? ORDER BY p.player_name').all(accountId, teamId)
         : sqliteDb.prepare('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = ? ORDER BY p.player_name').all(accountId),
@@ -2428,6 +2437,8 @@ module.exports = {
   updatePlayerParentPhone: (...args) => impl.updatePlayerParentPhone(...args),
   linkPlayerToAccount: (...args) => impl.linkPlayerToAccount(...args),
   unlinkPlayerFromAccount: (...args) => impl.unlinkPlayerFromAccount(...args),
+  fillBlankParentName: (...args) => impl.fillBlankParentName(...args),
+  setPlayerContacts: (...args) => impl.setPlayerContacts(...args),
   getLinkedPlayersByAccount: (...args) => impl.getLinkedPlayersByAccount(...args),
   getLinkedAccountsByPlayer: (...args) => impl.getLinkedAccountsByPlayer(...args),
   getAllPlayerParentLinks: (...args) => impl.getAllPlayerParentLinks(...args),

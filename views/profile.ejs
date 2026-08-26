@@ -199,6 +199,59 @@
       </div>
     </form>
 
+    <!-- Family Members with their own sign-in -->
+    <div class="profile-section">
+      <h2 class="profile-section-title">Family Access</h2>
+      <p class="section-hint">Give another family member their own sign-in so they can see the schedule, RSVPs and lineups. They&rsquo;ll also receive team reminders.</p>
+
+      <div id="family-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
+        <% (typeof familyAccounts !== 'undefined' ? familyAccounts : []).forEach(function(f) { %>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 12px; background:var(--gray-50); border:1px solid var(--gray-200); border-radius:8px;">
+            <div>
+              <strong style="color:var(--navy);"><%= f.display_name %></strong>
+              <div style="font-size:12px; color:var(--gray-500);">
+                <%= String(f.phone || '').replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %>
+                <% if (f.username) { %> &middot; @<%= f.username %><% } %>
+                <% if (typeof currentAccountId !== 'undefined' && currentAccountId === f.id) { %>
+                  &middot; <span style="color:var(--green); font-weight:700;">you</span>
+                <% } %>
+              </div>
+            </div>
+            <% if (!(typeof currentAccountId !== 'undefined' && currentAccountId === f.id)) { %>
+              <button type="button" class="btn-sm btn-sm-remove" onclick="removeFamily(<%= f.id %>, <%- JSON.stringify(f.display_name) %>)">Remove access</button>
+            <% } %>
+          </div>
+        <% }); %>
+        <% if (!(typeof familyAccounts !== 'undefined' && familyAccounts.length)) { %>
+          <p style="font-size:13px; color:var(--gray-500); margin:0;">No family members added yet.</p>
+        <% } %>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="fam-name" class="form-input" placeholder="e.g. Susan Smith">
+        </div>
+        <div class="form-group">
+          <label>Relation</label>
+          <input type="text" id="fam-relation" class="form-input" placeholder="Mom, Dad, Grandma...">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Mobile Phone</label>
+          <input type="tel" id="fam-phone" class="form-input" placeholder="(941) 555-1234">
+          <p class="hint">They&rsquo;ll sign in with this number.</p>
+        </div>
+        <div class="form-group">
+          <label>Email <span style="font-weight:400;color:var(--gray-500);">(optional)</span></label>
+          <input type="email" id="fam-email" class="form-input" placeholder="email@example.com">
+        </div>
+      </div>
+      <button type="button" class="btn btn-confirm" onclick="addFamily()">Add Family Member</button>
+      <span id="fam-msg" style="margin-left:10px; font-size:13px;"></span>
+    </div>
+
     <!-- Assigned Quizzes -->
     <% if (quizAssignments && quizAssignments.length > 0) { %>
     <div class="profile-section">
@@ -520,5 +573,41 @@
       <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
     </div>
   </footer>
+
+<script>
+  function famMsg(text, ok) {
+    var el = document.getElementById('fam-msg');
+    el.textContent = text;
+    el.style.color = ok ? 'var(--green)' : 'var(--red-status)';
+  }
+  function addFamily() {
+    var name = document.getElementById('fam-name').value.trim();
+    var phone = document.getElementById('fam-phone').value.trim();
+    if (!name) { famMsg('Name is required.', false); return; }
+    if (phone.replace(/\D/g, '').length !== 10) { famMsg('Enter a valid 10-digit phone.', false); return; }
+    famMsg('Adding...', true);
+    document.getElementById('fam-msg').style.color = 'var(--gray-500)';
+    fetch('/profile/<%= player.id %>/family', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        phone: phone,
+        relation: document.getElementById('fam-relation').value.trim(),
+        email: document.getElementById('fam-email').value.trim()
+      })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) { famMsg(d.created ? 'Added \u2014 sign-in details sent.' : 'Added \u2014 they can use their existing login.', true); setTimeout(function(){ location.reload(); }, 1200); }
+      else famMsg(d.error || 'Could not add.', false);
+    }).catch(function(){ famMsg('Network error.', false); });
+  }
+  function removeFamily(accountId, name) {
+    if (!confirm('Remove ' + name + "'s access to this player?")) return;
+    fetch('/profile/<%= player.id %>/family/' + accountId + '/remove', { method: 'POST' })
+      .then(function(r){ return r.json(); }).then(function(d){
+        if (d.ok) location.reload(); else famMsg(d.error || 'Could not remove.', false);
+      });
+  }
+</script>
 </body>
 </html>

@@ -767,7 +767,7 @@ app.post('/respond', async (req, res) => {
 
 app.get('/parent/register', (req, res) => {
   if (req.parentUser) return res.redirect('/');
-  res.render('parent-register', { error: null, phone: '', username: '' });
+  res.render('parent-register', { error: null, phone: '', username: '', displayName: '' });
 });
 
 app.post('/parent/register', async (req, res) => {
@@ -780,7 +780,7 @@ app.post('/parent/register', async (req, res) => {
 
   const renderError = (msg) => {
     if (fromRegPage) {
-      return res.render('parent-register', { error: msg, phone: req.body.phone || '', username });
+      return res.render('parent-register', { error: msg, phone: req.body.phone || '', username, displayName: (req.body.display_name || '') });
     }
     // Legacy verify page flow
     return res.render('verify', { players, phone, error: msg, success: null, parentUser: req.parentUser || null, hasAccount: false });
@@ -788,7 +788,7 @@ app.post('/parent/register', async (req, res) => {
 
   if (phone.length !== 10) {
     if (fromRegPage) {
-      return res.render('parent-register', { error: 'Please enter a valid 10-digit phone number.', phone: req.body.phone || '', username });
+      return res.render('parent-register', { error: 'Please enter a valid 10-digit phone number.', phone: req.body.phone || '', username, displayName: (req.body.display_name || '') });
     }
     return res.redirect('/verify');
   }
@@ -796,7 +796,7 @@ app.post('/parent/register', async (req, res) => {
   const players = await db.getPlayersByPhone(phone);
   if (players.length === 0) {
     if (fromRegPage) {
-      return res.render('parent-register', { error: 'No players found for that phone number. Please use the number your coach has on file.', phone: req.body.phone || '', username });
+      return res.render('parent-register', { error: 'No players found for that phone number. Please use the number your coach has on file.', phone: req.body.phone || '', username, displayName: (req.body.display_name || '') });
     }
     return res.redirect('/verify');
   }
@@ -804,7 +804,7 @@ app.post('/parent/register', async (req, res) => {
   const existing = await db.getParentAccountByPhone(phone);
   if (existing) {
     if (fromRegPage) {
-      return res.render('parent-register', { error: 'An account already exists for this phone number. Please log in instead.', phone: req.body.phone || '', username });
+      return res.render('parent-register', { error: 'An account already exists for this phone number. Please log in instead.', phone: req.body.phone || '', username, displayName: (req.body.display_name || '') });
     }
     return res.render('verify', { players, phone, error: 'An account already exists for this phone number. Use the login page.', success: null, parentUser: req.parentUser || null, hasAccount: true });
   }
@@ -835,7 +835,18 @@ app.post('/parent/register', async (req, res) => {
     return renderError('Passwords do not match.');
   }
 
-  const displayName = players[0].parent_name;
+  // The coach may have added the player with no parent name. Ask for it here,
+  // then backfill it onto every player registered under this phone.
+  const onFileName = (players[0].parent_name || '').trim();
+  const typedName = (req.body.display_name || '').trim();
+  if (!onFileName && !typedName) {
+    return renderError('Please enter your name.');
+  }
+  const displayName = typedName || onFileName;
+  if (typedName) {
+    try { await db.fillBlankParentName(phone, typedName); }
+    catch (e) { console.error('fillBlankParentName failed:', e.message); }
+  }
   const hash = bcrypt.hashSync(password, 10);
   const newAccount = await db.createParentAccountFull(phone, displayName, hash, 'parent', true);
 
@@ -980,7 +991,8 @@ app.get('/profile/:id', requireParentOrAdmin, async (req, res) => {
   for (const qa of quizAssignments) {
     quizAttemptData[qa.quiz_id] = await db.getQuizAttempts(qa.quiz_id, player.id);
   }
-  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData, quizAssignments, quizAttemptData, error: null, success: null });
+  const familyAccounts = await db.getLinkedAccountsByPlayer(player.id);
+  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData, quizAssignments, quizAttemptData, familyAccounts, currentAccountId: req.parentUser ? req.parentUser.id : null, error: null, success: null });
 });
 
 app.post('/profile/:id', async (req, res, next) => {
@@ -1071,6 +1083,8 @@ app.post('/profile/:id', async (req, res, next) => {
     programData.push({ assignment: a, days, completions });
   }
   res.render('profile', {
+    familyAccounts: await db.getLinkedAccountsByPlayer(player.id),
+    currentAccountId: req.parentUser ? req.parentUser.id : null,
     player: updated, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData,
     quizAssignments: quizAssignments2, quizAttemptData: quizAttemptData2,
     error: null,
@@ -1104,6 +1118,8 @@ app.post('/profile/:id/event', async (req, res) => {
   if (!start_date) {
     const events = await db.getPlayerEvents(player.id);
     return res.render('profile', {
+    familyAccounts: await db.getLinkedAccountsByPlayer(player.id),
+    currentAccountId: req.parentUser ? req.parentUser.id : null,
       player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
       quizAssignments: [], quizAttemptData: {},
       error: 'Start date is required.',
@@ -1121,6 +1137,8 @@ app.post('/profile/:id/event', async (req, res) => {
 
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
+    familyAccounts: await db.getLinkedAccountsByPlayer(player.id),
+    currentAccountId: req.parentUser ? req.parentUser.id : null,
     player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
     quizAssignments: [], quizAttemptData: {},
     error: null,
@@ -1149,6 +1167,8 @@ app.post('/profile/:id/event/delete', async (req, res) => {
   await db.removeEvent(Number(req.body.event_id));
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
+    familyAccounts: await db.getLinkedAccountsByPlayer(player.id),
+    currentAccountId: req.parentUser ? req.parentUser.id : null,
     player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
     quizAssignments: [], quizAttemptData: {},
     error: null,
@@ -1351,8 +1371,8 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
   const { player_name, division, team, age, parent_name, parent_phone, parent_email } = req.body;
   const phone = normalizePhone(parent_phone || '');
 
-  if (!player_name || !player_name.trim() || !parent_name || !parent_name.trim() || phone.length !== 10) {
-    return res.redirect('/admin?error=' + encodeURIComponent('Player name, parent name, and valid 10-digit phone are required.'));
+  if (!player_name || !player_name.trim() || phone.length !== 10) {
+    return res.redirect('/admin?error=' + encodeURIComponent('Player name and a valid 10-digit phone are required.'));
   }
 
   await db.addPlayer({
@@ -1360,7 +1380,9 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
     division: (division || 'Major').trim(),
     team: (team || '').trim(),
     age: parseInt(age) || 11,
-    parent_name: parent_name.trim(),
+    // Blank is allowed — the parent fills this in when they register with
+    // this phone number (see /parent/register, which backfills it).
+    parent_name: (parent_name || '').trim(),
     parent_phone: phone,
     parent_email: (parent_email || '').trim() || null,
     team_id: req.teamId,
@@ -1373,6 +1395,95 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
   }
 
   res.redirect('/admin?success=' + encodeURIComponent(`${player_name.trim()} added to roster` + (parent_email ? ' — confirmation email sent' : '')));
+});
+
+// --- Family members (parent self-service) ---
+// A "family member" is a real login account linked to the player via
+// player_parents, so grandma/the other parent can sign in and see the
+// schedule. They're also appended to the player's contacts so they receive
+// the same reminders. Reachable by the player's own parents and by admins.
+
+async function canManagePlayer(req, playerId) {
+  if (req.session.admin) return true;
+  if (!req.parentUser) return false;
+  const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
+  return linked.some(p => p.id === playerId);
+}
+
+app.post('/profile/:id/family', requireParentOrAdmin, async (req, res) => {
+  const playerId = Number(req.params.id);
+  const player = await db.getPlayer(playerId);
+  if (!player) return res.json({ ok: false, error: 'Player not found.' });
+  if (!(await canManagePlayer(req, playerId))) {
+    return res.json({ ok: false, error: 'You can only manage your own player.' });
+  }
+
+  const name = (req.body.name || '').trim();
+  const relation = (req.body.relation || '').trim();
+  const email = (req.body.email || '').trim();
+  const phone = normalizePhone(req.body.phone || '');
+  if (!name) return res.json({ ok: false, error: 'Name is required.' });
+  if (phone.length !== 10) return res.json({ ok: false, error: 'A valid 10-digit phone number is required.' });
+
+  // Find-or-create their login account. Never clobber an existing account's
+  // password — if they already have one, we just link them to this player.
+  let account = await db.getParentAccountByPhone(phone);
+  let tempPassword = null;
+  if (!account) {
+    tempPassword = crypto.randomBytes(4).toString('hex');
+    const hash = bcrypt.hashSync(tempPassword, 10);
+    account = await db.createParentAccountFull(phone, name, hash, 'parent', true);
+  }
+
+  const already = (await db.getLinkedAccountsByPlayer(playerId)).some(a => a.id === account.id);
+  if (already) return res.json({ ok: false, error: `${name} already has access to ${player.player_name}.` });
+  await db.linkPlayerToAccount(playerId, account.id);
+
+  // Mirror into the player's contacts so reminders reach them too.
+  try {
+    let contacts = [];
+    try { contacts = player.contacts ? JSON.parse(player.contacts) : []; } catch (e) { contacts = []; }
+    if (!Array.isArray(contacts)) contacts = [];
+    const dup = contacts.some(c => normalizePhone(String(c.phone || '')) === phone);
+    if (!dup) {
+      contacts.push({ name, relation, email, phone });
+      await db.setPlayerContacts(playerId, JSON.stringify(contacts));
+    }
+  } catch (e) { console.error('family contact merge failed:', e.message); }
+
+  // Tell them how to get in. Only send credentials for a brand-new account.
+  const baseUrl = process.env.BASE_URL || 'https://cal-ripken-allstars.onrender.com';
+  const teamName = res.locals.teamName;
+  const smsBody = tempPassword
+    ? `${teamName}: You've been given access to ${player.player_name}'s team info.\n\nLogin: ${baseUrl}/parent/login\nPhone: ${phone}\nPassword: ${tempPassword}\n\nPlease change your password after signing in.`
+    : `${teamName}: You've been given access to ${player.player_name}'s team info. Sign in at ${baseUrl}/parent/login with your existing account.`;
+  try { await sendSMS(phone, smsBody); } catch (e) { console.error('family SMS failed:', e.message); }
+  if (email && smtpTransport) {
+    try {
+      await smtpTransport.sendMail({
+        from: `"${teamName}" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: `Access to ${player.player_name}'s team info`,
+        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;"><div style="background:#1a2744;color:#fff;padding:24px;text-align:center;"><h1 style="margin:0;font-size:22px;">${teamName}</h1></div><div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;"><p>Hi ${name},</p><p>You've been given access to <strong>${player.player_name}</strong>'s schedule, RSVPs and lineups.</p>${tempPassword ? `<p><strong>Phone:</strong> ${phone}<br><strong>Temporary password:</strong> ${tempPassword}</p><p style="font-size:13px;color:#6b7280;">Please change your password after signing in.</p>` : '<p>Sign in with your existing account.</p>'}<p style="text-align:center;margin:24px 0;"><a href="${baseUrl}/parent/login" style="background:#1a2744;color:#fff;padding:14px 36px;border-radius:6px;text-decoration:none;font-weight:bold;">Sign In</a></p></div></div>`
+      });
+    } catch (e) { console.error('family email failed:', e.message); }
+  }
+
+  res.json({ ok: true, created: !!tempPassword });
+});
+
+app.post('/profile/:id/family/:accountId/remove', requireParentOrAdmin, async (req, res) => {
+  const playerId = Number(req.params.id);
+  const accountId = Number(req.params.accountId);
+  if (!(await canManagePlayer(req, playerId))) {
+    return res.json({ ok: false, error: 'You can only manage your own player.' });
+  }
+  // Don't let someone remove their own access and lock themselves out.
+  if (req.parentUser && req.parentUser.id === accountId) {
+    return res.json({ ok: false, error: 'You cannot remove your own access.' });
+  }
+  await db.unlinkPlayerFromAccount(playerId, accountId);
+  res.json({ ok: true });
 });
 
 app.post('/admin/remove-player', requireAdmin, async (req, res) => {
