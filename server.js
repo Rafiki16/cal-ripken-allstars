@@ -205,13 +205,23 @@ app.use(async (req, res, next) => {
         teamId = req.session.currentTeamId;
       }
     } else if (req.parentUser) {
-      // Which teams can this account see? Derive it from the player links
-      // (player_parents), NOT from the account's own phone -- a family member
-      // such as a grandparent has their own phone that matches no player's
-      // parent_phone, so a phone lookup would find them nothing.
-      const myPlayers = await db.getLinkedPlayersByAccount(req.parentUser.id);
-      const myTeamIds = [...new Set(myPlayers.map(p => p.team_id).filter(Boolean))];
-      // Name each team so the switcher can label its buttons.
+      // Which teams may this account see? The UNION of two sources -- either
+      // alone loses people:
+      //   player_parents links -> covers family members (a grandparent's own
+      //     phone matches no player's parent_phone)
+      //   parent_phone match   -> covers a parent whose links were never
+      //     created (admin made the account without selecting a player) or
+      //     were destroyed (player deleted and re-added cascades the link),
+      //     and children rostered after the parent registered
+      const [linked, byPhone] = await Promise.all([
+        db.getLinkedPlayersByAccount(req.parentUser.id),
+        db.getPlayersByPhone(req.parentUser.phone),
+      ]);
+      const myTeamIds = [...new Set(
+        [...linked, ...byPhone].map(p => p.team_id).filter(Boolean)
+      )];
+      // Name each team so the switcher can label its buttons. Only teams that
+      // still exist are offered.
       const myTeams = myTeamIds
         .map(id => teams.find(t => t.id === id))
         .filter(Boolean)
@@ -226,6 +236,11 @@ app.use(async (req, res, next) => {
         teamId = req.session.currentTeamId;
       } else if (myTeamIds.length > 0) {
         teamId = myTeamIds[0];
+      } else {
+        // No players at all. Fail CLOSED: a sentinel no row can match, so
+        // scoped queries return empty. Falling through to the default team
+        // below would show this account another team's roster and schedule.
+        teamId = -1;
       }
     }
 
@@ -596,6 +611,30 @@ app.get('/', requireLogin, async (req, res) => {
 app.get('/event/:id', requireLogin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
+
+  // getTeamEvent is not team-scoped, so an event id from another team would
+  // otherwise render that event's details alongside the CURRENT team's roster
+  // and staff -- nonsense counts, and isStaff recomputed against the wrong
+  // team. Bind the page to the event's own team instead.
+  if (event.team_id) {
+    const isAdmin = !!req.session.admin;
+    const mine = res.locals.myTeamIds || [];
+    if (isAdmin || mine.includes(event.team_id)) {
+      // Viewing an event implies viewing its team, so adopt it for this
+      // request. Keeps roster, staff and RSVP counts consistent with the event.
+      req.teamId = event.team_id;
+      res.locals.currentTeamId = event.team_id;
+      const t = (res.locals.allTeams || []).find(x => x.id === event.team_id);
+      if (t) {
+        res.locals.currentTeam = t;
+        res.locals.teamName = t.name;
+      }
+    } else {
+      // Not their team at all.
+      return res.redirect('/');
+    }
+  }
+
   const rsvps = await db.getRsvpsForEvent(event.id);
   const players = await db.getAllPlayers(req.teamId);
   const confirmed = players.filter(p => p.status === 'confirmed');

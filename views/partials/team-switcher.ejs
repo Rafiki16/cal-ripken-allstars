@@ -1,8 +1,13 @@
 <%
   // Prominent team switcher for accounts whose players span more than one
-  // team. Renders nothing for single-team parents so it never adds noise.
-  // Relies on res.locals.myTeams / currentTeamId set by the team-context
-  // middleware; the middleware also honours ?team=<id>, so plain links work.
+  // team. Renders nothing for single-team accounts so it never adds noise.
+  // myTeams / currentTeamId come from the team-context middleware, which also
+  // validates ?team=<id> against THIS account's own teams.
+  //
+  // The link targets "/?team=N" rather than a bare "?team=N" on purpose:
+  //  - a bare relative query would clobber other params on the page
+  //  - staying on e.g. a Team A event while selecting Team B is incoherent,
+  //    so switching lands on the chosen team's home page instead
   var _teams = (typeof myTeams !== 'undefined' && myTeams) ? myTeams : [];
   var _current = (typeof currentTeamId !== 'undefined') ? currentTeamId : null;
 %>
@@ -14,9 +19,14 @@
     <div class="team-switcher-buttons">
       <% _teams.forEach(function(t) { %>
         <% if (t.id === _current) { %>
-          <span class="team-chip team-chip-active"><%= t.name %> <span class="team-chip-tick">&#10003;</span></span>
+          <span class="team-chip team-chip-active">
+            <%= t.name %><% if (!t.is_active) { %> <span class="team-chip-archived">(past season)</span><% } %>
+            <span class="team-chip-tick">&#10003;</span>
+          </span>
         <% } else { %>
-          <a class="team-chip team-chip-switch" href="?team=<%= t.id %>">Switch to <%= t.name %></a>
+          <a class="team-chip team-chip-switch" href="/?team=<%= t.id %>">
+            Switch to <%= t.name %><% if (!t.is_active) { %> <span class="team-chip-archived">(past season)</span><% } %>
+          </a>
         <% } %>
       <% }); %>
     </div>

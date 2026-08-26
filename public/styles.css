@@ -1889,3 +1889,4 @@ main { flex: 1; padding-bottom: 40px; }
   .team-switcher-buttons { flex-direction: column; align-items: stretch; }
   .team-chip { justify-content: center; width: 100%; }
 }
+.team-chip-archived { font-weight: 600; opacity: 0.75; font-size: 12px; }
