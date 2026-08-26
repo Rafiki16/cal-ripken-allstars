@@ -365,8 +365,9 @@ function getPlayerContacts(player) {
   try {
     const parsed = player.contacts ? JSON.parse(player.contacts) : [];
     for (const c of parsed) {
-      if (c.email && !contacts.some(x => x.value === c.email)) contacts.push({ type: 'email', value: c.email });
-      if (c.phone && !contacts.some(x => x.value === normalizePhone(c.phone))) contacts.push({ type: 'sms', value: normalizePhone(c.phone) });
+      const viewOnly = c.access_level === 'viewer';
+      if (c.email && !contacts.some(x => x.value === c.email)) contacts.push({ type: 'email', value: c.email, viewOnly });
+      if (c.phone && !contacts.some(x => x.value === normalizePhone(c.phone))) contacts.push({ type: 'sms', value: normalizePhone(c.phone), viewOnly });
     }
   } catch (e) {}
   return contacts;
@@ -412,10 +413,15 @@ async function checkAndSendRemindersForTeam(team) {
         const contacts = getPlayerContacts(player);
 
         for (const contact of contacts) {
-          if (contact.type === 'email') {
+          const dateStr = new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          if (contact.viewOnly) {
+            // View-only family: informational only, no RSVP capability link.
+            if (contact.type === 'sms') {
+              await sendSMS(contact.value, `${teamName}: Reminder — ${event.title} on ${dateStr} for ${player.player_name}.`);
+            }
+          } else if (contact.type === 'email') {
             await sendReminderEmail(contact.value, player, event, link, reminderType, teamName);
           } else {
-            const dateStr = new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             await sendSMS(contact.value, `${teamName}: ${player.player_name} hasn't RSVP'd for ${event.title} on ${dateStr}. Tap to respond: ${link}`);
           }
           await db.logReminder(event.id, player.id, reminderType, contact.type, contact.value);
@@ -633,11 +639,21 @@ app.get('/event/:id/practice-timer', requireParentOrAdmin, async (req, res) => {
 app.post('/event/:id/rsvp', async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
-  const phone = req.parentUser ? req.parentUser.phone : normalizePhone(req.body.phone || '');
-  if (phone.length !== 10) return res.redirect('/event/' + event.id);
-  // Scope to the event's own team so a parent with players on two teams
-  // doesn't RSVP the other team's kids into this event.
-  const players = await db.getPlayersByPhone(phone, event.team_id || req.teamId);
+  const teamScope = event.team_id || req.teamId;
+  let players;
+  if (req.parentUser) {
+    // Signed-in: go through the family link so a guardian (e.g. a grandparent
+    // granted full access) can RSVP. Viewers are excluded by the query.
+    players = await db.getGuardianPlayers(req.parentUser.id, teamScope);
+    if (players.length === 0) {
+      // Linked but view-only, or not linked at all.
+      return res.redirect('/event/' + event.id + '?rsvp=forbidden');
+    }
+  } else {
+    const phone = normalizePhone(req.body.phone || '');
+    if (phone.length !== 10) return res.redirect('/event/' + event.id);
+    players = await db.getPlayersByPhone(phone, teamScope);
+  }
   const confirmed = players.filter(p => p.status === 'confirmed');
   if (confirmed.length === 0) return res.redirect('/event/' + event.id);
   const status = req.body.status;
@@ -857,6 +873,10 @@ app.post('/parent/register', async (req, res) => {
 
   for (const p of players) {
     await db.linkPlayerToAccount(p.id, newAccount.id);
+    // First account linked to a player becomes its primary parent -- the one
+    // who controls the family list and everyone's access level.
+    try { await db.markPrimaryIfNone(p.id, newAccount.id); }
+    catch (e) { console.error('markPrimaryIfNone failed:', e.message); }
   }
   setParentCookie(res, phone);
   res.redirect('/?welcome=1');
@@ -962,16 +982,17 @@ app.get('/profile/:id', requireParentOrAdmin, async (req, res) => {
   if (!isAdmin && !req.parentUser) return res.redirect('/verify');
 
   const player = await db.getPlayer(Number(req.params.id));
-  let authorized = isAdmin;
-  if (!authorized && req.parentUser) {
-    const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
-    authorized = linked.some(p => p.id === player?.id);
-  }
+  // Viewing only requires a link -- view-only family members can look, they
+  // just can't change anything (enforced on the POST routes).
+  let authorized = isAdmin || (player ? !!(await getAccess(req, player.id)) : false);
   if (!player || !authorized) {
     return res.render('verify', {
       players: null, phone: '',
-      error: 'Unauthorized. You can only edit your own child\'s profile.',
-      success: null
+      error: 'Unauthorized. You can only view your own player.',
+      success: null,
+      parentUser: req.parentUser || null,
+      hasAccount: !!req.parentUser,
+      teamName: res.locals.teamName
     });
   }
 
@@ -991,8 +1012,9 @@ app.get('/profile/:id', requireParentOrAdmin, async (req, res) => {
   for (const qa of quizAssignments) {
     quizAttemptData[qa.quiz_id] = await db.getQuizAttempts(qa.quiz_id, player.id);
   }
-  const familyAccounts = await db.getLinkedAccountsByPlayer(player.id);
-  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData, quizAssignments, quizAttemptData, familyAccounts, currentAccountId: req.parentUser ? req.parentUser.id : null, error: null, success: null });
+  const familyAccounts = await db.getLinkedAccountsByPlayerWithAccess(player.id);
+  const myAccess = await getAccess(req, player.id);
+  res.render('profile', { player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData, quizAssignments, quizAttemptData, familyAccounts, myAccess, currentAccountId: req.parentUser ? req.parentUser.id : null, error: null, success: null });
 });
 
 app.post('/profile/:id', async (req, res, next) => {
@@ -1001,16 +1023,19 @@ app.post('/profile/:id', async (req, res, next) => {
   const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
-  let authorized = isAdmin;
-  if (!authorized && req.parentUser) {
-    const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
-    authorized = linked.some(p => p.id === player?.id);
-  }
+  // Acting on a player (edit profile / availability) requires guardian level.
+  // View-only family members are blocked here.
+  let authorized = isAdmin || (player ? await canActOnPlayer(req, player.id) : false);
   if (!player || !authorized) {
     return res.render('verify', {
       players: null, phone: '',
-      error: 'Unauthorized. You can only edit your own child\'s profile.',
-      success: null
+      error: (await getAccess(req, Number(req.params.id)))
+        ? 'You have view-only access to this player, so you can\'t make changes. Ask the primary parent to change your access level.'
+        : 'Unauthorized. You can only edit your own child\'s profile.',
+      success: null,
+      parentUser: req.parentUser || null,
+      hasAccount: !!req.parentUser,
+      teamName: res.locals.teamName
     });
   }
 
@@ -1022,14 +1047,28 @@ app.post('/profile/:id', async (req, res, next) => {
   const cEmails = Array.isArray(req.body.contact_email) ? req.body.contact_email : [req.body.contact_email].filter(Boolean);
   const cPhones = Array.isArray(req.body.contact_phone) ? req.body.contact_phone : [req.body.contact_phone].filter(Boolean);
   const cRelations = Array.isArray(req.body.contact_relation) ? req.body.contact_relation : [req.body.contact_relation].filter(Boolean);
+  // The contacts form doesn't render access_level, so carry it forward by
+  // phone. Without this, saving the profile would strip the view-only marker
+  // and viewers would start receiving RSVP links again.
+  let priorContacts = [];
+  try { priorContacts = player.contacts ? JSON.parse(player.contacts) : []; } catch (e) { priorContacts = []; }
+  if (!Array.isArray(priorContacts)) priorContacts = [];
+  const priorLevelByPhone = {};
+  for (const pc of priorContacts) {
+    const ph = normalizePhone(String(pc.phone || ''));
+    if (ph && pc.access_level) priorLevelByPhone[ph] = pc.access_level;
+  }
   for (let i = 0; i < cNames.length; i++) {
     if (cNames[i] && cNames[i].trim()) {
-      contacts.push({
+      const ph = normalizePhone(cPhones[i] || '');
+      const entry = {
         name: cNames[i].trim(),
         email: (cEmails[i] || '').trim(),
-        phone: normalizePhone(cPhones[i] || ''),
+        phone: ph,
         relation: (cRelations[i] || '').trim(),
-      });
+      };
+      if (priorLevelByPhone[ph]) entry.access_level = priorLevelByPhone[ph];
+      contacts.push(entry);
     }
   }
 
@@ -1083,7 +1122,8 @@ app.post('/profile/:id', async (req, res, next) => {
     programData.push({ assignment: a, days, completions });
   }
   res.render('profile', {
-    familyAccounts: await db.getLinkedAccountsByPlayer(player.id),
+    familyAccounts: await db.getLinkedAccountsByPlayerWithAccess(player.id),
+    myAccess: await getAccess(req, player.id),
     currentAccountId: req.parentUser ? req.parentUser.id : null,
     player: updated, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events, programData,
     quizAssignments: quizAssignments2, quizAttemptData: quizAttemptData2,
@@ -1101,16 +1141,19 @@ app.post('/profile/:id/event', async (req, res) => {
   const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
-  let authorized = isAdmin;
-  if (!authorized && req.parentUser) {
-    const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
-    authorized = linked.some(p => p.id === player?.id);
-  }
+  // Acting on a player (edit profile / availability) requires guardian level.
+  // View-only family members are blocked here.
+  let authorized = isAdmin || (player ? await canActOnPlayer(req, player.id) : false);
   if (!player || !authorized) {
     return res.render('verify', {
       players: null, phone: '',
-      error: 'Unauthorized.',
-      success: null
+      error: (await getAccess(req, Number(req.params.id)))
+        ? 'You have view-only access to this player, so you can\'t make changes.'
+        : 'Unauthorized.',
+      success: null,
+      parentUser: req.parentUser || null,
+      hasAccount: !!req.parentUser,
+      teamName: res.locals.teamName
     });
   }
 
@@ -1118,7 +1161,8 @@ app.post('/profile/:id/event', async (req, res) => {
   if (!start_date) {
     const events = await db.getPlayerEvents(player.id);
     return res.render('profile', {
-    familyAccounts: await db.getLinkedAccountsByPlayer(player.id),
+    familyAccounts: await db.getLinkedAccountsByPlayerWithAccess(player.id),
+    myAccess: await getAccess(req, player.id),
     currentAccountId: req.parentUser ? req.parentUser.id : null,
       player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
       quizAssignments: [], quizAttemptData: {},
@@ -1137,7 +1181,8 @@ app.post('/profile/:id/event', async (req, res) => {
 
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
-    familyAccounts: await db.getLinkedAccountsByPlayer(player.id),
+    familyAccounts: await db.getLinkedAccountsByPlayerWithAccess(player.id),
+    myAccess: await getAccess(req, player.id),
     currentAccountId: req.parentUser ? req.parentUser.id : null,
     player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
     quizAssignments: [], quizAttemptData: {},
@@ -1151,23 +1196,27 @@ app.post('/profile/:id/event/delete', async (req, res) => {
   const isAdmin = !!req.session.admin;
 
   const player = await db.getPlayer(Number(req.params.id));
-  let authorized = isAdmin;
-  if (!authorized && req.parentUser) {
-    const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
-    authorized = linked.some(p => p.id === player?.id);
-  }
+  // Acting on a player (edit profile / availability) requires guardian level.
+  // View-only family members are blocked here.
+  let authorized = isAdmin || (player ? await canActOnPlayer(req, player.id) : false);
   if (!player || !authorized) {
     return res.render('verify', {
       players: null, phone: '',
-      error: 'Unauthorized.',
-      success: null
+      error: (await getAccess(req, Number(req.params.id)))
+        ? 'You have view-only access to this player, so you can\'t make changes.'
+        : 'Unauthorized.',
+      success: null,
+      parentUser: req.parentUser || null,
+      hasAccount: !!req.parentUser,
+      teamName: res.locals.teamName
     });
   }
 
   await db.removeEvent(Number(req.body.event_id));
   const events = await db.getPlayerEvents(player.id);
   res.render('profile', {
-    familyAccounts: await db.getLinkedAccountsByPlayer(player.id),
+    familyAccounts: await db.getLinkedAccountsByPlayerWithAccess(player.id),
+    myAccess: await getAccess(req, player.id),
     currentAccountId: req.parentUser ? req.parentUser.id : null,
     player, phone: isAdmin ? '' : phone, isAdmin, POSITIONS, RATING_FIELDS, events,
     quizAssignments: [], quizAttemptData: {},
@@ -1403,11 +1452,34 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
 // schedule. They're also appended to the player's contacts so they receive
 // the same reminders. Reachable by the player's own parents and by admins.
 
+// Access tiers on a player:
+//   admin     -> everything
+//   primary   -> everything a guardian can do, PLUS managing the family list
+//                and setting each member's tier
+//   guardian  -> act on the player (RSVP, edit profile, availability)
+//   viewer    -> read-only
+async function getAccess(req, playerId) {
+  if (req.session.admin) return { level: 'guardian', isPrimary: true, isAdmin: true };
+  if (!req.parentUser) return null;
+  const row = await db.getPlayerAccess(req.parentUser.id, playerId);
+  if (!row) return null;
+  return {
+    level: row.access_level === 'viewer' ? 'viewer' : 'guardian',
+    isPrimary: !!row.is_primary,
+    isAdmin: false,
+  };
+}
+
+// Can act on the player (not merely look at them).
+async function canActOnPlayer(req, playerId) {
+  const a = await getAccess(req, playerId);
+  return !!a && a.level === 'guardian';
+}
+
+// Can manage who has access and at what tier.
 async function canManagePlayer(req, playerId) {
-  if (req.session.admin) return true;
-  if (!req.parentUser) return false;
-  const linked = await db.getLinkedPlayersByAccount(req.parentUser.id);
-  return linked.some(p => p.id === playerId);
+  const a = await getAccess(req, playerId);
+  return !!a && (a.isAdmin || a.isPrimary);
 }
 
 app.post('/profile/:id/family', requireParentOrAdmin, async (req, res) => {
@@ -1415,9 +1487,10 @@ app.post('/profile/:id/family', requireParentOrAdmin, async (req, res) => {
   const player = await db.getPlayer(playerId);
   if (!player) return res.json({ ok: false, error: 'Player not found.' });
   if (!(await canManagePlayer(req, playerId))) {
-    return res.json({ ok: false, error: 'You can only manage your own player.' });
+    return res.json({ ok: false, error: 'Only the primary parent can manage family access.' });
   }
 
+  const accessLevel = req.body.access_level === 'viewer' ? 'viewer' : 'guardian';
   const name = (req.body.name || '').trim();
   const relation = (req.body.relation || '').trim();
   const email = (req.body.email || '').trim();
@@ -1437,7 +1510,7 @@ app.post('/profile/:id/family', requireParentOrAdmin, async (req, res) => {
 
   const already = (await db.getLinkedAccountsByPlayer(playerId)).some(a => a.id === account.id);
   if (already) return res.json({ ok: false, error: `${name} already has access to ${player.player_name}.` });
-  await db.linkPlayerToAccount(playerId, account.id);
+  await db.linkPlayerToAccountWithAccess(playerId, account.id, accessLevel);
 
   // Mirror into the player's contacts so reminders reach them too.
   try {
@@ -1446,7 +1519,7 @@ app.post('/profile/:id/family', requireParentOrAdmin, async (req, res) => {
     if (!Array.isArray(contacts)) contacts = [];
     const dup = contacts.some(c => normalizePhone(String(c.phone || '')) === phone);
     if (!dup) {
-      contacts.push({ name, relation, email, phone });
+      contacts.push({ name, relation, email, phone, access_level: accessLevel });
       await db.setPlayerContacts(playerId, JSON.stringify(contacts));
     }
   } catch (e) { console.error('family contact merge failed:', e.message); }
@@ -1472,15 +1545,37 @@ app.post('/profile/:id/family', requireParentOrAdmin, async (req, res) => {
   res.json({ ok: true, created: !!tempPassword });
 });
 
+app.post('/profile/:id/family/:accountId/access', requireParentOrAdmin, async (req, res) => {
+  const playerId = Number(req.params.id);
+  const accountId = Number(req.params.accountId);
+  if (!(await canManagePlayer(req, playerId))) {
+    return res.json({ ok: false, error: 'Only the primary parent can change access levels.' });
+  }
+  const level = req.body.access_level === 'viewer' ? 'viewer' : 'guardian';
+  // The primary parent must stay a guardian -- otherwise nobody can act.
+  const target = await db.getPlayerAccess(accountId, playerId);
+  if (!target) return res.json({ ok: false, error: 'That person does not have access to this player.' });
+  if (target.is_primary && level === 'viewer') {
+    return res.json({ ok: false, error: 'The primary parent cannot be set to view-only.' });
+  }
+  await db.setPlayerAccessLevel(playerId, accountId, level);
+  res.json({ ok: true, access_level: level });
+});
+
 app.post('/profile/:id/family/:accountId/remove', requireParentOrAdmin, async (req, res) => {
   const playerId = Number(req.params.id);
   const accountId = Number(req.params.accountId);
   if (!(await canManagePlayer(req, playerId))) {
-    return res.json({ ok: false, error: 'You can only manage your own player.' });
+    return res.json({ ok: false, error: 'Only the primary parent can manage family access.' });
   }
-  // Don't let someone remove their own access and lock themselves out.
+  // Don't let someone remove their own access and lock themselves out, and
+  // never strip the primary parent (the player would lose its owner).
   if (req.parentUser && req.parentUser.id === accountId) {
     return res.json({ ok: false, error: 'You cannot remove your own access.' });
+  }
+  const target = await db.getPlayerAccess(accountId, playerId);
+  if (target && target.is_primary) {
+    return res.json({ ok: false, error: 'The primary parent cannot be removed.' });
   }
   await db.unlinkPlayerFromAccount(playerId, accountId);
   res.json({ ok: true });
@@ -2509,6 +2604,8 @@ app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
   if (player_ids && player_ids.length > 0) {
     for (const pid of player_ids) {
       await db.linkPlayerToAccount(Number(pid), newAccount.id);
+      try { await db.markPrimaryIfNone(Number(pid), newAccount.id); }
+      catch (e) { console.error('markPrimaryIfNone failed:', e.message); }
     }
   }
 

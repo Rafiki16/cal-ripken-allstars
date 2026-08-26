@@ -675,6 +675,32 @@ async function init() {
       )
     `);
 
+    // --- Family access tiers ---
+    // access_level: 'guardian' = full (RSVP, edit profile), 'viewer' = read-only.
+    // is_primary: the parent who controls the family list and everyone's tier.
+    try { await pool.query("ALTER TABLE player_parents ADD COLUMN access_level TEXT NOT NULL DEFAULT 'guardian'"); } catch (e) { /* exists */ }
+    try { await pool.query('ALTER TABLE player_parents ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* exists */ }
+    try {
+      const m = await pool.query("SELECT 1 FROM migrations WHERE name = 'family_access_tiers_v1'");
+      if (m.rowCount === 0) {
+        // Everyone who already had access keeps full access.
+        await pool.query("UPDATE player_parents SET access_level = 'guardian' WHERE access_level IS NULL OR access_level = ''");
+        // Primary = the account whose phone matches the roster's parent_phone.
+        await pool.query(`UPDATE player_parents SET is_primary = 1 WHERE id IN (
+          SELECT pp.id FROM player_parents pp
+          JOIN players p ON p.id = pp.player_id
+          JOIN parent_accounts pa ON pa.id = pp.account_id
+          WHERE pa.phone = p.parent_phone)`);
+        // Any player still without a primary: promote its earliest link.
+        await pool.query(`UPDATE player_parents SET is_primary = 1 WHERE id IN (
+          SELECT MIN(pp.id) FROM player_parents pp
+          WHERE NOT EXISTS (SELECT 1 FROM player_parents x
+                            WHERE x.player_id = pp.player_id AND x.is_primary = 1)
+          GROUP BY pp.player_id)`);
+        await pool.query("INSERT INTO migrations (name) VALUES ('family_access_tiers_v1')");
+      }
+    } catch (e) { console.error('family_access_tiers_v1 failed:', e.message); }
+
     // --- Multi-team scoping ---
     // These 8 top-level tables get a team_id. Child tables (rsvps, at_bats,
     // game_roster, sub_events, lineup_grid, pitches, program_days, ...) are
@@ -907,6 +933,36 @@ async function init() {
       updatePlayerParentPhone: async (playerId, phone) => pool.query('UPDATE players SET parent_phone = $1 WHERE id = $2', [phone, playerId]),
       linkPlayerToAccount: async (playerId, accountId) => pool.query('INSERT INTO player_parents (player_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [playerId, accountId]),
       unlinkPlayerFromAccount: async (playerId, accountId) => pool.query('DELETE FROM player_parents WHERE player_id = $1 AND account_id = $2', [playerId, accountId]),
+      // Access tier for one account on one player. Returns null when unlinked.
+      markPrimaryIfNone: async (playerId, accountId) => pool.query(
+        `UPDATE player_parents SET is_primary = 1
+         WHERE player_id = $1 AND account_id = $2
+           AND NOT EXISTS (SELECT 1 FROM player_parents x
+                           WHERE x.player_id = $1 AND x.is_primary = 1)`,
+        [playerId, accountId]),
+      getPlayerAccess: async (accountId, playerId) => (await pool.query(
+        'SELECT access_level, is_primary FROM player_parents WHERE account_id = $1 AND player_id = $2',
+        [accountId, playerId])).rows[0] || null,
+      // Players this account can act on at guardian level (used by RSVP).
+      getGuardianPlayers: async (accountId, teamId) => {
+        const base = `SELECT p.* FROM players p
+             JOIN player_parents pp ON pp.player_id = p.id
+             WHERE pp.account_id = $1 AND pp.access_level = 'guardian'`;
+        return teamId
+          ? (await pool.query(base + ' AND p.team_id = $2 ORDER BY p.player_name', [accountId, teamId])).rows
+          : (await pool.query(base + ' ORDER BY p.player_name', [accountId])).rows;
+      },
+      getLinkedAccountsByPlayerWithAccess: async (playerId) => (await pool.query(
+        `SELECT pa.*, pp.access_level, pp.is_primary FROM parent_accounts pa
+         JOIN player_parents pp ON pa.id = pp.account_id
+         WHERE pp.player_id = $1 ORDER BY pp.is_primary DESC, pa.display_name`, [playerId])).rows,
+      setPlayerAccessLevel: async (playerId, accountId, level) => pool.query(
+        'UPDATE player_parents SET access_level = $1 WHERE player_id = $2 AND account_id = $3',
+        [level === 'viewer' ? 'viewer' : 'guardian', playerId, accountId]),
+      linkPlayerToAccountWithAccess: async (playerId, accountId, level) => pool.query(
+        `INSERT INTO player_parents (player_id, account_id, access_level) VALUES ($1,$2,$3)
+         ON CONFLICT (player_id, account_id) DO UPDATE SET access_level = $3`,
+        [playerId, accountId, level === 'viewer' ? 'viewer' : 'guardian']),
       fillBlankParentName: async (phone, name) => pool.query(
         "UPDATE players SET parent_name = $1 WHERE parent_phone = $2 AND (parent_name IS NULL OR TRIM(parent_name) = '')",
         [name, phone]
@@ -1800,6 +1856,28 @@ async function init() {
       )
     `);
 
+    // --- Family access tiers (mirrors the Postgres branch) ---
+    try { sqliteDb.exec("ALTER TABLE player_parents ADD COLUMN access_level TEXT NOT NULL DEFAULT 'guardian'"); } catch (e) { /* exists */ }
+    try { sqliteDb.exec('ALTER TABLE player_parents ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* exists */ }
+    try {
+      sqliteDb.exec(`CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`);
+      const applied = sqliteDb.prepare("SELECT 1 FROM migrations WHERE name = 'family_access_tiers_v1'").get();
+      if (!applied) {
+        sqliteDb.prepare("UPDATE player_parents SET access_level = 'guardian' WHERE access_level IS NULL OR access_level = ''").run();
+        sqliteDb.prepare(`UPDATE player_parents SET is_primary = 1 WHERE id IN (
+          SELECT pp.id FROM player_parents pp
+          JOIN players p ON p.id = pp.player_id
+          JOIN parent_accounts pa ON pa.id = pp.account_id
+          WHERE pa.phone = p.parent_phone)`).run();
+        sqliteDb.prepare(`UPDATE player_parents SET is_primary = 1 WHERE id IN (
+          SELECT MIN(pp.id) FROM player_parents pp
+          WHERE NOT EXISTS (SELECT 1 FROM player_parents x
+                            WHERE x.player_id = pp.player_id AND x.is_primary = 1)
+          GROUP BY pp.player_id)`).run();
+        sqliteDb.prepare("INSERT INTO migrations (name) VALUES ('family_access_tiers_v1')").run();
+      }
+    } catch (e) { console.error('family_access_tiers_v1 failed:', e.message); }
+
     // --- Multi-team scoping (mirrors the Postgres branch) ---
     const TEAM_SCOPED_TABLES = [
       'players', 'staff', 'team_events', 'team_messages',
@@ -2019,6 +2097,34 @@ async function init() {
       updatePlayerParentPhone: async (playerId, phone) => sqliteDb.prepare('UPDATE players SET parent_phone = ? WHERE id = ?').run(phone, playerId),
       linkPlayerToAccount: async (playerId, accountId) => sqliteDb.prepare('INSERT OR IGNORE INTO player_parents (player_id, account_id) VALUES (?, ?)').run(playerId, accountId),
       unlinkPlayerFromAccount: async (playerId, accountId) => sqliteDb.prepare('DELETE FROM player_parents WHERE player_id = ? AND account_id = ?').run(playerId, accountId),
+      markPrimaryIfNone: async (playerId, accountId) => sqliteDb.prepare(
+        `UPDATE player_parents SET is_primary = 1
+         WHERE player_id = ? AND account_id = ?
+           AND NOT EXISTS (SELECT 1 FROM player_parents x
+                           WHERE x.player_id = ? AND x.is_primary = 1)`
+      ).run(playerId, accountId, playerId),
+      getPlayerAccess: async (accountId, playerId) => sqliteDb.prepare(
+        'SELECT access_level, is_primary FROM player_parents WHERE account_id = ? AND player_id = ?'
+      ).get(accountId, playerId) || null,
+      getGuardianPlayers: async (accountId, teamId) => {
+        const base = `SELECT p.* FROM players p
+             JOIN player_parents pp ON pp.player_id = p.id
+             WHERE pp.account_id = ? AND pp.access_level = 'guardian'`;
+        return teamId
+          ? sqliteDb.prepare(base + ' AND p.team_id = ? ORDER BY p.player_name').all(accountId, teamId)
+          : sqliteDb.prepare(base + ' ORDER BY p.player_name').all(accountId);
+      },
+      getLinkedAccountsByPlayerWithAccess: async (playerId) => sqliteDb.prepare(
+        `SELECT pa.*, pp.access_level, pp.is_primary FROM parent_accounts pa
+         JOIN player_parents pp ON pa.id = pp.account_id
+         WHERE pp.player_id = ? ORDER BY pp.is_primary DESC, pa.display_name`).all(playerId),
+      setPlayerAccessLevel: async (playerId, accountId, level) => sqliteDb.prepare(
+        'UPDATE player_parents SET access_level = ? WHERE player_id = ? AND account_id = ?'
+      ).run(level === 'viewer' ? 'viewer' : 'guardian', playerId, accountId),
+      linkPlayerToAccountWithAccess: async (playerId, accountId, level) => sqliteDb.prepare(
+        `INSERT INTO player_parents (player_id, account_id, access_level) VALUES (?,?,?)
+         ON CONFLICT (player_id, account_id) DO UPDATE SET access_level = excluded.access_level`
+      ).run(playerId, accountId, level === 'viewer' ? 'viewer' : 'guardian'),
       fillBlankParentName: async (phone, name) => sqliteDb.prepare(
         "UPDATE players SET parent_name = ? WHERE parent_phone = ? AND (parent_name IS NULL OR TRIM(parent_name) = '')"
       ).run(name, phone),
@@ -2437,6 +2543,12 @@ module.exports = {
   updatePlayerParentPhone: (...args) => impl.updatePlayerParentPhone(...args),
   linkPlayerToAccount: (...args) => impl.linkPlayerToAccount(...args),
   unlinkPlayerFromAccount: (...args) => impl.unlinkPlayerFromAccount(...args),
+  markPrimaryIfNone: (...args) => impl.markPrimaryIfNone(...args),
+  getPlayerAccess: (...args) => impl.getPlayerAccess(...args),
+  getGuardianPlayers: (...args) => impl.getGuardianPlayers(...args),
+  getLinkedAccountsByPlayerWithAccess: (...args) => impl.getLinkedAccountsByPlayerWithAccess(...args),
+  setPlayerAccessLevel: (...args) => impl.setPlayerAccessLevel(...args),
+  linkPlayerToAccountWithAccess: (...args) => impl.linkPlayerToAccountWithAccess(...args),
   fillBlankParentName: (...args) => impl.fillBlankParentName(...args),
   setPlayerContacts: (...args) => impl.setPlayerContacts(...args),
   getLinkedPlayersByAccount: (...args) => impl.getLinkedPlayersByAccount(...args),

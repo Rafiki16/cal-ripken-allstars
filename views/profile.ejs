@@ -200,15 +200,23 @@
     </form>
 
     <!-- Family Members with their own sign-in -->
+    <% const canManageFamily = (typeof myAccess !== 'undefined' && myAccess && (myAccess.isAdmin || myAccess.isPrimary)); %>
     <div class="profile-section">
       <h2 class="profile-section-title">Family Access</h2>
-      <p class="section-hint">Give another family member their own sign-in so they can see the schedule, RSVPs and lineups. They&rsquo;ll also receive team reminders.</p>
+      <p class="section-hint">Give another family member their own sign-in. <strong>View only</strong> can see the schedule, lineups and reminders. <strong>Guardian</strong> can also RSVP and edit the player&rsquo;s profile.</p>
 
       <div id="family-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
         <% (typeof familyAccounts !== 'undefined' ? familyAccounts : []).forEach(function(f) { %>
           <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 12px; background:var(--gray-50); border:1px solid var(--gray-200); border-radius:8px;">
             <div>
               <strong style="color:var(--navy);"><%= f.display_name %></strong>
+              <% if (f.is_primary) { %>
+                <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border-radius:20px;background:#e0e7ff;color:#3730a3;margin-left:6px;">Primary</span>
+              <% } else if (f.access_level === 'viewer') { %>
+                <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-700);margin-left:6px;">View only</span>
+              <% } else { %>
+                <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border-radius:20px;background:var(--green-bg);color:var(--green);margin-left:6px;">Guardian</span>
+              <% } %>
               <div style="font-size:12px; color:var(--gray-500);">
                 <%= String(f.phone || '').replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') %>
                 <% if (f.username) { %> &middot; @<%= f.username %><% } %>
@@ -217,8 +225,16 @@
                 <% } %>
               </div>
             </div>
-            <% if (!(typeof currentAccountId !== 'undefined' && currentAccountId === f.id)) { %>
-              <button type="button" class="btn-sm btn-sm-remove" onclick="removeFamily(<%= f.id %>, <%- JSON.stringify(f.display_name) %>)">Remove access</button>
+            <% if (canManageFamily && !f.is_primary) { %>
+              <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                <select onchange="setAccess(<%= f.id %>, this.value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--gray-300);border-radius:6px;">
+                  <option value="guardian" <%= f.access_level !== 'viewer' ? 'selected' : '' %>>Guardian</option>
+                  <option value="viewer" <%= f.access_level === 'viewer' ? 'selected' : '' %>>View only</option>
+                </select>
+                <% if (!(typeof currentAccountId !== 'undefined' && currentAccountId === f.id)) { %>
+                  <button type="button" class="btn-sm btn-sm-remove" onclick="removeFamily(<%= f.id %>, <%- JSON.stringify(f.display_name) %>)">Remove</button>
+                <% } %>
+              </div>
             <% } %>
           </div>
         <% }); %>
@@ -227,6 +243,7 @@
         <% } %>
       </div>
 
+      <% if (canManageFamily) { %>
       <div class="form-row">
         <div class="form-group">
           <label>Name</label>
@@ -248,8 +265,18 @@
           <input type="email" id="fam-email" class="form-input" placeholder="email@example.com">
         </div>
       </div>
+      <div class="form-group">
+        <label>Access Level</label>
+        <select id="fam-access" class="form-input">
+          <option value="viewer">View only &mdash; sees schedule, lineups and reminders</option>
+          <option value="guardian">Guardian &mdash; can also RSVP and edit the profile</option>
+        </select>
+      </div>
       <button type="button" class="btn btn-confirm" onclick="addFamily()">Add Family Member</button>
       <span id="fam-msg" style="margin-left:10px; font-size:13px;"></span>
+      <% } else { %>
+        <p style="font-size:13px;color:var(--gray-500);margin:0;">Only the primary parent can add or change family access.</p>
+      <% } %>
     </div>
 
     <!-- Assigned Quizzes -->
@@ -594,12 +621,23 @@
         name: name,
         phone: phone,
         relation: document.getElementById('fam-relation').value.trim(),
-        email: document.getElementById('fam-email').value.trim()
+        email: document.getElementById('fam-email').value.trim(),
+        access_level: document.getElementById('fam-access').value
       })
     }).then(function(r){ return r.json(); }).then(function(d){
       if (d.ok) { famMsg(d.created ? 'Added \u2014 sign-in details sent.' : 'Added \u2014 they can use their existing login.', true); setTimeout(function(){ location.reload(); }, 1200); }
       else famMsg(d.error || 'Could not add.', false);
     }).catch(function(){ famMsg('Network error.', false); });
+  }
+  function setAccess(accountId, level) {
+    fetch('/profile/<%= player.id %>/family/' + accountId + '/access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_level: level })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) { famMsg('Access updated.', true); setTimeout(function(){ location.reload(); }, 800); }
+      else { famMsg(d.error || 'Could not update.', false); }
+    });
   }
   function removeFamily(accountId, name) {
     if (!confirm('Remove ' + name + "'s access to this player?")) return;
