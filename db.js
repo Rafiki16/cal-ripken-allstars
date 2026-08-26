@@ -46,6 +46,33 @@ async function init() {
       ssl: { rejectUnauthorized: false }
     });
 
+    // Multi-team support. Every team-scoped table carries a team_id FK.
+    // A team is identified by id + slug (URL-safe) and can be deactivated
+    // (hidden from switchers) without deleting its data.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS teams (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    // Seed team #1 from the existing team_name site setting (or the fixed
+    // legacy default) so pre-multi-team databases have a home for all rows.
+    const seedTeamRows = await pool.query('SELECT id FROM teams WHERE id = 1');
+    if (seedTeamRows.rowCount === 0) {
+      let seedName = 'Cal Ripken All-Stars';
+      try {
+        // site_settings may not exist yet on a fresh DB; ignore.
+        const r = await pool.query("SELECT value FROM site_settings WHERE key = 'team_name'");
+        if (r.rowCount > 0 && r.rows[0].value) seedName = r.rows[0].value;
+      } catch (_) { /* site_settings not created yet — that's fine */ }
+      await pool.query("INSERT INTO teams (id, name, slug, is_active) VALUES (1, $1, 'default', 1)", [seedName]);
+      // Keep SERIAL sequence ahead of the manual id insert.
+      await pool.query("SELECT setval(pg_get_serial_sequence('teams', 'id'), GREATEST(1, (SELECT MAX(id) FROM teams)))");
+    }
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS players (
         id SERIAL PRIMARY KEY,
@@ -648,19 +675,63 @@ async function init() {
       )
     `);
 
+    // --- Multi-team scoping ---
+    // These 8 top-level tables get a team_id. Child tables (rsvps, at_bats,
+    // game_roster, sub_events, lineup_grid, pitches, program_days, ...) are
+    // reachable through their parent row, so they inherit scope via joins and
+    // deliberately do NOT get their own team_id.
+    const TEAM_SCOPED_TABLES = [
+      'players', 'staff', 'team_events', 'team_messages',
+      'score_keepers', 'programs', 'quizzes', 'saved_locations'
+    ];
+    for (const t of TEAM_SCOPED_TABLES) {
+      try { await pool.query(`ALTER TABLE ${t} ADD COLUMN team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE`); } catch (e) { /* exists */ }
+    }
+    // One-time backfill: every pre-multi-team row belongs to team #1.
+    try {
+      const m = await pool.query("SELECT 1 FROM migrations WHERE name = 'multi_team_backfill_v1'");
+      if (m.rowCount === 0) {
+        for (const t of TEAM_SCOPED_TABLES) {
+          await pool.query(`UPDATE ${t} SET team_id = 1 WHERE team_id IS NULL`);
+        }
+        await pool.query("INSERT INTO migrations (name) VALUES ('multi_team_backfill_v1')");
+      }
+    } catch (e) { console.error('multi_team_backfill_v1 failed:', e.message); }
+    // Safety net for rows created between deploys (e.g. a write that landed
+    // before this build shipped): never leave a team-scoped row orphaned.
+    for (const t of TEAM_SCOPED_TABLES) {
+      try { await pool.query(`UPDATE ${t} SET team_id = 1 WHERE team_id IS NULL`); } catch (e) { /* best-effort */ }
+    }
+    for (const t of TEAM_SCOPED_TABLES) {
+      try { await pool.query(`CREATE INDEX IF NOT EXISTS idx_${t}_team_id ON ${t}(team_id)`); } catch (e) { /* best-effort */ }
+    }
+
     const { rows } = await pool.query('SELECT COUNT(*) as c FROM players');
     if (parseInt(rows[0].c) === 0) {
       for (const r of ROSTER) {
         await pool.query(
-          'INSERT INTO players (player_name, division, team, age, parent_name, parent_phone) VALUES ($1,$2,$3,$4,$5,$6)',
+          'INSERT INTO players (player_name, division, team, age, parent_name, parent_phone, team_id) VALUES ($1,$2,$3,$4,$5,$6,1)',
           r
         );
       }
     }
 
     impl = {
-      getAllPlayers: async () => (await pool.query('SELECT * FROM players ORDER BY age, player_name')).rows,
-      getPlayersByPhone: async (phone) => (await pool.query('SELECT * FROM players WHERE parent_phone = $1', [phone])).rows,
+      // --- Teams ---
+      getAllTeams: async () => (await pool.query('SELECT * FROM teams ORDER BY is_active DESC, created_at DESC, name')).rows,
+      getActiveTeams: async () => (await pool.query('SELECT * FROM teams WHERE is_active = 1 ORDER BY created_at DESC, name')).rows,
+      getTeam: async (id) => (await pool.query('SELECT * FROM teams WHERE id = $1', [id])).rows[0] || null,
+      getTeamBySlug: async (slug) => (await pool.query('SELECT * FROM teams WHERE slug = $1', [slug])).rows[0] || null,
+      createTeam: async (name, slug) => (await pool.query('INSERT INTO teams (name, slug) VALUES ($1,$2) RETURNING *', [name, slug])).rows[0],
+      updateTeam: async (id, name) => pool.query('UPDATE teams SET name = $1 WHERE id = $2', [name, id]),
+      setTeamActive: async (id, active) => pool.query('UPDATE teams SET is_active = $1 WHERE id = $2', [active ? 1 : 0, id]),
+
+      getAllPlayers: async (teamId) => teamId
+        ? (await pool.query('SELECT * FROM players WHERE team_id = $1 ORDER BY age, player_name', [teamId])).rows
+        : (await pool.query('SELECT * FROM players ORDER BY age, player_name')).rows,
+      getPlayersByPhone: async (phone, teamId) => teamId
+        ? (await pool.query('SELECT * FROM players WHERE parent_phone = $1 AND team_id = $2', [phone, teamId])).rows
+        : (await pool.query('SELECT * FROM players WHERE parent_phone = $1', [phone])).rows,
       getPlayer: async (id) => (await pool.query('SELECT * FROM players WHERE id = $1', [id])).rows[0] || null,
       updateStatus: async (id, status) => pool.query('UPDATE players SET status = $1, updated_at = NOW() WHERE id = $2', [status, id]),
       updateProfile: async (id, data) => {
@@ -679,26 +750,32 @@ async function init() {
       },
       addPlayer: async (p) => {
         await pool.query(
-          'INSERT INTO players (player_name, division, team, age, parent_name, parent_phone, parent_email) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-          [p.player_name, p.division, p.team, p.age, p.parent_name, p.parent_phone, p.parent_email || null]
+          'INSERT INTO players (player_name, division, team, age, parent_name, parent_phone, parent_email, team_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+          [p.player_name, p.division, p.team, p.age, p.parent_name, p.parent_phone, p.parent_email || null, p.team_id || 1]
         );
       },
       removePlayer: async (id) => pool.query('DELETE FROM players WHERE id = $1', [id]),
-      getAllStaff: async () => (await pool.query('SELECT * FROM staff ORDER BY name')).rows,
+      getAllStaff: async (teamId) => teamId
+        ? (await pool.query('SELECT * FROM staff WHERE team_id = $1 ORDER BY name', [teamId])).rows
+        : (await pool.query('SELECT * FROM staff ORDER BY name')).rows,
       getStaff: async (id) => (await pool.query('SELECT * FROM staff WHERE id = $1', [id])).rows[0] || null,
-      getStaffByPhone: async (phone) => (await pool.query('SELECT * FROM staff WHERE phone = $1', [phone])).rows[0] || null,
-      addStaff: async (s) => pool.query('INSERT INTO staff (name, role, phone, email) VALUES ($1,$2,$3,$4)', [s.name, s.role, s.phone, s.email || null]),
+      getStaffByPhone: async (phone, teamId) => teamId
+        ? (await pool.query('SELECT * FROM staff WHERE phone = $1 AND team_id = $2', [phone, teamId])).rows[0] || null
+        : (await pool.query('SELECT * FROM staff WHERE phone = $1', [phone])).rows[0] || null,
+      addStaff: async (s) => pool.query('INSERT INTO staff (name, role, phone, email, team_id) VALUES ($1,$2,$3,$4,$5)', [s.name, s.role, s.phone, s.email || null, s.team_id || 1]),
       updateStaff: async (id, s) => pool.query('UPDATE staff SET name=$1, role=$2, phone=$3, email=$4 WHERE id=$5', [s.name, s.role, s.phone, s.email || null, id]),
       removeStaff: async (id) => pool.query('DELETE FROM staff WHERE id = $1', [id]),
       getPlayerEvents: async (playerId) => (await pool.query('SELECT * FROM events WHERE player_id = $1 ORDER BY start_date', [playerId])).rows,
       getAllEvents: async () => (await pool.query('SELECT * FROM events ORDER BY start_date')).rows,
       addEvent: async (e) => pool.query('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES ($1,$2,$3,$4,$5)', [e.player_id, e.event_type, e.start_date, e.end_date, e.notes]),
       removeEvent: async (id) => pool.query('DELETE FROM events WHERE id = $1', [id]),
-      getAllTeamEvents: async () => (await pool.query('SELECT * FROM team_events ORDER BY start_date, start_time')).rows,
+      getAllTeamEvents: async (teamId) => teamId
+        ? (await pool.query('SELECT * FROM team_events WHERE team_id = $1 ORDER BY start_date, start_time', [teamId])).rows
+        : (await pool.query('SELECT * FROM team_events ORDER BY start_date, start_time')).rows,
       getTeamEvent: async (id) => (await pool.query('SELECT * FROM team_events WHERE id = $1', [id])).rows[0] || null,
       addTeamEvent: async (e) => pool.query(
-        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info, opponent_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
-        [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null]
+        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info, opponent_name, team_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
+        [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null, e.team_id || 1]
       ),
       updateTeamEvent: async (id, e) => pool.query(
         'UPDATE team_events SET event_type=$1, title=$2, start_date=$3, start_time=$4, end_date=$5, end_time=$6, location_name=$7, address=$8, notes=$9, hotel_info=$10, carpool_info=$11, opponent_name=$12 WHERE id=$13',
@@ -817,9 +894,11 @@ async function init() {
         if (eventId) await pool.query('DELETE FROM lineup_grid WHERE team_event_id = $1 AND player_id = $2', [eventId, playerId]);
         else await pool.query('DELETE FROM lineup_grid WHERE sub_event_id = $1 AND player_id = $2', [subEventId, playerId]);
       },
-      getAllMessages: async () => (await pool.query('SELECT m.*, (SELECT COUNT(*) FROM team_messages r WHERE r.parent_id = m.id) as reply_count FROM team_messages m WHERE m.parent_id IS NULL ORDER BY m.pinned DESC, m.created_at DESC')).rows,
+      getAllMessages: async (teamId) => teamId
+        ? (await pool.query('SELECT m.*, (SELECT COUNT(*) FROM team_messages r WHERE r.parent_id = m.id) as reply_count FROM team_messages m WHERE m.parent_id IS NULL AND m.team_id = $1 ORDER BY m.pinned DESC, m.created_at DESC', [teamId])).rows
+        : (await pool.query('SELECT m.*, (SELECT COUNT(*) FROM team_messages r WHERE r.parent_id = m.id) as reply_count FROM team_messages m WHERE m.parent_id IS NULL ORDER BY m.pinned DESC, m.created_at DESC')).rows,
       getTopicReplies: async (topicId) => (await pool.query('SELECT * FROM team_messages WHERE parent_id = $1 ORDER BY created_at ASC', [topicId])).rows,
-      addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES ($1,$2,$3,$4)', [m.author_name, m.author_type, m.message, m.parent_id || null]),
+      addMessage: async (m) => pool.query('INSERT INTO team_messages (author_name, author_type, message, parent_id, team_id) VALUES ($1,$2,$3,$4,$5)', [m.author_name, m.author_type, m.message, m.parent_id || null, m.team_id || 1]),
       removeMessage: async (id) => pool.query('DELETE FROM team_messages WHERE id = $1', [id]),
       togglePinMessage: async (id) => pool.query('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = $1', [id]),
       toggleReaction: async (messageId, authorName, reactionType) => {
@@ -843,11 +922,15 @@ async function init() {
         }
         return result;
       },
-      getAllSavedLocations: async () => (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
-      addSavedLocation: async (name, address) => pool.query('INSERT INTO saved_locations (location_name, address) VALUES ($1, $2)', [name, address]),
+      getAllSavedLocations: async (teamId) => teamId
+        ? (await pool.query('SELECT * FROM saved_locations WHERE team_id = $1 ORDER BY location_name', [teamId])).rows
+        : (await pool.query('SELECT * FROM saved_locations ORDER BY location_name')).rows,
+      addSavedLocation: async (name, address, teamId) => pool.query('INSERT INTO saved_locations (location_name, address, team_id) VALUES ($1, $2, $3)', [name, address, teamId || 1]),
       removeSavedLocation: async (id) => pool.query('DELETE FROM saved_locations WHERE id = $1', [id]),
 
-      getAllScoreKeepers: async () => (await pool.query('SELECT * FROM score_keepers ORDER BY name')).rows,
+      getAllScoreKeepers: async (teamId) => teamId
+        ? (await pool.query('SELECT * FROM score_keepers WHERE team_id = $1 ORDER BY name', [teamId])).rows
+        : (await pool.query('SELECT * FROM score_keepers ORDER BY name')).rows,
       addScoreKeeper: async (sk) => {
         const r = await pool.query('INSERT INTO score_keepers (name, phone, email, access_token) VALUES ($1,$2,$3,$4) RETURNING id', [sk.name, sk.phone || null, sk.email || null, sk.access_token]);
         return r.rows[0];
@@ -1005,10 +1088,14 @@ async function init() {
         const r = await pool.query('SELECT COUNT(*)::int as cnt FROM game_undo_log WHERE game_id = $1', [gameId]);
         return r.rows[0].cnt;
       },
-      getAllPrograms: async () => (await pool.query('SELECT * FROM programs ORDER BY created_at DESC')).rows,
-      getPublishedPrograms: async () => (await pool.query('SELECT * FROM programs WHERE published = 1 ORDER BY title')).rows,
+      getAllPrograms: async (teamId) => teamId
+        ? (await pool.query('SELECT * FROM programs WHERE team_id = $1 ORDER BY created_at DESC', [teamId])).rows
+        : (await pool.query('SELECT * FROM programs ORDER BY created_at DESC')).rows,
+      getPublishedPrograms: async (teamId) => teamId
+        ? (await pool.query('SELECT * FROM programs WHERE published = 1 AND team_id = $1 ORDER BY title', [teamId])).rows
+        : (await pool.query('SELECT * FROM programs WHERE published = 1 ORDER BY title')).rows,
       getProgram: async (id) => (await pool.query('SELECT * FROM programs WHERE id = $1', [id])).rows[0] || null,
-      addProgram: async (p) => (await pool.query('INSERT INTO programs (title, description, author, program_type, schedule_type, published) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [p.title, p.description || null, p.author || null, p.program_type || 'at_home', p.schedule_type || 'weekly', p.published || 0])).rows[0],
+      addProgram: async (p) => (await pool.query('INSERT INTO programs (title, description, author, program_type, schedule_type, published, team_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id', [p.title, p.description || null, p.author || null, p.program_type || 'at_home', p.schedule_type || 'weekly', p.published || 0, p.team_id || 1])).rows[0],
       updateProgram: async (id, p) => pool.query('UPDATE programs SET title=$1, description=$2, author=$3, program_type=$4, schedule_type=$5, published=$6 WHERE id=$7', [p.title, p.description || null, p.author || null, p.program_type, p.schedule_type, p.published || 0, id]),
       removeProgram: async (id) => pool.query('DELETE FROM programs WHERE id = $1', [id]),
       getProgramDays: async (programId) => (await pool.query('SELECT * FROM program_days WHERE program_id = $1 ORDER BY sort_order', [programId])).rows,
@@ -1050,10 +1137,12 @@ async function init() {
       updateProgramEquipment: async (id, e) => pool.query('UPDATE program_equipment SET item_name=$1, is_required=$2, buy_url=$3, sort_order=$4 WHERE id=$5', [e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0, id]),
       removeProgramEquipment: async (id) => pool.query('DELETE FROM program_equipment WHERE id = $1', [id]),
 
-      getAllQuizzes: async () => (await pool.query('SELECT * FROM quizzes ORDER BY position, title')).rows,
+      getAllQuizzes: async (teamId) => teamId
+        ? (await pool.query('SELECT * FROM quizzes WHERE team_id = $1 ORDER BY position, title', [teamId])).rows
+        : (await pool.query('SELECT * FROM quizzes ORDER BY position, title')).rows,
       getQuiz: async (id) => (await pool.query('SELECT * FROM quizzes WHERE id = $1', [id])).rows[0] || null,
       getQuizzesByPosition: async (pos) => (await pool.query('SELECT * FROM quizzes WHERE position = $1 ORDER BY title', [pos])).rows,
-      createQuiz: async (q) => (await pool.query('INSERT INTO quizzes (title, position, description) VALUES ($1,$2,$3) RETURNING id', [q.title, q.position, q.description || null])).rows[0],
+      createQuiz: async (q) => (await pool.query('INSERT INTO quizzes (title, position, description, team_id) VALUES ($1,$2,$3,$4) RETURNING id', [q.title, q.position, q.description || null, q.team_id || 1])).rows[0],
       getQuizQuestions: async (quizId) => (await pool.query('SELECT * FROM quiz_questions WHERE quiz_id = $1 ORDER BY sort_order', [quizId])).rows,
       addQuizQuestion: async (q) => (await pool.query('INSERT INTO quiz_questions (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id', [q.quiz_id, q.question_text, q.option_a, q.option_b, q.option_c || null, q.option_d || null, q.correct_answer, q.sort_order || 0])).rows[0],
       assignQuiz: async (quizId, playerId) => { try { await pool.query('INSERT INTO quiz_assignments (quiz_id, player_id) VALUES ($1,$2)', [quizId, playerId]); } catch(e) { /* duplicate */ } },
@@ -1085,6 +1174,28 @@ async function init() {
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
     const sqliteDb = new Database(path.join(dataDir, 'allstars.db'));
     sqliteDb.pragma('journal_mode = WAL');
+
+    // Multi-team support (mirrors the Postgres branch).
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS teams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+    try {
+      const seeded = sqliteDb.prepare('SELECT id FROM teams WHERE id = 1').get();
+      if (!seeded) {
+        let seedName = 'Cal Ripken All-Stars';
+        try {
+          const r = sqliteDb.prepare("SELECT value FROM site_settings WHERE key = 'team_name'").get();
+          if (r && r.value) seedName = r.value;
+        } catch (_) { /* site_settings not created yet */ }
+        sqliteDb.prepare("INSERT INTO teams (id, name, slug, is_active) VALUES (1, ?, 'default', 1)").run(seedName);
+      }
+    } catch (e) { console.error('teams seed failed:', e.message); }
 
     sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS players (
@@ -1617,15 +1728,52 @@ async function init() {
       )
     `);
 
+    // --- Multi-team scoping (mirrors the Postgres branch) ---
+    const TEAM_SCOPED_TABLES = [
+      'players', 'staff', 'team_events', 'team_messages',
+      'score_keepers', 'programs', 'quizzes', 'saved_locations'
+    ];
+    for (const t of TEAM_SCOPED_TABLES) {
+      try { sqliteDb.exec(`ALTER TABLE ${t} ADD COLUMN team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE`); } catch (e) { /* exists */ }
+    }
+    try {
+      sqliteDb.exec(`CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`);
+      const applied = sqliteDb.prepare("SELECT 1 FROM migrations WHERE name = 'multi_team_backfill_v1'").get();
+      if (!applied) {
+        for (const t of TEAM_SCOPED_TABLES) {
+          sqliteDb.prepare(`UPDATE ${t} SET team_id = 1 WHERE team_id IS NULL`).run();
+        }
+        sqliteDb.prepare("INSERT INTO migrations (name) VALUES ('multi_team_backfill_v1')").run();
+      }
+    } catch (e) { console.error('multi_team_backfill_v1 failed:', e.message); }
+    for (const t of TEAM_SCOPED_TABLES) {
+      try { sqliteDb.prepare(`UPDATE ${t} SET team_id = 1 WHERE team_id IS NULL`).run(); } catch (e) { /* best-effort */ }
+      try { sqliteDb.exec(`CREATE INDEX IF NOT EXISTS idx_${t}_team_id ON ${t}(team_id)`); } catch (e) { /* best-effort */ }
+    }
+
     const count = sqliteDb.prepare('SELECT COUNT(*) as c FROM players').get();
     if (count.c === 0) {
-      const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone) VALUES (?,?,?,?,?,?)');
+      const insert = sqliteDb.prepare('INSERT INTO players (player_name,division,team,age,parent_name,parent_phone,team_id) VALUES (?,?,?,?,?,?,1)');
       const insertMany = sqliteDb.transaction((rows) => { for (const r of rows) insert.run(...r); });
       insertMany(ROSTER);
     }
 
     impl = {
-      getAllPlayers: async () => sqliteDb.prepare('SELECT * FROM players ORDER BY age, player_name').all(),
+      // --- Teams ---
+      getAllTeams: async () => sqliteDb.prepare('SELECT * FROM teams ORDER BY is_active DESC, created_at DESC, name').all(),
+      getActiveTeams: async () => sqliteDb.prepare('SELECT * FROM teams WHERE is_active = 1 ORDER BY created_at DESC, name').all(),
+      getTeam: async (id) => sqliteDb.prepare('SELECT * FROM teams WHERE id = ?').get(id) || null,
+      getTeamBySlug: async (slug) => sqliteDb.prepare('SELECT * FROM teams WHERE slug = ?').get(slug) || null,
+      createTeam: async (name, slug) => {
+        const r = sqliteDb.prepare('INSERT INTO teams (name, slug) VALUES (?,?)').run(name, slug);
+        return sqliteDb.prepare('SELECT * FROM teams WHERE id = ?').get(r.lastInsertRowid);
+      },
+      updateTeam: async (id, name) => sqliteDb.prepare('UPDATE teams SET name = ? WHERE id = ?').run(name, id),
+      setTeamActive: async (id, active) => sqliteDb.prepare('UPDATE teams SET is_active = ? WHERE id = ?').run(active ? 1 : 0, id),
+
+      getAllPlayers: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM players WHERE team_id = ? ORDER BY age, player_name').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM players ORDER BY age, player_name').all(),
       getPlayersByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM players WHERE parent_phone = ?').all(phone),
       getPlayer: async (id) => sqliteDb.prepare('SELECT * FROM players WHERE id = ?').get(id) || null,
       updateStatus: async (id, status) => sqliteDb.prepare('UPDATE players SET status = ?, updated_at = ? WHERE id = ?').run(status, new Date().toISOString(), id),
@@ -1650,17 +1798,23 @@ async function init() {
           .run(p.player_name, p.division, p.team, p.age, p.parent_name, p.parent_phone, p.parent_email || null);
       },
       removePlayer: async (id) => sqliteDb.prepare('DELETE FROM players WHERE id = ?').run(id),
-      getAllStaff: async () => sqliteDb.prepare('SELECT * FROM staff ORDER BY name').all(),
+      getAllStaff: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM staff WHERE team_id = ? ORDER BY name').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM staff ORDER BY name').all(),
       getStaff: async (id) => sqliteDb.prepare('SELECT * FROM staff WHERE id = ?').get(id) || null,
-      getStaffByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM staff WHERE phone = ?').get(phone) || null,
-      addStaff: async (s) => sqliteDb.prepare('INSERT INTO staff (name, role, phone, email) VALUES (?,?,?,?)').run(s.name, s.role, s.phone, s.email || null),
+      getStaffByPhone: async (phone, teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM staff WHERE phone = ? AND team_id = ?').get(phone, teamId) || null
+        : sqliteDb.prepare('SELECT * FROM staff WHERE phone = ?').get(phone) || null,
+      addStaff: async (s) => sqliteDb.prepare('INSERT INTO staff (name, role, phone, email, team_id) VALUES (?,?,?,?,?)').run(s.name, s.role, s.phone, s.email || null, s.team_id || 1),
       updateStaff: async (id, s) => sqliteDb.prepare('UPDATE staff SET name=?, role=?, phone=?, email=? WHERE id=?').run(s.name, s.role, s.phone, s.email || null, id),
       removeStaff: async (id) => sqliteDb.prepare('DELETE FROM staff WHERE id = ?').run(id),
       getPlayerEvents: async (playerId) => sqliteDb.prepare('SELECT * FROM events WHERE player_id = ? ORDER BY start_date').all(playerId),
       getAllEvents: async () => sqliteDb.prepare('SELECT * FROM events ORDER BY start_date').all(),
       addEvent: async (e) => sqliteDb.prepare('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES (?,?,?,?,?)').run(e.player_id, e.event_type, e.start_date, e.end_date, e.notes),
       removeEvent: async (id) => sqliteDb.prepare('DELETE FROM events WHERE id = ?').run(id),
-      getAllTeamEvents: async () => sqliteDb.prepare('SELECT * FROM team_events ORDER BY start_date, start_time').all(),
+      getAllTeamEvents: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM team_events WHERE team_id = ? ORDER BY start_date, start_time').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM team_events ORDER BY start_date, start_time').all(),
       getTeamEvent: async (id) => sqliteDb.prepare('SELECT * FROM team_events WHERE id = ?').get(id) || null,
       addTeamEvent: async (e) => sqliteDb.prepare(
         'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info, opponent_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
@@ -1792,9 +1946,11 @@ async function init() {
         if (eventId) sqliteDb.prepare('DELETE FROM lineup_grid WHERE team_event_id = ? AND player_id = ?').run(eventId, playerId);
         else sqliteDb.prepare('DELETE FROM lineup_grid WHERE sub_event_id = ? AND player_id = ?').run(subEventId, playerId);
       },
-      getAllMessages: async () => sqliteDb.prepare('SELECT m.*, (SELECT COUNT(*) FROM team_messages r WHERE r.parent_id = m.id) as reply_count FROM team_messages m WHERE m.parent_id IS NULL ORDER BY m.pinned DESC, m.created_at DESC').all(),
+      getAllMessages: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT m.*, (SELECT COUNT(*) FROM team_messages r WHERE r.parent_id = m.id) as reply_count FROM team_messages m WHERE m.parent_id IS NULL AND m.team_id = ? ORDER BY m.pinned DESC, m.created_at DESC').all(teamId)
+        : sqliteDb.prepare('SELECT m.*, (SELECT COUNT(*) FROM team_messages r WHERE r.parent_id = m.id) as reply_count FROM team_messages m WHERE m.parent_id IS NULL ORDER BY m.pinned DESC, m.created_at DESC').all(),
       getTopicReplies: async (topicId) => sqliteDb.prepare('SELECT * FROM team_messages WHERE parent_id = ? ORDER BY created_at ASC').all(topicId),
-      addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message, parent_id) VALUES (?,?,?,?)').run(m.author_name, m.author_type, m.message, m.parent_id || null),
+      addMessage: async (m) => sqliteDb.prepare('INSERT INTO team_messages (author_name, author_type, message, parent_id, team_id) VALUES (?,?,?,?,?)').run(m.author_name, m.author_type, m.message, m.parent_id || null, m.team_id || 1),
       removeMessage: async (id) => sqliteDb.prepare('DELETE FROM team_messages WHERE id = ?').run(id),
       togglePinMessage: async (id) => sqliteDb.prepare('UPDATE team_messages SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END WHERE id = ?').run(id),
       toggleReaction: async (messageId, authorName, reactionType) => {
@@ -1818,11 +1974,15 @@ async function init() {
         }
         return result;
       },
-      getAllSavedLocations: async () => sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
-      addSavedLocation: async (name, address) => sqliteDb.prepare('INSERT INTO saved_locations (location_name, address) VALUES (?, ?)').run(name, address),
+      getAllSavedLocations: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM saved_locations WHERE team_id = ? ORDER BY location_name').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM saved_locations ORDER BY location_name').all(),
+      addSavedLocation: async (name, address, teamId) => sqliteDb.prepare('INSERT INTO saved_locations (location_name, address, team_id) VALUES (?, ?, ?)').run(name, address, teamId || 1),
       removeSavedLocation: async (id) => sqliteDb.prepare('DELETE FROM saved_locations WHERE id = ?').run(id),
 
-      getAllScoreKeepers: async () => sqliteDb.prepare('SELECT * FROM score_keepers ORDER BY name').all(),
+      getAllScoreKeepers: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM score_keepers WHERE team_id = ? ORDER BY name').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM score_keepers ORDER BY name').all(),
       addScoreKeeper: async (sk) => {
         const r = sqliteDb.prepare('INSERT INTO score_keepers (name, phone, email, access_token) VALUES (?,?,?,?)').run(sk.name, sk.phone || null, sk.email || null, sk.access_token);
         return { id: r.lastInsertRowid };
@@ -1964,8 +2124,12 @@ async function init() {
         const r = sqliteDb.prepare('SELECT COUNT(*) as cnt FROM game_undo_log WHERE game_id = ?').get(gameId);
         return r.cnt;
       },
-      getAllPrograms: async () => sqliteDb.prepare('SELECT * FROM programs ORDER BY created_at DESC').all(),
-      getPublishedPrograms: async () => sqliteDb.prepare('SELECT * FROM programs WHERE published = 1 ORDER BY title').all(),
+      getAllPrograms: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM programs WHERE team_id = ? ORDER BY created_at DESC').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM programs ORDER BY created_at DESC').all(),
+      getPublishedPrograms: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM programs WHERE published = 1 AND team_id = ? ORDER BY title').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM programs WHERE published = 1 ORDER BY title').all(),
       getProgram: async (id) => sqliteDb.prepare('SELECT * FROM programs WHERE id = ?').get(id) || null,
       addProgram: async (p) => {
         const r = sqliteDb.prepare('INSERT INTO programs (title, description, author, program_type, schedule_type, published) VALUES (?,?,?,?,?,?)').run(p.title, p.description || null, p.author || null, p.program_type || 'at_home', p.schedule_type || 'weekly', p.published || 0);
@@ -2023,10 +2187,12 @@ async function init() {
       updateProgramEquipment: async (id, e) => sqliteDb.prepare('UPDATE program_equipment SET item_name=?, is_required=?, buy_url=?, sort_order=? WHERE id=?').run(e.item_name, e.is_required, e.buy_url || null, e.sort_order || 0, id),
       removeProgramEquipment: async (id) => sqliteDb.prepare('DELETE FROM program_equipment WHERE id = ?').run(id),
 
-      getAllQuizzes: async () => sqliteDb.prepare('SELECT * FROM quizzes ORDER BY position, title').all(),
+      getAllQuizzes: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM quizzes WHERE team_id = ? ORDER BY position, title').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM quizzes ORDER BY position, title').all(),
       getQuiz: async (id) => sqliteDb.prepare('SELECT * FROM quizzes WHERE id = ?').get(id) || null,
       getQuizzesByPosition: async (pos) => sqliteDb.prepare('SELECT * FROM quizzes WHERE position = ?').all(pos),
-      createQuiz: async (q) => ({ id: sqliteDb.prepare('INSERT INTO quizzes (title, position, description) VALUES (?,?,?)').run(q.title, q.position, q.description || null).lastInsertRowid }),
+      createQuiz: async (q) => ({ id: sqliteDb.prepare('INSERT INTO quizzes (title, position, description, team_id) VALUES (?,?,?,?)').run(q.title, q.position, q.description || null, q.team_id || 1).lastInsertRowid }),
       getQuizQuestions: async (quizId) => sqliteDb.prepare('SELECT * FROM quiz_questions WHERE quiz_id = ? ORDER BY sort_order').all(quizId),
       addQuizQuestion: async (q) => ({ id: sqliteDb.prepare('INSERT INTO quiz_questions (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer, sort_order) VALUES (?,?,?,?,?,?,?,?)').run(q.quiz_id, q.question_text, q.option_a, q.option_b, q.option_c || null, q.option_d || null, q.correct_answer, q.sort_order || 0).lastInsertRowid }),
       assignQuiz: async (quizId, playerId) => { try { sqliteDb.prepare('INSERT INTO quiz_assignments (quiz_id, player_id) VALUES (?,?)').run(quizId, playerId); } catch(e) { /* duplicate */ } },
@@ -2057,6 +2223,13 @@ async function init() {
 
 module.exports = {
   init,
+  getAllTeams: (...args) => impl.getAllTeams(...args),
+  getActiveTeams: (...args) => impl.getActiveTeams(...args),
+  getTeam: (...args) => impl.getTeam(...args),
+  getTeamBySlug: (...args) => impl.getTeamBySlug(...args),
+  createTeam: (...args) => impl.createTeam(...args),
+  updateTeam: (...args) => impl.updateTeam(...args),
+  setTeamActive: (...args) => impl.setTeamActive(...args),
   getAllPlayers: (...args) => impl.getAllPlayers(...args),
   getPlayersByPhone: (...args) => impl.getPlayersByPhone(...args),
   getPlayer: (...args) => impl.getPlayer(...args),

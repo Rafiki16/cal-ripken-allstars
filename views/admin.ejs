@@ -13,7 +13,18 @@
       <div class="header-content">
         <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
           <a href="/" class="back-link">&larr; Back to Roster</a>
-          <div style="display:flex;gap:16px;align-items:center;">
+          <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+            <% if (typeof activeTeams !== 'undefined' && activeTeams && activeTeams.length > 1) { %>
+              <form method="POST" action="/admin/teams/switch-inline" style="margin:0;display:flex;align-items:center;gap:6px;">
+                <select name="team_id" onchange="this.form.submit()"
+                        style="font-size:12px;padding:4px 8px;border-radius:6px;border:none;font-weight:700;cursor:pointer;">
+                  <% activeTeams.forEach(function(t) { %>
+                    <option value="<%= t.id %>" <%= t.id === currentTeamId ? 'selected' : '' %>><%= t.name %></option>
+                  <% }); %>
+                </select>
+              </form>
+            <% } %>
+            <a href="/admin/teams" style="color:#fff;font-size:13px;text-decoration:none;">Teams</a>
             <span style="color:rgba(255,255,255,0.85);font-size:13px;">Signed in as <strong style="color:#fff;"><%= adminUser.username %></strong></span>
             <a href="/admin/settings" style="color:#fff;font-size:13px;text-decoration:none;">Settings</a>
             <a href="/admin/logout" style="color:rgba(255,255,255,0.85);font-size:13px;text-decoration:none;">Log Out</a>
@@ -476,6 +487,7 @@
         <a href="/admin/quizzes" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:8px 16px;">Quizzes</a>
         <a href="/admin/blank-lineup" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:8px 16px;" target="_blank">Print Blank Lineup Cards</a>
         <a href="/stats" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:8px 16px;">Player Stats</a>
+        <a href="/admin/teams" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:8px 16px;">Teams / New Season</a>
       </div>
     </div>
 

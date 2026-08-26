@@ -170,8 +170,62 @@ app.use(async (req, res, next) => {
   }
 });
 
+// Resolves the active team for this request and exposes it as req.teamId /
+// res.locals.currentTeam. Precedence:
+//   1. ?team=<id> in the query (admins only — lets you deep-link a team)
+//   2. session.currentTeamId (set by the admin team switcher)
+//   3. the team(s) the logged-in parent's players belong to
+//   4. team 1 (the original team — always exists post-migration)
 app.use(async (req, res, next) => {
-  res.locals.teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+  try {
+    const teams = await db.getAllTeams();
+    const activeTeams = teams.filter(t => t.is_active);
+    let teamId = null;
+
+    if (req.session.admin) {
+      const q = req.query.team ? Number(req.query.team) : null;
+      if (q && teams.some(t => t.id === q)) {
+        teamId = q;
+        req.session.currentTeamId = q;
+      } else if (req.session.currentTeamId && teams.some(t => t.id === req.session.currentTeamId)) {
+        teamId = req.session.currentTeamId;
+      }
+    } else if (req.parentUser) {
+      // Parents are scoped to whichever team(s) their linked players are on.
+      const myTeamIds = [...new Set((await db.getPlayersByPhone(req.parentUser.phone)).map(p => p.team_id).filter(Boolean))];
+      res.locals.myTeamIds = myTeamIds;
+      const q = req.query.team ? Number(req.query.team) : null;
+      if (q && myTeamIds.includes(q)) {
+        teamId = q;
+        req.session.currentTeamId = q;
+      } else if (req.session.currentTeamId && myTeamIds.includes(req.session.currentTeamId)) {
+        teamId = req.session.currentTeamId;
+      } else if (myTeamIds.length > 0) {
+        teamId = myTeamIds[0];
+      }
+    }
+
+    if (!teamId) teamId = (activeTeams[0] && activeTeams[0].id) || 1;
+
+    req.teamId = teamId;
+    const current = teams.find(t => t.id === teamId) || null;
+    res.locals.currentTeam = current;
+    res.locals.currentTeamId = teamId;
+    res.locals.allTeams = teams;
+    res.locals.activeTeams = activeTeams;
+    // teamName still drives every existing header/email template. Prefer the
+    // team row; fall back to the legacy site setting for safety.
+    res.locals.teamName = (current && current.name)
+      || (await db.getSetting('team_name'))
+      || 'Cal Ripken All-Stars';
+  } catch (e) {
+    console.error('Team context middleware error:', e.message);
+    req.teamId = 1;
+    res.locals.currentTeamId = 1;
+    res.locals.allTeams = [];
+    res.locals.activeTeams = [];
+    res.locals.teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+  }
   next();
 });
 
@@ -313,10 +367,22 @@ function getPlayerContacts(player) {
 
 async function checkAndSendReminders() {
   try {
+    // Cron context has no request — run the sweep once per active team so
+    // each team's players only get their own team's reminders.
+    for (const team of await db.getActiveTeams()) {
+      await checkAndSendRemindersForTeam(team);
+    }
+  } catch (err) {
+    console.error('Reminder check error:', err.message);
+  }
+}
+
+async function checkAndSendRemindersForTeam(team) {
+  try {
     const now = new Date();
-    const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
-    const events = await db.getAllTeamEvents();
-    const players = await db.getAllPlayers();
+    const teamName = team.name;
+    const events = await db.getAllTeamEvents(team.id);
+    const players = await db.getAllPlayers(team.id);
     const confirmed = players.filter(p => p.status === 'confirmed');
 
     for (const event of events) {
@@ -350,7 +416,7 @@ async function checkAndSendReminders() {
       }
     }
   } catch (err) {
-    console.error('Reminder check error:', err.message);
+    console.error(`Reminder check error (team ${team.id}):`, err.message);
   }
 }
 
@@ -363,13 +429,20 @@ async function checkAndSendProgramReminders() {
     const alreadySentToday = await db.hasProgramReminderBeenSent(todayStr);
     if (alreadySentToday) return;
 
-    const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
     const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayName = dayNames[now.getDay()];
 
-    const programs = await db.getAllPrograms();
+    // No request context in cron — walk every active team's programs.
+    const activeTeams = await db.getActiveTeams();
+    const teamNameById = {};
+    for (const t of activeTeams) teamNameById[t.id] = t.name;
+
+    const programs = [];
+    for (const t of activeTeams) programs.push(...(await db.getAllPrograms(t.id)));
+
     for (const program of programs) {
+      const teamName = teamNameById[program.team_id] || 'Cal Ripken All-Stars';
       if (!program.published) continue;
       const days = await db.getProgramDays(program.id);
       const todayDay = days.find(d => d.day_label === todayName);
@@ -466,8 +539,8 @@ async function sendConfirmationEmail(player, email, teamName) {
 // --- Public Routes ---
 
 app.get('/', requireLogin, async (req, res) => {
-  const players = await db.getAllPlayers();
-  const teamEvents = await db.getAllTeamEvents();
+  const players = await db.getAllPlayers(req.teamId);
+  const teamEvents = await db.getAllTeamEvents(req.teamId);
   let parentRsvps = {};
   if (req.parentUser && req.parentUser.player_ids.length > 0) {
     for (const ev of teamEvents) {
@@ -487,13 +560,13 @@ app.get('/event/:id', requireLogin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
   const rsvps = await db.getRsvpsForEvent(event.id);
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   const confirmed = players.filter(p => p.status === 'confirmed');
   const isAdmin = !!req.session.admin;
   const staffPhone = req.parentUser ? req.parentUser.phone : null;
-  const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone)) : false);
+  const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone, req.teamId)) : false);
   let drills = [], subEvents = [], lineup = [], subLineups = {}, lineupGrid = [], subGrids = {};
-  const staffList = await db.getAllStaff();
+  const staffList = await db.getAllStaff(req.teamId);
   if (event.event_type === 'practice') drills = await db.getDrills(event.id);
   if (event.event_type === 'tournament') {
     subEvents = await db.getSubEvents(event.id);
@@ -508,7 +581,7 @@ app.get('/event/:id', requireLogin, async (req, res) => {
     lineup = await db.getLineupForEvent(event.id);
     lineupGrid = await db.getLineupGrid(event.id, null);
   }
-  const practiceTemplates = (event.event_type === 'practice' && isAdmin) ? (await db.getAllPrograms()).filter(p => p.program_type === 'practice_template') : [];
+  const practiceTemplates = (event.event_type === 'practice' && isAdmin) ? (await db.getAllPrograms(req.teamId)).filter(p => p.program_type === 'practice_template') : [];
   res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null, practiceTemplates });
 });
 
@@ -542,7 +615,7 @@ app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
 app.get('/event/:id/practice-timer', requireParentOrAdmin, async (req, res) => {
   const isAdmin = !!req.session.admin;
   const staffPhone = req.parentUser ? req.parentUser.phone : null;
-  const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone)) : false);
+  const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone, req.teamId)) : false);
   if (!isStaff) return res.redirect('/event/' + req.params.id);
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
@@ -800,14 +873,14 @@ app.post('/parent/login', async (req, res) => {
 
 app.get('/fan/register', async (req, res) => {
   if (req.parentUser) return res.redirect('/');
-  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  const players = (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed');
   res.render('fan-register', { error: null, players });
 });
 
 app.post('/fan/register', async (req, res) => {
   const { display_name, phone, password, confirm_password, player_id } = req.body;
   const normalized = normalizePhone(phone || '');
-  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  const players = (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed');
 
   if (!display_name || !display_name.trim()) {
     return res.render('fan-register', { error: 'Name is required.', players });
@@ -1227,14 +1300,14 @@ app.post('/forgot-password/reset', async (req, res) => {
 // --- Admin Dashboard ---
 
 app.get('/admin', requireAdmin, async (req, res) => {
-  const players = await db.getAllPlayers();
-  const staff = await db.getAllStaff();
+  const players = await db.getAllPlayers(req.teamId);
+  const staff = await db.getAllStaff(req.teamId);
   const confirmed = players.filter(p => p.status === 'confirmed').length;
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
   const allEvents = await db.getAllEvents();
-  const teamEvents = await db.getAllTeamEvents();
-  const savedLocations = await db.getAllSavedLocations();
+  const teamEvents = await db.getAllTeamEvents(req.teamId);
+  const savedLocations = await db.getAllSavedLocations(req.teamId);
   const parentAccounts = await db.getAllParentAccounts();
   const rsvpRows = await db.getRsvpCountsAll();
   const rsvpCounts = {};
@@ -1281,9 +1354,10 @@ app.post('/admin/add-player', requireAdmin, async (req, res) => {
     parent_name: parent_name.trim(),
     parent_phone: phone,
     parent_email: (parent_email || '').trim() || null,
+    team_id: req.teamId,
   });
 
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   const newPlayer = players.find(p => p.parent_phone === phone && p.player_name === player_name.trim());
   if (newPlayer && newPlayer.parent_email) {
     sendConfirmationEmail(newPlayer, newPlayer.parent_email, res.locals.teamName);
@@ -1324,8 +1398,110 @@ app.post('/admin/add-staff', requireAdmin, async (req, res) => {
   if (!name || !name.trim() || normalized.length !== 10) {
     return res.redirect('/admin?error=' + encodeURIComponent('Staff name and valid phone required.'));
   }
-  await db.addStaff({ name: name.trim(), role: (role || 'Coach').trim(), phone: normalized, email: (email || '').trim() || null });
+  await db.addStaff({ name: name.trim(), role: (role || 'Coach').trim(), phone: normalized, email: (email || '').trim() || null, team_id: req.teamId });
   res.redirect('/admin?success=' + encodeURIComponent(`${name.trim()} added as staff`));
+});
+
+// --- Team management (multi-team) ---
+
+function slugifyTeamName(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'team';
+}
+
+app.get('/admin/teams', requireAdmin, async (req, res) => {
+  const teams = await db.getAllTeams();
+  // Row counts give a quick sense of which season is which.
+  const withCounts = [];
+  for (const t of teams) {
+    withCounts.push({
+      ...t,
+      player_count: (await db.getAllPlayers(t.id)).length,
+      event_count: (await db.getAllTeamEvents(t.id)).length,
+      staff_count: (await db.getAllStaff(t.id)).length,
+      is_current: t.id === req.teamId,
+    });
+  }
+  res.render('admin-teams', {
+    teams: withCounts,
+    currentTeamId: req.teamId,
+    success: req.query.success || null,
+    error: req.query.error || null,
+  });
+});
+
+app.post('/admin/teams/create', requireAdmin, async (req, res) => {
+  const name = (req.body.name || '').trim();
+  if (!name) return res.redirect('/admin/teams?error=' + encodeURIComponent('Team name is required.'));
+
+  // Ensure a unique slug (append -2, -3, ... on collision).
+  const base = slugifyTeamName(name);
+  let slug = base, n = 2;
+  while (await db.getTeamBySlug(slug)) { slug = `${base}-${n++}`; }
+
+  const team = await db.createTeam(name, slug);
+
+  // Optionally seed the new team from an existing one so you don't retype
+  // your coaching staff / training programs every season.
+  const copyFrom = req.body.copy_from ? Number(req.body.copy_from) : null;
+  if (copyFrom) {
+    if (req.body.copy_staff) {
+      for (const s of await db.getAllStaff(copyFrom)) {
+        await db.addStaff({ name: s.name, role: s.role, phone: s.phone, email: s.email, team_id: team.id });
+      }
+    }
+    if (req.body.copy_locations) {
+      for (const l of await db.getAllSavedLocations(copyFrom)) {
+        await db.addSavedLocation(l.location_name, l.address, team.id);
+      }
+    }
+  }
+
+  // Switch straight into the new team so you can start adding the roster.
+  req.session.currentTeamId = team.id;
+  res.redirect('/admin/teams?success=' + encodeURIComponent(`${name} created — you're now working in it.`));
+});
+
+// Header dropdown switcher — posts team_id in the body.
+app.post('/admin/teams/switch-inline', requireAdmin, async (req, res) => {
+  const id = Number(req.body.team_id);
+  const team = await db.getTeam(id);
+  if (team) req.session.currentTeamId = id;
+  res.redirect(req.get('Referrer') || '/admin');
+});
+
+app.post('/admin/teams/:id/switch', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const team = await db.getTeam(id);
+  if (!team) return res.redirect('/admin/teams?error=Team+not+found');
+  req.session.currentTeamId = id;
+  res.redirect(req.body.redirect_to || '/admin');
+});
+
+app.post('/admin/teams/:id/rename', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const name = (req.body.name || '').trim();
+  if (!name) return res.redirect('/admin/teams?error=' + encodeURIComponent('Team name is required.'));
+  await db.updateTeam(id, name);
+  res.redirect('/admin/teams?success=' + encodeURIComponent('Team renamed.'));
+});
+
+app.post('/admin/teams/:id/set-active', requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const active = req.body.is_active === '1';
+  if (!active) {
+    // Never archive the last active team — you'd be left with no context.
+    const activeTeams = await db.getActiveTeams();
+    if (activeTeams.length <= 1 && activeTeams.some(t => t.id === id)) {
+      return res.redirect('/admin/teams?error=' + encodeURIComponent('You must keep at least one active team.'));
+    }
+  }
+  await db.setTeamActive(id, active);
+  if (!active && req.session.currentTeamId === id) delete req.session.currentTeamId;
+  res.redirect('/admin/teams?success=' + encodeURIComponent(active ? 'Team reactivated.' : 'Team archived.'));
 });
 
 app.post('/admin/edit-staff', requireAdmin, async (req, res) => {
@@ -1348,7 +1524,7 @@ app.post('/admin/remove-staff', requireAdmin, async (req, res) => {
 function requireAdminOrStaff(req, res, next) {
   if (req.session.admin) return next();
   if (req.body.staff_phone) {
-    return db.getStaffByPhone(normalizePhone(req.body.staff_phone)).then(staff => {
+    return db.getStaffByPhone(normalizePhone(req.body.staff_phone), req.teamId).then(staff => {
       if (staff) { req.staffUser = staff; return next(); }
       res.redirect('/staff');
     });
@@ -1387,17 +1563,17 @@ app.post('/admin/add-team-event', requireAdminOrStaff, async (req, res) => {
   const locName = (location_name || '').trim();
   const locAddr = (address || '').trim();
   if (save_location && locName && locAddr) {
-    await db.addSavedLocation(locName, locAddr);
+    await db.addSavedLocation(locName, locAddr, req.teamId);
   }
 
   if (multiDates.length > 0) {
     for (const d of multiDates) {
-      await db.addTeamEvent({ ...eventData, start_date: d, end_date: null });
+      await db.addTeamEvent({ ...eventData, team_id: req.teamId, start_date: d, end_date: null });
     }
     const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
     res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" added for ${multiDates.length} dates`));
   } else {
-    await db.addTeamEvent({ ...eventData, start_date, end_date: end_date || null });
+    await db.addTeamEvent({ ...eventData, team_id: req.teamId, start_date, end_date: end_date || null });
     const dest = req.session.admin ? '/admin' : '/staff/dashboard?phone=' + req.body.staff_phone;
     res.redirect(dest + (dest.includes('?') ? '&' : '?') + 'success=' + encodeURIComponent(`"${title.trim()}" added to calendar`));
   }
@@ -1430,7 +1606,7 @@ app.post('/admin/edit-team-event', requireAdminOrStaff, async (req, res) => {
   const locName = (location_name || '').trim();
   const locAddr = (address || '').trim();
   if (save_location && locName && locAddr) {
-    await db.addSavedLocation(locName, locAddr);
+    await db.addSavedLocation(locName, locAddr, req.teamId);
   }
   if (req.body.return_to) {
     return res.redirect(req.body.return_to);
@@ -1477,7 +1653,7 @@ app.get('/event/:id/print', requireAdmin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event || event.event_type !== 'practice') return res.redirect('/admin');
   const drills = await db.getDrills(event.id);
-  const staffList = await db.getAllStaff();
+  const staffList = await db.getAllStaff(req.teamId);
   res.render('practice-print', { event, drills, staffList });
 });
 
@@ -1489,7 +1665,7 @@ app.get('/admin/pitch-count-report', requireAdmin, async (req, res) => {
   if (startDate && endDate) {
     report = await db.getPitchCountReport(startDate, endDate);
   }
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   res.render('pitch-count-report', { startDate, endDate, report, players });
 });
 
@@ -1809,7 +1985,7 @@ app.post('/event/:id/lineup-grid', requireAdmin, async (req, res) => {
 // API: get past games with lineups for "copy from" feature
 app.get('/api/games-with-lineups', requireAdmin, async (req, res) => {
   try {
-    const events = await db.getAllTeamEvents();
+    const events = await db.getAllTeamEvents(req.teamId);
     const games = events.filter(e => e.event_type === 'game');
     const results = [];
     for (const g of games) {
@@ -1859,7 +2035,7 @@ app.get('/admin/event/:id/rsvps', requireAdmin, async (req, res) => {
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/admin');
   const rsvps = await db.getRsvpsForEvent(event.id);
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   const confirmed = players.filter(p => p.status === 'confirmed');
   res.json({
     event: { id: event.id, title: event.title, start_date: event.start_date },
@@ -1872,7 +2048,7 @@ app.get('/admin/event/:id/rsvps', requireAdmin, async (req, res) => {
 });
 
 app.get('/admin/blank-lineup', requireAdmin, async (req, res) => {
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   const rosterSize = players.filter(p => p.status === 'confirmed').length;
   res.render('blank-lineup', { rosterSize });
 });
@@ -1976,7 +2152,7 @@ app.post('/admin/remove-admin', requireAdmin, async (req, res) => {
 
 app.get('/messages', requireParentOrAdmin, async (req, res, next) => {
   try {
-    const topics = await db.getAllMessages();
+    const topics = await db.getAllMessages(req.teamId);
     const topicReplies = {};
     for (const t of topics) {
       topicReplies[t.id] = await db.getTopicReplies(t.id);
@@ -2019,7 +2195,7 @@ app.post('/messages', async (req, res) => {
     else { authorName = players[0].parent_name; authorType = 'parent'; }
   }
 
-  await db.addMessage({ author_name: authorName, author_type: authorType, message });
+  await db.addMessage({ author_name: authorName, author_type: authorType, message, team_id: req.teamId });
   res.redirect('/messages');
 });
 
@@ -2034,7 +2210,7 @@ app.post('/messages/:id/reply', async (req, res) => {
   else if (req.parentUser) { authorName = req.parentUser.display_name; authorType = 'parent'; }
   else return res.redirect('/messages');
 
-  await db.addMessage({ author_name: authorName, author_type: authorType, message, parent_id: topicId });
+  await db.addMessage({ author_name: authorName, author_type: authorType, message, parent_id: topicId, team_id: req.teamId });
   res.redirect('/messages');
 });
 
@@ -2093,14 +2269,14 @@ async function refreshScorerHeartbeat(req) {
 }
 
 app.get('/admin/scorekeepers', requireAdmin, async (req, res) => {
-  const keepers = await db.getAllScoreKeepers();
+  const keepers = await db.getAllScoreKeepers(req.teamId);
   res.json(keepers);
 });
 
 app.post('/admin/scorekeepers', requireAdmin, async (req, res) => {
   const { name, phone, email } = req.body;
   const token = crypto.randomBytes(24).toString('hex');
-  await db.addScoreKeeper({ name, phone: phone || null, email: email || null, access_token: token });
+  await db.addScoreKeeper({ name, phone: phone || null, email: email || null, access_token: token, team_id: req.teamId });
   const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
   const link = `${baseUrl}/score/${token}`;
   if (email && smtpTransport) {
@@ -2234,9 +2410,9 @@ app.post('/admin/accounts/:id/delete', requireAdmin, async (req, res) => {
 app.post('/admin/accounts/:id/make-staff', requireAdmin, async (req, res) => {
   const account = await db.getParentAccountById(Number(req.params.id));
   if (!account) return res.json({ ok: false, error: 'Account not found.' });
-  const existing = await db.getStaffByPhone(account.phone);
+  const existing = await db.getStaffByPhone(account.phone, req.teamId);
   if (existing) return res.json({ ok: false, error: 'Already a staff member.' });
-  await db.addStaff({ name: account.display_name, role: 'Parent', phone: account.phone, email: null });
+  await db.addStaff({ name: account.display_name, role: 'Parent', phone: account.phone, email: null, team_id: req.teamId });
   res.json({ ok: true });
 });
 
@@ -2244,12 +2420,12 @@ app.post('/admin/accounts/:id/make-scorekeeper', requireAdmin, async (req, res) 
   const account = await db.getParentAccountById(Number(req.params.id));
   if (!account) return res.json({ ok: false, error: 'Account not found.' });
   // Check if already a scorekeeper (by phone)
-  const existing = await db.getAllScoreKeepers();
+  const existing = await db.getAllScoreKeepers(req.teamId);
   if (existing.some(k => k.phone === account.phone)) {
     return res.json({ ok: false, error: account.display_name + ' is already a scorekeeper.' });
   }
   const token = crypto.randomBytes(24).toString('hex');
-  await db.addScoreKeeper({ name: account.display_name, phone: account.phone || null, email: null, access_token: token });
+  await db.addScoreKeeper({ name: account.display_name, phone: account.phone || null, email: null, access_token: token, team_id: req.teamId });
   const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
   const link = `${baseUrl}/score/${token}`;
   // Send SMS with scorekeeper link
@@ -2286,7 +2462,7 @@ app.post('/admin/accounts/:id/set-role', requireAdmin, async (req, res) => {
 
 app.get('/admin/pending-fans', requireAdmin, async (req, res) => {
   const pending = await db.getPendingFanAccounts();
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   const playerMap = {};
   for (const p of players) playerMap[p.id] = p.player_name;
   const result = pending.map(f => ({
@@ -2323,7 +2499,7 @@ app.get('/game/setup/:eventId', requireAdmin, async (req, res) => {
   const event = subEventId ? await db.getSubEvent(subEventId) : await db.getTeamEvent(eventId);
   if (!event) return res.redirect('/admin');
   const parentEvent = subEventId ? await db.getTeamEvent(eventId) : null;
-  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  const players = (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed');
   const grid = subEventId
     ? await db.getLineupGrid(null, subEventId)
     : await db.getLineupGrid(eventId, null);
@@ -2927,7 +3103,7 @@ app.post('/api/game/:id/chat', async (req, res) => {
 
 app.get('/stats', requireParentOrAdmin, async (req, res) => {
   const isAdmin = req.session && req.session.admin;
-  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
+  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone), req.teamId);
   const parentUser = req.parentUser;
   const teamName = await db.getSetting('team_name') || 'Cal Ripken All-Stars';
   res.render('player-stats', { isAdmin: !!isAdmin, isStaff: !!isStaff, parentUser: parentUser || null, teamName });
@@ -2936,7 +3112,7 @@ app.get('/stats', requireParentOrAdmin, async (req, res) => {
 app.get('/api/player-stats/:playerId', async (req, res) => {
   const playerId = Number(req.params.playerId);
   const isAdmin = req.session && req.session.admin;
-  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
+  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone), req.teamId);
   const parentUser = req.parentUser;
 
   if (!isAdmin && !isStaff) {
@@ -2984,12 +3160,12 @@ app.get('/api/player-stats/:playerId', async (req, res) => {
 
 app.get('/api/team-stats', async (req, res) => {
   const isAdmin = req.session && req.session.admin;
-  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone));
+  const isStaff = req.query.phone && await db.getStaffByPhone(normalizePhone(req.query.phone), req.teamId);
   const parentUser = req.parentUser;
   const parentOnly = !isAdmin && !isStaff && parentUser;
   if (!isAdmin && !isStaff && !parentOnly) return res.status(403).json({ error: 'Not authorized' });
 
-  let players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  let players = (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed');
   if (parentOnly) players = players.filter(p => parentUser.player_ids.includes(p.id));
 
   const batting = [];
@@ -3029,7 +3205,7 @@ app.get('/api/team-stats', async (req, res) => {
 
 // ── GameChanger Import ──
 app.get('/admin/import-stats', requireAdmin, async (req, res) => {
-  const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+  const players = (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed');
   const existing = await db.getAllGcStats();
   res.render('import-stats', { players, existing, success: req.query.success || null, error: req.query.error || null });
 });
@@ -3046,7 +3222,7 @@ app.post('/admin/import-stats', requireAdmin, upload.single('file'), async (req,
     if (!rows.length) return res.redirect('/admin/import-stats?error=File+is+empty');
 
     const headers = Object.keys(rows[0]);
-    const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+    const players = (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed');
 
     // Detect name columns — GameChanger uses # / Last / First or Player / #
     const hasLast = headers.some(h => h.toLowerCase() === 'last');
@@ -3152,7 +3328,7 @@ function getMonday(d) {
 }
 
 app.get('/programs', requireParentOrAdmin, async (req, res) => {
-  const programs = await db.getPublishedPrograms();
+  const programs = await db.getPublishedPrograms(req.teamId);
   const playerAssignments = {};
   if (req.parentUser) {
     for (const pid of req.parentUser.player_ids) {
@@ -3171,7 +3347,7 @@ app.get('/programs/:id', requireParentOrAdmin, async (req, res) => {
   }
   const isAdmin = !!req.session.admin;
   const assignments = isAdmin ? await db.getProgramAssignments(program.id) : [];
-  const players = isAdmin ? (await db.getAllPlayers()).filter(p => p.status === 'confirmed') : [];
+  const players = isAdmin ? (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed') : [];
   const subscribedPlayerIds = [];
   if (req.parentUser) {
     for (const pid of req.parentUser.player_ids) {
@@ -3179,7 +3355,7 @@ app.get('/programs/:id', requireParentOrAdmin, async (req, res) => {
       if (pa.some(a => a.program_id === program.id)) subscribedPlayerIds.push(pid);
     }
   }
-  const allPlayers = await db.getAllPlayers();
+  const allPlayers = await db.getAllPlayers(req.teamId);
   // Gather completions for subscribed players this week
   const weekOf = getMonday(new Date());
   const playerCompletions = {};
@@ -3208,14 +3384,14 @@ app.post('/programs/:id/unsubscribe', async (req, res) => {
 });
 
 app.get('/admin/programs', requireAdmin, async (req, res) => {
-  const programs = await db.getAllPrograms();
+  const programs = await db.getAllPrograms(req.teamId);
   res.render('admin-programs', { programs, success: req.query.success || null, error: req.query.error || null });
 });
 
 app.post('/admin/programs', requireAdmin, async (req, res) => {
   const { title, description, author, program_type, schedule_type } = req.body;
   if (!title || !title.trim()) return res.redirect('/admin/programs?error=Title+is+required');
-  const result = await db.addProgram({ title: title.trim(), description: (description || '').trim() || null, author: (author || '').trim() || null, program_type: program_type || 'at_home', schedule_type: schedule_type || 'weekly' });
+  const result = await db.addProgram({ title: title.trim(), description: (description || '').trim() || null, author: (author || '').trim() || null, program_type: program_type || 'at_home', schedule_type: schedule_type || 'weekly', team_id: req.teamId });
   res.redirect('/admin/programs/' + result.id + '/edit');
 });
 
@@ -3228,7 +3404,7 @@ app.get('/admin/programs/:id/edit', requireAdmin, async (req, res) => {
       day.activities = await db.getProgramActivities(day.id);
     }
     const assignments = await db.getProgramAssignments(program.id);
-    const players = (await db.getAllPlayers()).filter(p => p.status === 'confirmed');
+    const players = (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed');
     const equipment = await db.getProgramEquipment(program.id);
     res.render('admin-program-edit', { program, days, assignments, players, equipment, success: req.query.success || null, error: req.query.error || null, POSITIONS });
   } catch (err) {
@@ -3444,7 +3620,7 @@ app.get('/admin/programs/:id/dashboard', requireAdmin, async (req, res) => {
 
 app.post('/admin/seed-arm-care', requireAdmin, async (req, res) => {
   try {
-    const existing = (await db.getAllPrograms()).find(p => p.title === "Pitcher's Arm Care Program");
+    const existing = (await db.getAllPrograms(req.teamId)).find(p => p.title === "Pitcher's Arm Care Program");
     if (existing) return res.redirect('/admin/programs?error=Arm+Care+program+already+exists');
 
     const program = await db.addProgram({
@@ -3453,7 +3629,8 @@ app.post('/admin/seed-arm-care', requireAdmin, async (req, res) => {
       author: "Coach Matt Thompson",
       program_type: 'at_home',
       schedule_type: 'weekly',
-      published: 1
+      published: 1,
+      team_id: req.teamId
     });
 
     const days = [
@@ -3805,7 +3982,7 @@ app.post('/admin/seed-perry-hill', requireAdmin, async (req, res) => {
 
     const results = [];
     for (const prog of programs) {
-      const result = await db.addProgram({ title: prog.title, description: prog.description, program_type: 'training', schedule_type: 'sequential' });
+      const result = await db.addProgram({ title: prog.title, description: prog.description, program_type: 'training', schedule_type: 'sequential', team_id: req.teamId });
       await db.updateProgramPositions(result.id, prog.positions);
       for (let i = 0; i < prog.days.length; i++) {
         const d = prog.days[i];
@@ -3830,7 +4007,7 @@ app.post('/event/:id/save-as-program', requireAdmin, async (req, res) => {
   const drills = await db.getDrills(event.id);
   if (drills.length === 0) return res.redirect('/event/' + event.id);
   const title = (req.body.template_name || '').trim() || event.title + ' Template';
-  const result = await db.addProgram({ title, description: 'Saved from: ' + event.title, program_type: 'practice_template', schedule_type: 'sequential' });
+  const result = await db.addProgram({ title, description: 'Saved from: ' + event.title, program_type: 'practice_template', schedule_type: 'sequential', team_id: req.teamId });
   const day = await db.addProgramDay({ program_id: result.id, day_label: 'Practice', day_number: 0, sort_order: 0 });
   for (const drill of drills) {
     await db.addProgramActivity({ program_day_id: day.id, activity_name: drill.drill_name, description: drill.description, instructions: drill.coach_notes, reps: drill.duration_minutes + ' min', sort_order: drill.sort_order });
@@ -3957,7 +4134,7 @@ app.post('/admin/seed-quizzes', requireAdmin, async (req, res) => {
   for (const quiz of quizData) {
     const existing = await db.getQuizzesByPosition(quiz.position);
     if (existing.some(q => q.title === quiz.title)) continue;
-    const created = await db.createQuiz({ title: quiz.title, position: quiz.position, description: quiz.description });
+    const created = await db.createQuiz({ title: quiz.title, position: quiz.position, description: quiz.description, team_id: req.teamId });
     for (let i = 0; i < quiz.questions.length; i++) {
       const q = quiz.questions[i];
       await db.addQuizQuestion({
@@ -3976,8 +4153,8 @@ app.post('/admin/seed-quizzes', requireAdmin, async (req, res) => {
 });
 
 app.get('/admin/quizzes', requireAdmin, async (req, res) => {
-  const quizzes = await db.getAllQuizzes();
-  const players = await db.getAllPlayers();
+  const quizzes = await db.getAllQuizzes(req.teamId);
+  const players = await db.getAllPlayers(req.teamId);
   const quizStats = {};
   for (const q of quizzes) {
     const assignments = await db.getQuizAssignments(q.id);
@@ -3995,7 +4172,7 @@ app.post('/admin/quizzes/assign', requireAdmin, async (req, res) => {
   const quiz = await db.getQuiz(quizId);
   if (!quiz) return res.redirect('/admin/quizzes?error=Quiz not found');
 
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   const targetPos = quiz.position === 'IF' ? ['1B','2B','3B','SS'] : [quiz.position];
   let assigned = 0;
   for (const p of players) {
@@ -4013,7 +4190,7 @@ app.post('/admin/quizzes/assign-all', requireAdmin, async (req, res) => {
   const quizId = Number(req.body.quiz_id);
   const quiz = await db.getQuiz(quizId);
   if (!quiz) return res.redirect('/admin/quizzes?error=Quiz not found');
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   for (const p of players) {
     await db.assignQuiz(quizId, p.id);
   }
@@ -4098,7 +4275,7 @@ app.post('/quiz/:quizId/submit/:playerId', async (req, res) => {
   const smsBody = `Quiz Result: ${player.player_name} scored ${score}/${questions.length} (${pct}%) on "${quiz.title}"\n${resultUrl}`;
 
   try {
-    const staff = await db.getAllStaff();
+    const staff = await db.getAllStaff(req.teamId);
     const adminPlayers = await db.getPlayersByPhone('9413026510');
     const phones = new Set();
     phones.add('9413026510');
@@ -4133,10 +4310,13 @@ app.get('/staff', (req, res) => {
 
 app.post('/staff', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
+  // Staff sign in by phone with no session team yet — look up across all
+  // teams, then adopt whichever team that staff row belongs to.
   const staff = await db.getStaffByPhone(phone);
   if (!staff) {
     return res.render('staff-login', { error: 'Phone number not recognized as staff.' });
   }
+  if (staff.team_id) req.session.currentTeamId = staff.team_id;
   res.redirect('/staff/dashboard?phone=' + phone);
 });
 
@@ -4145,17 +4325,19 @@ app.get('/staff/dashboard', async (req, res) => {
   const staff = await db.getStaffByPhone(phone);
   if (!staff) return res.redirect('/staff');
 
-  const players = await db.getAllPlayers();
+  // Scope the dashboard to the staff member's own team, not the session's.
+  const staffTeamId = staff.team_id || req.teamId;
+  const players = await db.getAllPlayers(staffTeamId);
   const confirmed = players.filter(p => p.status === 'confirmed').length;
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
   const allEvents = await db.getAllEvents();
-  const teamEvents = await db.getAllTeamEvents();
+  const teamEvents = await db.getAllTeamEvents(staffTeamId);
   res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS, allEvents, teamEvents, success: req.query.success || null, error: req.query.error || null });
 });
 
 app.get('/api/stats', async (req, res) => {
-  const players = await db.getAllPlayers();
+  const players = await db.getAllPlayers(req.teamId);
   const confirmed = players.filter(p => p.status === 'confirmed').length;
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;

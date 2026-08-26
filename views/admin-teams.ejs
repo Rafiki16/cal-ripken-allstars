@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>Teams &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .team-card {
+      background:#fff; border:1px solid var(--gray-200); border-radius:12px;
+      padding:16px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,0.06);
+    }
+    .team-card.is-current { border-color:var(--green); border-width:2px; }
+    .team-card.is-archived { opacity:0.65; }
+    .team-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+    .team-name { font-size:18px; font-weight:800; color:var(--navy); }
+    .team-meta { font-size:12px; color:var(--gray-500); margin-top:4px; }
+    .team-badge {
+      display:inline-block; font-size:11px; font-weight:800; text-transform:uppercase;
+      letter-spacing:0.5px; padding:3px 10px; border-radius:20px; margin-left:8px;
+    }
+    .badge-current { background:var(--green-bg); color:var(--green); border:1px solid var(--green-border); }
+    .badge-archived { background:var(--gray-100); color:var(--gray-500); border:1px solid var(--gray-300); }
+    .team-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+    .team-actions form { margin:0; }
+    .btn-xs {
+      font-size:12px; padding:6px 14px; border-radius:6px; border:none;
+      cursor:pointer; font-weight:700; text-decoration:none; display:inline-block;
+    }
+    .btn-switch { background:var(--navy); color:#fff; }
+    .btn-quiet { background:var(--gray-200); color:var(--gray-700); }
+    .create-box { background:#fff; border:1px solid var(--gray-200); border-radius:12px; padding:20px; margin-bottom:24px; }
+    .create-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+    .copy-opts { font-size:13px; color:var(--gray-700); display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+    .copy-opts label { display:flex; align-items:center; gap:5px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+          <a href="/admin" class="back-link">&larr; Back to Admin</a>
+          <a href="/admin/logout" style="color:rgba(255,255,255,0.85);font-size:13px;text-decoration:none;">Log Out</a>
+        </div>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>Teams</h1>
+            <p class="subtitle">Manage Seasons &amp; Rosters</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" style="padding-bottom:40px;">
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+
+    <h2 class="section-title" style="margin-top:24px;">Start a New Season</h2>
+    <div class="create-box">
+      <form method="POST" action="/admin/teams/create">
+        <div class="create-row">
+          <input type="text" name="name" class="form-input" placeholder="e.g. 12U All-Stars 2026"
+                 style="flex:1; min-width:240px;" required>
+          <button type="submit" class="btn btn-confirm" style="white-space:nowrap;">Create Team</button>
+        </div>
+        <div class="copy-opts">
+          <span style="font-weight:600;">Copy from:</span>
+          <select name="copy_from" class="form-input" style="width:auto;">
+            <option value="">Nothing — start empty</option>
+            <% teams.forEach(function(t) { %>
+              <option value="<%= t.id %>"><%= t.name %></option>
+            <% }); %>
+          </select>
+          <label><input type="checkbox" name="copy_staff" value="1" checked> Coaching staff</label>
+          <label><input type="checkbox" name="copy_locations" value="1" checked> Saved locations</label>
+        </div>
+        <p style="font-size:12px; color:var(--gray-500); margin-top:10px;">
+          Players, schedule, games and messages always start empty on a new team.
+        </p>
+      </form>
+    </div>
+
+    <h2 class="section-title">All Teams</h2>
+    <% teams.forEach(function(t) { %>
+      <div class="team-card <%= t.is_current ? 'is-current' : '' %> <%= t.is_active ? '' : 'is-archived' %>">
+        <div class="team-top">
+          <div>
+            <div class="team-name">
+              <%= t.name %>
+              <% if (t.is_current) { %><span class="team-badge badge-current">Current</span><% } %>
+              <% if (!t.is_active) { %><span class="team-badge badge-archived">Archived</span><% } %>
+            </div>
+            <div class="team-meta">
+              <%= t.player_count %> player<%= t.player_count === 1 ? '' : 's' %> &middot;
+              <%= t.staff_count %> staff &middot;
+              <%= t.event_count %> event<%= t.event_count === 1 ? '' : 's' %>
+            </div>
+          </div>
+          <div class="team-actions">
+            <% if (!t.is_current) { %>
+              <form method="POST" action="/admin/teams/<%= t.id %>/switch">
+                <button type="submit" class="btn-xs btn-switch">Switch to</button>
+              </form>
+            <% } %>
+            <% if (t.is_active) { %>
+              <form method="POST" action="/admin/teams/<%= t.id %>/set-active"
+                    onsubmit="return confirm('Archive <%= t.name %>? Its data is kept, it just stops showing in the switcher.')">
+                <input type="hidden" name="is_active" value="0">
+                <button type="submit" class="btn-xs btn-quiet">Archive</button>
+              </form>
+            <% } else { %>
+              <form method="POST" action="/admin/teams/<%= t.id %>/set-active">
+                <input type="hidden" name="is_active" value="1">
+                <button type="submit" class="btn-xs btn-quiet">Reactivate</button>
+              </form>
+            <% } %>
+          </div>
+        </div>
+        <form method="POST" action="/admin/teams/<%= t.id %>/rename"
+              style="margin-top:12px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <input type="text" name="name" value="<%= t.name %>" class="form-input"
+                 style="flex:1; min-width:200px; font-size:13px; padding:6px 10px;">
+          <button type="submit" class="btn-xs btn-quiet">Rename</button>
+        </form>
+      </div>
+    <% }); %>
+  </main>
+</body>
+</html>
