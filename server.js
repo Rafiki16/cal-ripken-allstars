@@ -19,6 +19,20 @@ process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
 });
 
+// The site's public base URL. Everything that builds an outbound link --
+// emails, SMS, RSVP and scorekeeper links -- goes through this, so renaming
+// the site never needs a code change.
+//   1. BASE_URL            explicit override (custom domain, staging, local)
+//   2. RENDER_EXTERNAL_URL set automatically by Render and follows the
+//                          service name, so links stay correct even if
+//                          BASE_URL is forgotten after a rename
+//   3. localhost           local development
+const SITE_BASE_URL = (
+  process.env.BASE_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  'http://localhost:3000'
+).replace(/\/+$/, '');
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.set('trust proxy', 1);
@@ -293,7 +307,7 @@ function generateRsvpToken(eventId, playerId) {
 }
 
 function rsvpUrl(eventId, playerId) {
-  const base = process.env.BASE_URL || 'http://localhost:3000';
+  const base = SITE_BASE_URL;
   return `${base}/rsvp/${eventId}/${playerId}/${generateRsvpToken(eventId, playerId)}`;
 }
 
@@ -442,7 +456,7 @@ async function checkAndSendProgramReminders() {
     const alreadySentToday = await db.hasProgramReminderBeenSent(todayStr);
     if (alreadySentToday) return;
 
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const baseUrl = SITE_BASE_URL;
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayName = dayNames[now.getDay()];
 
@@ -518,7 +532,7 @@ async function checkAndSendProgramReminders() {
 async function sendConfirmationEmail(player, email, teamName) {
   if (!smtpTransport || !email) return;
   const tn = teamName || 'Cal Ripken All-Stars';
-  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const baseUrl = SITE_BASE_URL;
   try {
     await smtpTransport.sendMail({
       from: `"${tn}" <${process.env.SMTP_USER}>`,
@@ -1537,7 +1551,7 @@ app.post('/profile/:id/family', requireParentOrAdmin, async (req, res) => {
   } catch (e) { console.error('family contact merge failed:', e.message); }
 
   // Tell them how to get in. Only send credentials for a brand-new account.
-  const baseUrl = process.env.BASE_URL || 'https://cal-ripken-allstars.onrender.com';
+  const baseUrl = SITE_BASE_URL;
   const teamName = res.locals.teamName;
   const smsBody = tempPassword
     ? `${teamName}: You've been given access to ${player.player_name}'s team info.\n\nLogin: ${baseUrl}/parent/login\nPhone: ${phone}\nPassword: ${tempPassword}\n\nPlease change your password after signing in.`
@@ -2510,7 +2524,7 @@ app.post('/admin/scorekeepers', requireAdmin, async (req, res) => {
   const { name, phone, email } = req.body;
   const token = crypto.randomBytes(24).toString('hex');
   await db.addScoreKeeper({ name, phone: phone || null, email: email || null, access_token: token, team_id: req.teamId });
-  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const baseUrl = SITE_BASE_URL;
   const link = `${baseUrl}/score/${token}`;
   if (email && smtpTransport) {
     try {
@@ -2621,7 +2635,7 @@ app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
     }
   }
 
-  const baseUrl = process.env.BASE_URL || 'https://cal-ripken-allstars.onrender.com';
+  const baseUrl = SITE_BASE_URL;
   const formattedPhone = normalized.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
   const teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
   const loginInfo = username && username.trim() ? `Username: ${username.trim()}` : `Phone: ${formattedPhone}`;
@@ -2708,7 +2722,7 @@ app.post('/admin/accounts/:id/make-scorekeeper', requireAdmin, async (req, res) 
   }
   const token = crypto.randomBytes(24).toString('hex');
   await db.addScoreKeeper({ name: account.display_name, phone: account.phone || null, email: null, access_token: token, team_id: req.teamId });
-  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const baseUrl = SITE_BASE_URL;
   const link = `${baseUrl}/score/${token}`;
   // Send SMS with scorekeeper link
   if (account.phone) {
@@ -4554,7 +4568,7 @@ app.post('/quiz/:quizId/submit/:playerId', async (req, res) => {
   });
 
   const pct = Math.round((score / questions.length) * 100);
-  const resultUrl = `https://cal-ripken-allstars.onrender.com/quiz/attempt/${attempt.id}`;
+  const resultUrl = `${SITE_BASE_URL}/quiz/attempt/${attempt.id}`;
   const smsBody = `Quiz Result: ${player.player_name} scored ${score}/${questions.length} (${pct}%) on "${quiz.title}"\n${resultUrl}`;
 
   try {
@@ -4575,8 +4589,8 @@ app.post('/quiz/:quizId/submit/:playerId', async (req, res) => {
 
 app.get('/admin/notify-ready', requireAdmin, async (req, res) => {
   const msg = 'All features deployed and ready to test!\n\n' +
-    '1. Team Board Reactions: https://cal-ripken-allstars.onrender.com/messages\n' +
-    '2. Position Quizzes: https://cal-ripken-allstars.onrender.com/admin/quizzes\n\n' +
+    '1. Team Board Reactions: ' + SITE_BASE_URL + '/messages\n' +
+    '2. Position Quizzes: ' + SITE_BASE_URL + '/admin/quizzes\n\n' +
     'Seed the quizzes from the admin quiz page, then assign by position. Players can take quizzes from their profile page.';
   try {
     await sendSMS('9413026510', msg);
