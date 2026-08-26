@@ -205,7 +205,13 @@ app.use(async (req, res, next) => {
       }
     }
 
-    if (!teamId) teamId = (activeTeams[0] && activeTeams[0].id) || 1;
+    if (!teamId) {
+      // Deterministic: the original team (id 1) when it's active, otherwise the
+      // lowest-id active team. NOT activeTeams[0] -- that list is newest-first.
+      const byId = [...activeTeams].sort((a, b) => a.id - b.id);
+      const original = byId.find(t => t.id === 1);
+      teamId = (original && original.id) || (byId[0] && byId[0].id) || 1;
+    }
 
     req.teamId = teamId;
     const current = teams.find(t => t.id === teamId) || null;
@@ -224,7 +230,8 @@ app.use(async (req, res, next) => {
     res.locals.currentTeamId = 1;
     res.locals.allTeams = [];
     res.locals.activeTeams = [];
-    res.locals.teamName = (await db.getSetting('team_name')) || 'Cal Ripken All-Stars';
+    res.locals.currentTeam = null;
+    res.locals.teamName = 'Cal Ripken All-Stars';
   }
   next();
 });
@@ -628,7 +635,9 @@ app.post('/event/:id/rsvp', async (req, res) => {
   if (!event) return res.redirect('/');
   const phone = req.parentUser ? req.parentUser.phone : normalizePhone(req.body.phone || '');
   if (phone.length !== 10) return res.redirect('/event/' + event.id);
-  const players = await db.getPlayersByPhone(phone);
+  // Scope to the event's own team so a parent with players on two teams
+  // doesn't RSVP the other team's kids into this event.
+  const players = await db.getPlayersByPhone(phone, event.team_id || req.teamId);
   const confirmed = players.filter(p => p.status === 'confirmed');
   if (confirmed.length === 0) return res.redirect('/event/' + event.id);
   const status = req.body.status;
@@ -1524,9 +1533,15 @@ app.post('/admin/remove-staff', requireAdmin, async (req, res) => {
 function requireAdminOrStaff(req, res, next) {
   if (req.session.admin) return next();
   if (req.body.staff_phone) {
-    return db.getStaffByPhone(normalizePhone(req.body.staff_phone), req.teamId).then(staff => {
-      if (staff) { req.staffUser = staff; return next(); }
-      res.redirect('/staff');
+    const phone = normalizePhone(req.body.staff_phone);
+    const wanted = req.body.staff_team_id ? Number(req.body.staff_team_id) : null;
+    return db.getStaffTeamsByPhone(phone).then(rows => {
+      if (!rows.length) return res.redirect('/staff');
+      // Use the season the coach is viewing when they're staff on it.
+      const staff = (wanted && rows.find(r => r.team_id === wanted)) || rows[0];
+      req.staffUser = staff;
+      if (staff.team_id) req.teamId = staff.team_id;
+      return next();
     });
   }
   res.redirect('/admin/login');
@@ -3278,7 +3293,7 @@ app.post('/admin/import-stats', requireAdmin, upload.single('file'), async (req,
     const hasNum = headers.some(h => h === '#' || h.toLowerCase() === 'number');
 
     // Clear old data for this type+source before re-importing
-    await db.deleteGcStats(statType, source);
+    await db.deleteGcStats(statType, source, req.teamId);
 
     let imported = 0;
     for (const row of rows) {
@@ -3342,7 +3357,8 @@ app.post('/admin/import-stats', requireAdmin, upload.single('file'), async (req,
         gcName,
         statType,
         JSON.stringify(stats),
-        source
+        source,
+          req.teamId
       );
       imported++;
     }
@@ -3357,7 +3373,7 @@ app.post('/admin/import-stats', requireAdmin, upload.single('file'), async (req,
 app.post('/admin/import-stats/clear', requireAdmin, async (req, res) => {
   const statType = req.body.stat_type || 'batting';
   const source = req.body.source || 'gamechanger';
-  await db.deleteGcStats(statType, source);
+  await db.deleteGcStats(statType, source, req.teamId);
   res.redirect('/admin/import-stats?success=Cleared+' + statType + '+imported+data');
 });
 
@@ -3581,7 +3597,7 @@ app.post('/admin/programs/:id/assign-positions', requireAdmin, async (req, res) 
     const positions = [].concat(req.body.positions || []).filter(p => POSITIONS.includes(p));
     const { start_date, end_date } = req.body;
     await db.updateProgramPositions(programId, positions.join(','));
-    const confirmedPlayers = await db.getConfirmedPlayers();
+    const confirmedPlayers = await db.getConfirmedPlayers(req.teamId);
     let count = 0;
     for (const player of confirmedPlayers) {
       const posSource = player.coach_assigned_positions || player.best_positions;
@@ -3603,7 +3619,7 @@ app.post('/admin/programs/:id/assign-all', requireAdmin, async (req, res) => {
   try {
     const programId = Number(req.params.id);
     const { start_date, end_date } = req.body;
-    const confirmedPlayers = await db.getConfirmedPlayers();
+    const confirmedPlayers = await db.getConfirmedPlayers(req.teamId);
     for (const player of confirmedPlayers) {
       await db.assignProgram({ program_id: programId, player_id: player.id, send_reminders: 1, start_date: start_date || null, end_date: end_date || null });
     }
@@ -4179,7 +4195,7 @@ app.post('/admin/seed-quizzes', requireAdmin, async (req, res) => {
   ];
 
   for (const quiz of quizData) {
-    const existing = await db.getQuizzesByPosition(quiz.position);
+    const existing = await db.getQuizzesByPosition(quiz.position, req.teamId);
     if (existing.some(q => q.title === quiz.title)) continue;
     const created = await db.createQuiz({ title: quiz.title, position: quiz.position, description: quiz.description, team_id: req.teamId });
     for (let i = 0; i < quiz.questions.length; i++) {
@@ -4369,10 +4385,15 @@ app.post('/staff', async (req, res) => {
 
 app.get('/staff/dashboard', async (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
-  const staff = await db.getStaffByPhone(phone);
-  if (!staff) return res.redirect('/staff');
+  const staffTeams = await db.getStaffTeamsByPhone(phone);
+  if (!staffTeams.length) return res.redirect('/staff');
 
-  // Scope the dashboard to the staff member's own team, not the session's.
+  // A coach copied onto a new season is staff on more than one team. Honour
+  // ?team=N when they're actually staff on it; otherwise use their default
+  // row (active + newest season first).
+  const wanted = req.query.team ? Number(req.query.team) : null;
+  const staff = (wanted && staffTeams.find(t => t.team_id === wanted))
+    || staffTeams[0];
   const staffTeamId = staff.team_id || req.teamId;
   const players = await db.getAllPlayers(staffTeamId);
   const confirmed = players.filter(p => p.status === 'confirmed').length;
@@ -4380,7 +4401,7 @@ app.get('/staff/dashboard', async (req, res) => {
   const pending = players.filter(p => p.status === 'pending').length;
   const allEvents = await db.getAllEvents(staffTeamId);
   const teamEvents = await db.getAllTeamEvents(staffTeamId);
-  res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS, allEvents, teamEvents, success: req.query.success || null, error: req.query.error || null });
+  res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS, allEvents, teamEvents, staffTeams, staffTeamId, success: req.query.success || null, error: req.query.error || null });
 });
 
 app.get('/api/stats', async (req, res) => {

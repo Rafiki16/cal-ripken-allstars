@@ -68,7 +68,7 @@ async function init() {
         const r = await pool.query("SELECT value FROM site_settings WHERE key = 'team_name'");
         if (r.rowCount > 0 && r.rows[0].value) seedName = r.rows[0].value;
       } catch (_) { /* site_settings not created yet — that's fine */ }
-      await pool.query("INSERT INTO teams (id, name, slug, is_active) VALUES (1, $1, 'default', 1)", [seedName]);
+      await pool.query("INSERT INTO teams (id, name, slug, is_active) VALUES (1, $1, 'default', 1) ON CONFLICT (id) DO NOTHING", [seedName]);
       // Keep SERIAL sequence ahead of the manual id insert.
       await pool.query("SELECT setval(pg_get_serial_sequence('teams', 'id'), GREATEST(1, (SELECT MAX(id) FROM teams)))");
     }
@@ -682,7 +682,8 @@ async function init() {
     // deliberately do NOT get their own team_id.
     const TEAM_SCOPED_TABLES = [
       'players', 'staff', 'team_events', 'team_messages',
-      'score_keepers', 'programs', 'quizzes', 'saved_locations'
+      'score_keepers', 'programs', 'quizzes', 'saved_locations',
+      'gc_imported_stats'
     ];
     for (const t of TEAM_SCOPED_TABLES) {
       try { await pool.query(`ALTER TABLE ${t} ADD COLUMN team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE`); } catch (e) { /* exists */ }
@@ -761,7 +762,14 @@ async function init() {
       getStaff: async (id) => (await pool.query('SELECT * FROM staff WHERE id = $1', [id])).rows[0] || null,
       getStaffByPhone: async (phone, teamId) => teamId
         ? (await pool.query('SELECT * FROM staff WHERE phone = $1 AND team_id = $2', [phone, teamId])).rows[0] || null
-        : (await pool.query('SELECT * FROM staff WHERE phone = $1', [phone])).rows[0] || null,
+        : (await pool.query(`SELECT s.* FROM staff s LEFT JOIN teams t ON t.id = s.team_id
+             WHERE s.phone = $1
+             ORDER BY COALESCE(t.is_active,0) DESC, t.created_at DESC NULLS LAST, s.team_id DESC
+             LIMIT 1`, [phone])).rows[0] || null,
+      // Every team a given phone is staff on (for the staff-side team picker).
+      getStaffTeamsByPhone: async (phone) => (await pool.query(`SELECT s.*, t.name AS team_name, t.is_active
+             FROM staff s JOIN teams t ON t.id = s.team_id
+             WHERE s.phone = $1 ORDER BY t.is_active DESC, t.created_at DESC`, [phone])).rows,
       addStaff: async (s) => pool.query('INSERT INTO staff (name, role, phone, email, team_id) VALUES ($1,$2,$3,$4,$5)', [s.name, s.role, s.phone, s.email || null, s.team_id || 1]),
       updateStaff: async (id, s) => pool.query('UPDATE staff SET name=$1, role=$2, phone=$3, email=$4 WHERE id=$5', [s.name, s.role, s.phone, s.email || null, id]),
       removeStaff: async (id) => pool.query('DELETE FROM staff WHERE id = $1', [id]),
@@ -971,7 +979,7 @@ async function init() {
         ? (await pool.query('SELECT * FROM score_keepers WHERE team_id = $1 ORDER BY name', [teamId])).rows
         : (await pool.query('SELECT * FROM score_keepers ORDER BY name')).rows,
       addScoreKeeper: async (sk) => {
-        const r = await pool.query('INSERT INTO score_keepers (name, phone, email, access_token) VALUES ($1,$2,$3,$4) RETURNING id', [sk.name, sk.phone || null, sk.email || null, sk.access_token]);
+        const r = await pool.query('INSERT INTO score_keepers (name, phone, email, access_token, team_id) VALUES ($1,$2,$3,$4,$5) RETURNING id', [sk.name, sk.phone || null, sk.email || null, sk.access_token, sk.team_id || 1]);
         return r.rows[0];
       },
       removeScoreKeeper: async (id) => pool.query('DELETE FROM score_keepers WHERE id = $1', [id]),
@@ -1166,7 +1174,9 @@ async function init() {
       },
       setSetting: async (key, value) => pool.query('INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value]),
       updateProgramPositions: async (id, positions) => pool.query('UPDATE programs SET assigned_positions = $1 WHERE id = $2', [positions, id]),
-      getConfirmedPlayers: async () => (await pool.query("SELECT * FROM players WHERE status = 'confirmed' ORDER BY player_name")).rows,
+      getConfirmedPlayers: async (teamId) => teamId
+        ? (await pool.query("SELECT * FROM players WHERE status = 'confirmed' AND team_id = $1 ORDER BY player_name", [teamId])).rows
+        : (await pool.query("SELECT * FROM players WHERE status = 'confirmed' ORDER BY player_name")).rows,
       getAllProgramsWithPositions: async (teamId) => teamId
         ? (await pool.query("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != '' AND team_id = $1", [teamId])).rows
         : (await pool.query("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != ''")).rows,
@@ -1190,7 +1200,9 @@ async function init() {
         ? (await pool.query('SELECT * FROM quizzes WHERE team_id = $1 ORDER BY position, title', [teamId])).rows
         : (await pool.query('SELECT * FROM quizzes ORDER BY position, title')).rows,
       getQuiz: async (id) => (await pool.query('SELECT * FROM quizzes WHERE id = $1', [id])).rows[0] || null,
-      getQuizzesByPosition: async (pos) => (await pool.query('SELECT * FROM quizzes WHERE position = $1 ORDER BY title', [pos])).rows,
+      getQuizzesByPosition: async (pos, teamId) => teamId
+        ? (await pool.query('SELECT * FROM quizzes WHERE position = $1 AND team_id = $2 ORDER BY title', [pos, teamId])).rows
+        : (await pool.query('SELECT * FROM quizzes WHERE position = $1 ORDER BY title', [pos])).rows,
       createQuiz: async (q) => (await pool.query('INSERT INTO quizzes (title, position, description, team_id) VALUES ($1,$2,$3,$4) RETURNING id', [q.title, q.position, q.description || null, q.team_id || 1])).rows[0],
       getQuizQuestions: async (quizId) => (await pool.query('SELECT * FROM quiz_questions WHERE quiz_id = $1 ORDER BY sort_order', [quizId])).rows,
       addQuizQuestion: async (q) => (await pool.query('INSERT INTO quiz_questions (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id', [q.quiz_id, q.question_text, q.option_a, q.option_b, q.option_c || null, q.option_d || null, q.correct_answer, q.sort_order || 0])).rows[0],
@@ -1203,20 +1215,24 @@ async function init() {
       getQuizAttempt: async (id) => (await pool.query('SELECT qa.*, p.player_name, q.title as quiz_title, q.position as quiz_position FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = $1', [id])).rows[0] || null,
 
       // GameChanger imports
-      getGcImportedStats: async (statType) => (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.stat_type = $1 ORDER BY gs.gc_player_name', [statType])).rows,
-      upsertGcStats: async (playerId, gcName, statType, statsJson, source) => {
+      getGcImportedStats: async (statType, teamId) => teamId
+        ? (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.stat_type = $1 AND gs.team_id = $2 ORDER BY gs.gc_player_name', [statType, teamId])).rows
+        : (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.stat_type = $1 ORDER BY gs.gc_player_name', [statType])).rows,
+      upsertGcStats: async (playerId, gcName, statType, statsJson, source, teamId) => {
         if (playerId) {
-          const existing = (await pool.query('SELECT id FROM gc_imported_stats WHERE player_id = $1 AND stat_type = $2 AND source = $3', [playerId, statType, source])).rows[0];
+          const existing = (await pool.query('SELECT id FROM gc_imported_stats WHERE player_id = $1 AND stat_type = $2 AND source = $3 AND team_id = $4', [playerId, statType, source, teamId || 1])).rows[0];
           if (existing) {
             await pool.query('UPDATE gc_imported_stats SET stats_json = $1, gc_player_name = $2, imported_at = NOW() WHERE id = $3', [statsJson, gcName, existing.id]);
             return;
           }
         }
-        await pool.query('INSERT INTO gc_imported_stats (player_id, gc_player_name, stat_type, stats_json, source) VALUES ($1,$2,$3,$4,$5)', [playerId, gcName, statType, statsJson, source]);
+        await pool.query('INSERT INTO gc_imported_stats (player_id, gc_player_name, stat_type, stats_json, source, team_id) VALUES ($1,$2,$3,$4,$5,$6)', [playerId, gcName, statType, statsJson, source, teamId || 1]);
       },
-      deleteGcStats: async (statType, source) => pool.query('DELETE FROM gc_imported_stats WHERE stat_type = $1 AND source = $2', [statType, source || 'gamechanger']),
+      deleteGcStats: async (statType, source, teamId) => teamId
+        ? pool.query('DELETE FROM gc_imported_stats WHERE stat_type = $1 AND source = $2 AND team_id = $3', [statType, source || 'gamechanger', teamId])
+        : pool.query('DELETE FROM gc_imported_stats WHERE stat_type = $1 AND source = $2', [statType, source || 'gamechanger']),
       getAllGcStats: async (teamId) => teamId
-        ? (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.player_id IS NULL OR p.team_id = $1 ORDER BY gs.stat_type, gs.gc_player_name', [teamId])).rows
+        ? (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.team_id = $1 ORDER BY gs.stat_type, gs.gc_player_name', [teamId])).rows
         : (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id ORDER BY gs.stat_type, gs.gc_player_name')).rows,
     };
   } else {
@@ -1782,7 +1798,8 @@ async function init() {
     // --- Multi-team scoping (mirrors the Postgres branch) ---
     const TEAM_SCOPED_TABLES = [
       'players', 'staff', 'team_events', 'team_messages',
-      'score_keepers', 'programs', 'quizzes', 'saved_locations'
+      'score_keepers', 'programs', 'quizzes', 'saved_locations',
+      'gc_imported_stats'
     ];
     for (const t of TEAM_SCOPED_TABLES) {
       try { sqliteDb.exec(`ALTER TABLE ${t} ADD COLUMN team_id INTEGER REFERENCES teams(id) ON DELETE CASCADE`); } catch (e) { /* exists */ }
@@ -1845,7 +1862,7 @@ async function init() {
         );
       },
       addPlayer: async (p) => {
-        sqliteDb.prepare('INSERT INTO players (player_name, division, team, age, parent_name, parent_phone, parent_email) VALUES (?,?,?,?,?,?,?)')
+        sqliteDb.prepare('INSERT INTO players (player_name, division, team, age, parent_name, parent_phone, parent_email, team_id) VALUES (?,?,?,?,?,?,?,?)')
           .run(p.player_name, p.division, p.team, p.age, p.parent_name, p.parent_phone, p.parent_email || null);
       },
       removePlayer: async (id) => sqliteDb.prepare('DELETE FROM players WHERE id = ?').run(id),
@@ -1855,7 +1872,13 @@ async function init() {
       getStaff: async (id) => sqliteDb.prepare('SELECT * FROM staff WHERE id = ?').get(id) || null,
       getStaffByPhone: async (phone, teamId) => teamId
         ? sqliteDb.prepare('SELECT * FROM staff WHERE phone = ? AND team_id = ?').get(phone, teamId) || null
-        : sqliteDb.prepare('SELECT * FROM staff WHERE phone = ?').get(phone) || null,
+        : sqliteDb.prepare(`SELECT s.* FROM staff s LEFT JOIN teams t ON t.id = s.team_id
+             WHERE s.phone = ?
+             ORDER BY COALESCE(t.is_active,0) DESC, t.created_at DESC, s.team_id DESC
+             LIMIT 1`).get(phone) || null,
+      getStaffTeamsByPhone: async (phone) => sqliteDb.prepare(`SELECT s.*, t.name AS team_name, t.is_active
+             FROM staff s JOIN teams t ON t.id = s.team_id
+             WHERE s.phone = ? ORDER BY t.is_active DESC, t.created_at DESC`).all(phone),
       addStaff: async (s) => sqliteDb.prepare('INSERT INTO staff (name, role, phone, email, team_id) VALUES (?,?,?,?,?)').run(s.name, s.role, s.phone, s.email || null, s.team_id || 1),
       updateStaff: async (id, s) => sqliteDb.prepare('UPDATE staff SET name=?, role=?, phone=?, email=? WHERE id=?').run(s.name, s.role, s.phone, s.email || null, id),
       removeStaff: async (id) => sqliteDb.prepare('DELETE FROM staff WHERE id = ?').run(id),
@@ -1870,7 +1893,7 @@ async function init() {
         : sqliteDb.prepare('SELECT * FROM team_events ORDER BY start_date, start_time').all(),
       getTeamEvent: async (id) => sqliteDb.prepare('SELECT * FROM team_events WHERE id = ?').get(id) || null,
       addTeamEvent: async (e) => sqliteDb.prepare(
-        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info, opponent_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+        'INSERT INTO team_events (event_type, title, start_date, start_time, end_date, end_time, location_name, address, notes, hotel_info, carpool_info, opponent_name, team_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
       ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null),
       updateTeamEvent: async (id, e) => sqliteDb.prepare(
         'UPDATE team_events SET event_type=?, title=?, start_date=?, start_time=?, end_date=?, end_time=?, location_name=?, address=?, notes=?, hotel_info=?, carpool_info=?, opponent_name=? WHERE id=?'
@@ -2066,7 +2089,7 @@ async function init() {
         ? sqliteDb.prepare('SELECT * FROM score_keepers WHERE team_id = ? ORDER BY name').all(teamId)
         : sqliteDb.prepare('SELECT * FROM score_keepers ORDER BY name').all(),
       addScoreKeeper: async (sk) => {
-        const r = sqliteDb.prepare('INSERT INTO score_keepers (name, phone, email, access_token) VALUES (?,?,?,?)').run(sk.name, sk.phone || null, sk.email || null, sk.access_token);
+        const r = sqliteDb.prepare('INSERT INTO score_keepers (name, phone, email, access_token, team_id) VALUES (?,?,?,?,?)').run(sk.name, sk.phone || null, sk.email || null, sk.access_token, sk.team_id || 1);
         return { id: r.lastInsertRowid };
       },
       removeScoreKeeper: async (id) => sqliteDb.prepare('DELETE FROM score_keepers WHERE id = ?').run(id),
@@ -2222,7 +2245,7 @@ async function init() {
         : sqliteDb.prepare('SELECT * FROM programs WHERE published = 1 ORDER BY title').all(),
       getProgram: async (id) => sqliteDb.prepare('SELECT * FROM programs WHERE id = ?').get(id) || null,
       addProgram: async (p) => {
-        const r = sqliteDb.prepare('INSERT INTO programs (title, description, author, program_type, schedule_type, published) VALUES (?,?,?,?,?,?)').run(p.title, p.description || null, p.author || null, p.program_type || 'at_home', p.schedule_type || 'weekly', p.published || 0);
+        const r = sqliteDb.prepare('INSERT INTO programs (title, description, author, program_type, schedule_type, published, team_id) VALUES (?,?,?,?,?,?,?)').run(p.title, p.description || null, p.author || null, p.program_type || 'at_home', p.schedule_type || 'weekly', p.published || 0, p.team_id || 1);
         return { id: r.lastInsertRowid };
       },
       updateProgram: async (id, p) => sqliteDb.prepare('UPDATE programs SET title=?, description=?, author=?, program_type=?, schedule_type=?, published=? WHERE id=?').run(p.title, p.description || null, p.author || null, p.program_type, p.schedule_type, p.published || 0, id),
@@ -2258,7 +2281,9 @@ async function init() {
       },
       setSetting: async (key, value) => sqliteDb.prepare('INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)').run(key, value),
       updateProgramPositions: async (id, positions) => sqliteDb.prepare('UPDATE programs SET assigned_positions = ? WHERE id = ?').run(positions, id),
-      getConfirmedPlayers: async () => sqliteDb.prepare("SELECT * FROM players WHERE status = 'confirmed' ORDER BY player_name").all(),
+      getConfirmedPlayers: async (teamId) => teamId
+        ? sqliteDb.prepare("SELECT * FROM players WHERE status = 'confirmed' AND team_id = ? ORDER BY player_name").all(teamId)
+        : sqliteDb.prepare("SELECT * FROM players WHERE status = 'confirmed' ORDER BY player_name").all(),
       getAllProgramsWithPositions: async (teamId) => teamId
         ? sqliteDb.prepare("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != '' AND team_id = ?").all(teamId)
         : sqliteDb.prepare("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != ''").all(),
@@ -2283,7 +2308,9 @@ async function init() {
         ? sqliteDb.prepare('SELECT * FROM quizzes WHERE team_id = ? ORDER BY position, title').all(teamId)
         : sqliteDb.prepare('SELECT * FROM quizzes ORDER BY position, title').all(),
       getQuiz: async (id) => sqliteDb.prepare('SELECT * FROM quizzes WHERE id = ?').get(id) || null,
-      getQuizzesByPosition: async (pos) => sqliteDb.prepare('SELECT * FROM quizzes WHERE position = ?').all(pos),
+      getQuizzesByPosition: async (pos, teamId) => teamId
+        ? sqliteDb.prepare('SELECT * FROM quizzes WHERE position = ? AND team_id = ?').all(pos, teamId)
+        : sqliteDb.prepare('SELECT * FROM quizzes WHERE position = ?').all(pos),
       createQuiz: async (q) => ({ id: sqliteDb.prepare('INSERT INTO quizzes (title, position, description, team_id) VALUES (?,?,?,?)').run(q.title, q.position, q.description || null, q.team_id || 1).lastInsertRowid }),
       getQuizQuestions: async (quizId) => sqliteDb.prepare('SELECT * FROM quiz_questions WHERE quiz_id = ? ORDER BY sort_order').all(quizId),
       addQuizQuestion: async (q) => ({ id: sqliteDb.prepare('INSERT INTO quiz_questions (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer, sort_order) VALUES (?,?,?,?,?,?,?,?)').run(q.quiz_id, q.question_text, q.option_a, q.option_b, q.option_c || null, q.option_d || null, q.correct_answer, q.sort_order || 0).lastInsertRowid }),
@@ -2296,20 +2323,24 @@ async function init() {
       getQuizAttempt: async (id) => sqliteDb.prepare('SELECT qa.*, p.player_name, q.title as quiz_title, q.position as quiz_position FROM quiz_attempts qa JOIN players p ON qa.player_id = p.id JOIN quizzes q ON qa.quiz_id = q.id WHERE qa.id = ?').get(id) || null,
 
       // GameChanger imports
-      getGcImportedStats: async (statType) => sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.stat_type = ? ORDER BY gs.gc_player_name').all(statType),
-      upsertGcStats: async (playerId, gcName, statType, statsJson, source) => {
+      getGcImportedStats: async (statType, teamId) => teamId
+        ? sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.stat_type = ? AND gs.team_id = ? ORDER BY gs.gc_player_name').all(statType, teamId)
+        : sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.stat_type = ? ORDER BY gs.gc_player_name').all(statType),
+      upsertGcStats: async (playerId, gcName, statType, statsJson, source, teamId) => {
         if (playerId) {
-          const existing = sqliteDb.prepare('SELECT id FROM gc_imported_stats WHERE player_id = ? AND stat_type = ? AND source = ?').get(playerId, statType, source);
+          const existing = sqliteDb.prepare('SELECT id FROM gc_imported_stats WHERE player_id = ? AND stat_type = ? AND source = ? AND team_id = ?').get(playerId, statType, source, teamId || 1);
           if (existing) {
             sqliteDb.prepare('UPDATE gc_imported_stats SET stats_json = ?, gc_player_name = ?, imported_at = datetime(\'now\') WHERE id = ?').run(statsJson, gcName, existing.id);
             return;
           }
         }
-        sqliteDb.prepare('INSERT INTO gc_imported_stats (player_id, gc_player_name, stat_type, stats_json, source) VALUES (?,?,?,?,?)').run(playerId, gcName, statType, statsJson, source);
+        sqliteDb.prepare('INSERT INTO gc_imported_stats (player_id, gc_player_name, stat_type, stats_json, source, team_id) VALUES (?,?,?,?,?,?)').run(playerId, gcName, statType, statsJson, source, teamId || 1);
       },
-      deleteGcStats: async (statType, source) => sqliteDb.prepare('DELETE FROM gc_imported_stats WHERE stat_type = ? AND source = ?').run(statType, source || 'gamechanger'),
+      deleteGcStats: async (statType, source, teamId) => teamId
+        ? sqliteDb.prepare('DELETE FROM gc_imported_stats WHERE stat_type = ? AND source = ? AND team_id = ?').run(statType, source || 'gamechanger', teamId)
+        : sqliteDb.prepare('DELETE FROM gc_imported_stats WHERE stat_type = ? AND source = ?').run(statType, source || 'gamechanger'),
       getAllGcStats: async (teamId) => teamId
-        ? sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.player_id IS NULL OR p.team_id = ? ORDER BY gs.stat_type, gs.gc_player_name').all(teamId)
+        ? sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.team_id = ? ORDER BY gs.stat_type, gs.gc_player_name').all(teamId)
         : sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id ORDER BY gs.stat_type, gs.gc_player_name').all(),
     };
   }
@@ -2334,6 +2365,7 @@ module.exports = {
   getAllStaff: (...args) => impl.getAllStaff(...args),
   getStaff: (...args) => impl.getStaff(...args),
   getStaffByPhone: (...args) => impl.getStaffByPhone(...args),
+  getStaffTeamsByPhone: (...args) => impl.getStaffTeamsByPhone(...args),
   addStaff: (...args) => impl.addStaff(...args),
   updateStaff: (...args) => impl.updateStaff(...args),
   removeStaff: (...args) => impl.removeStaff(...args),
