@@ -1308,7 +1308,7 @@ app.get('/admin', requireAdmin, async (req, res) => {
   const allEvents = await db.getAllEvents();
   const teamEvents = await db.getAllTeamEvents(req.teamId);
   const savedLocations = await db.getAllSavedLocations(req.teamId);
-  const parentAccounts = await db.getAllParentAccounts();
+  const parentAccounts = await db.getAllParentAccounts(req.teamId);
   const rsvpRows = await db.getRsvpCountsAll();
   const rsvpCounts = {};
   rsvpRows.forEach(r => {
@@ -2303,10 +2303,10 @@ app.post('/admin/scorekeepers/:id/delete', requireAdmin, async (req, res) => {
 // --- User Account Management ---
 
 app.get('/admin/accounts', requireAdmin, async (req, res) => {
-  const accounts = await db.getAllParentAccounts();
+  const accounts = await db.getAllParentAccounts(req.teamId);
   const result = [];
   for (const a of accounts) {
-    const linked = await db.getLinkedPlayersByAccount(a.id);
+    const linked = await db.getLinkedPlayersByAccount(a.id, req.teamId);
     result.push({ id: a.id, phone: a.phone, username: a.username || '', display_name: a.display_name, created_at: a.created_at, role: a.role || 'parent', approved: a.approved !== false && a.approved !== 0, players: linked.map(p => ({ id: p.id, name: p.player_name })) });
   }
   res.json(result);
@@ -2461,7 +2461,7 @@ app.post('/admin/accounts/:id/set-role', requireAdmin, async (req, res) => {
 });
 
 app.get('/admin/pending-fans', requireAdmin, async (req, res) => {
-  const pending = await db.getPendingFanAccounts();
+  const pending = await db.getPendingFanAccounts(req.teamId);
   const players = await db.getAllPlayers(req.teamId);
   const playerMap = {};
   for (const p of players) playerMap[p.id] = p.player_name;

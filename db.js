@@ -859,7 +859,17 @@ async function init() {
       getParentAccountByPhone: async (phone) => (await pool.query('SELECT * FROM parent_accounts WHERE phone = $1', [phone])).rows[0] || null,
       getParentAccountByUsername: async (username) => (await pool.query('SELECT * FROM parent_accounts WHERE LOWER(username) = LOWER($1)', [username])).rows[0] || null,
       createParentAccount: async (phone, displayName, passwordHash) => pool.query('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES ($1, $2, $3)', [phone, displayName, passwordHash]),
-      getAllParentAccounts: async () => (await pool.query('SELECT * FROM parent_accounts ORDER BY display_name')).rows,
+      // An account belongs to a team if it has at least one linked player on
+      // that team. Accounts with NO linked players are shown on every team so
+      // they stay manageable (new signups still need to be linked/triaged).
+      getAllParentAccounts: async (teamId) => teamId
+        ? (await pool.query(`SELECT DISTINCT pa.* FROM parent_accounts pa
+             LEFT JOIN player_parents pp ON pp.account_id = pa.id
+             LEFT JOIN players p ON p.id = pp.player_id
+             WHERE p.team_id = $1
+                OR NOT EXISTS (SELECT 1 FROM player_parents x WHERE x.account_id = pa.id)
+             ORDER BY pa.display_name`, [teamId])).rows
+        : (await pool.query('SELECT * FROM parent_accounts ORDER BY display_name')).rows,
       getParentAccountById: async (id) => (await pool.query('SELECT * FROM parent_accounts WHERE id = $1', [id])).rows[0] || null,
       updateParentAccountPassword: async (id, passwordHash) => pool.query('UPDATE parent_accounts SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
       updateParentAccountName: async (id, displayName) => pool.query('UPDATE parent_accounts SET display_name = $1 WHERE id = $2', [displayName, id]),
@@ -870,12 +880,22 @@ async function init() {
       updatePlayerParentPhone: async (playerId, phone) => pool.query('UPDATE players SET parent_phone = $1 WHERE id = $2', [phone, playerId]),
       linkPlayerToAccount: async (playerId, accountId) => pool.query('INSERT INTO player_parents (player_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [playerId, accountId]),
       unlinkPlayerFromAccount: async (playerId, accountId) => pool.query('DELETE FROM player_parents WHERE player_id = $1 AND account_id = $2', [playerId, accountId]),
-      getLinkedPlayersByAccount: async (accountId) => (await pool.query('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = $1 ORDER BY p.player_name', [accountId])).rows,
+      getLinkedPlayersByAccount: async (accountId, teamId) => teamId
+        ? (await pool.query('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = $1 AND p.team_id = $2 ORDER BY p.player_name', [accountId, teamId])).rows
+        : (await pool.query('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = $1 ORDER BY p.player_name', [accountId])).rows,
       getLinkedAccountsByPlayer: async (playerId) => (await pool.query('SELECT pa.* FROM parent_accounts pa JOIN player_parents pp ON pa.id = pp.account_id WHERE pp.player_id = $1 ORDER BY pa.display_name', [playerId])).rows,
       getAllPlayerParentLinks: async () => (await pool.query('SELECT pp.*, p.player_name, pa.display_name, pa.phone, pa.role FROM player_parents pp JOIN players p ON pp.player_id = p.id JOIN parent_accounts pa ON pp.account_id = pa.id ORDER BY p.player_name')).rows,
       updateAccountRole: async (id, role) => pool.query('UPDATE parent_accounts SET role = $1 WHERE id = $2', [role, id]),
       updateAccountApproved: async (id, approved) => pool.query('UPDATE parent_accounts SET approved = $1 WHERE id = $2', [approved, id]),
-      getPendingFanAccounts: async () => (await pool.query("SELECT pa.*, array_agg(pp.player_id) as player_ids FROM parent_accounts pa LEFT JOIN player_parents pp ON pa.id = pp.account_id WHERE pa.role = 'fan' AND pa.approved = false GROUP BY pa.id ORDER BY pa.created_at DESC")).rows,
+      getPendingFanAccounts: async (teamId) => teamId
+        ? (await pool.query(`SELECT pa.*, array_agg(pp.player_id) as player_ids
+             FROM parent_accounts pa
+             LEFT JOIN player_parents pp ON pa.id = pp.account_id
+             LEFT JOIN players p ON p.id = pp.player_id
+             WHERE pa.role = 'fan' AND pa.approved = false
+               AND (p.team_id = $1 OR NOT EXISTS (SELECT 1 FROM player_parents x WHERE x.account_id = pa.id))
+             GROUP BY pa.id ORDER BY pa.created_at DESC`, [teamId])).rows
+        : (await pool.query("SELECT pa.*, array_agg(pp.player_id) as player_ids FROM parent_accounts pa LEFT JOIN player_parents pp ON pa.id = pp.account_id WHERE pa.role = 'fan' AND pa.approved = false GROUP BY pa.id ORDER BY pa.created_at DESC")).rows,
       createParentAccountFull: async (phone, displayName, passwordHash, role, approved) => {
         const r = await pool.query('INSERT INTO parent_accounts (phone, display_name, password_hash, role, approved) VALUES ($1, $2, $3, $4, $5) RETURNING id', [phone, displayName, passwordHash, role, approved]);
         return r.rows[0];
@@ -1907,7 +1927,14 @@ async function init() {
       getParentAccountByPhone: async (phone) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE phone = ?').get(phone) || null,
       getParentAccountByUsername: async (username) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE LOWER(username) = LOWER(?)').get(username) || null,
       createParentAccount: async (phone, displayName, passwordHash) => sqliteDb.prepare('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES (?, ?, ?)').run(phone, displayName, passwordHash),
-      getAllParentAccounts: async () => sqliteDb.prepare('SELECT * FROM parent_accounts ORDER BY display_name').all(),
+      getAllParentAccounts: async (teamId) => teamId
+        ? sqliteDb.prepare(`SELECT DISTINCT pa.* FROM parent_accounts pa
+             LEFT JOIN player_parents pp ON pp.account_id = pa.id
+             LEFT JOIN players p ON p.id = pp.player_id
+             WHERE p.team_id = ?
+                OR NOT EXISTS (SELECT 1 FROM player_parents x WHERE x.account_id = pa.id)
+             ORDER BY pa.display_name`).all(teamId)
+        : sqliteDb.prepare('SELECT * FROM parent_accounts ORDER BY display_name').all(),
       getParentAccountById: async (id) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE id = ?').get(id) || null,
       updateParentAccountPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE parent_accounts SET password_hash = ? WHERE id = ?').run(passwordHash, id),
       updateParentAccountName: async (id, displayName) => sqliteDb.prepare('UPDATE parent_accounts SET display_name = ? WHERE id = ?').run(displayName, id),
@@ -1918,13 +1945,22 @@ async function init() {
       updatePlayerParentPhone: async (playerId, phone) => sqliteDb.prepare('UPDATE players SET parent_phone = ? WHERE id = ?').run(phone, playerId),
       linkPlayerToAccount: async (playerId, accountId) => sqliteDb.prepare('INSERT OR IGNORE INTO player_parents (player_id, account_id) VALUES (?, ?)').run(playerId, accountId),
       unlinkPlayerFromAccount: async (playerId, accountId) => sqliteDb.prepare('DELETE FROM player_parents WHERE player_id = ? AND account_id = ?').run(playerId, accountId),
-      getLinkedPlayersByAccount: async (accountId) => sqliteDb.prepare('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = ? ORDER BY p.player_name').all(accountId),
+      getLinkedPlayersByAccount: async (accountId, teamId) => teamId
+        ? sqliteDb.prepare('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = ? AND p.team_id = ? ORDER BY p.player_name').all(accountId, teamId)
+        : sqliteDb.prepare('SELECT p.* FROM players p JOIN player_parents pp ON p.id = pp.player_id WHERE pp.account_id = ? ORDER BY p.player_name').all(accountId),
       getLinkedAccountsByPlayer: async (playerId) => sqliteDb.prepare('SELECT pa.* FROM parent_accounts pa JOIN player_parents pp ON pa.id = pp.account_id WHERE pp.player_id = ? ORDER BY pa.display_name').all(playerId),
       getAllPlayerParentLinks: async () => sqliteDb.prepare('SELECT pp.*, p.player_name, pa.display_name, pa.phone, pa.role FROM player_parents pp JOIN players p ON pp.player_id = p.id JOIN parent_accounts pa ON pp.account_id = pa.id ORDER BY p.player_name').all(),
       updateAccountRole: async (id, role) => sqliteDb.prepare('UPDATE parent_accounts SET role = ? WHERE id = ?').run(role, id),
       updateAccountApproved: async (id, approved) => sqliteDb.prepare('UPDATE parent_accounts SET approved = ? WHERE id = ?').run(approved ? 1 : 0, id),
-      getPendingFanAccounts: async () => {
-        const fans = sqliteDb.prepare("SELECT * FROM parent_accounts WHERE role = 'fan' AND approved = 0 ORDER BY created_at DESC").all();
+      getPendingFanAccounts: async (teamId) => {
+        const fans = teamId
+          ? sqliteDb.prepare(`SELECT DISTINCT pa.* FROM parent_accounts pa
+               LEFT JOIN player_parents pp ON pp.account_id = pa.id
+               LEFT JOIN players p ON p.id = pp.player_id
+               WHERE pa.role = 'fan' AND pa.approved = 0
+                 AND (p.team_id = ? OR NOT EXISTS (SELECT 1 FROM player_parents x WHERE x.account_id = pa.id))
+               ORDER BY pa.created_at DESC`).all(teamId)
+          : sqliteDb.prepare("SELECT * FROM parent_accounts WHERE role = 'fan' AND approved = 0 ORDER BY created_at DESC").all();
         for (const f of fans) { f.player_ids = sqliteDb.prepare('SELECT player_id FROM player_parents WHERE account_id = ?').all(f.id).map(r => r.player_id); }
         return fans;
       },
