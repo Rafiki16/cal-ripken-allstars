@@ -71,7 +71,15 @@
 
     <!-- Player Management Table -->
     <div class="admin-section">
-      <h2 class="profile-section-title">Manage Roster</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+        <h2 class="profile-section-title" style="margin:0;">Manage Roster</h2>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-secondary" style="font-size:13px; padding:8px 16px;" onclick="copyRosterPhones()">
+            Copy All Phone Numbers (<%= (typeof rosterPhones !== 'undefined' ? rosterPhones : []).length %>)
+          </button>
+          <span id="phones-copied-msg" style="font-size:12px; font-weight:700;"></span>
+        </div>
+      </div>
 
       <div class="admin-table-wrap">
         <table class="admin-table">
@@ -1503,5 +1511,48 @@
       <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
     </div>
   </footer>
+
+<script>
+  var ROSTER_PHONES = <%- JSON.stringify(typeof rosterPhones !== 'undefined' ? rosterPhones : []) %>;
+  function copyRosterPhones() {
+    var msg = document.getElementById('phones-copied-msg');
+    if (!ROSTER_PHONES.length) {
+      msg.style.color = 'var(--red-status)';
+      msg.textContent = 'No phone numbers on the roster.';
+      return;
+    }
+    var text = ROSTER_PHONES.join(', ');
+    function done() {
+      msg.style.color = 'var(--green)';
+      msg.textContent = 'Copied ' + ROSTER_PHONES.length + ' numbers';
+      setTimeout(function(){ msg.textContent = ''; }, 4000);
+    }
+    function fallback() {
+      // navigator.clipboard needs a secure context; fall back to execCommand.
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      if (ok) { done(); }
+      else {
+        msg.style.color = 'var(--red-status)';
+        msg.textContent = 'Copy blocked — copy from the box';
+        window.prompt('Copy these numbers:', text);
+      }
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else {
+      fallback();
+    }
+  }
+</script>
 </body>
 </html>

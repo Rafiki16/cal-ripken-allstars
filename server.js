@@ -1397,8 +1397,20 @@ app.get('/admin', requireAdmin, async (req, res) => {
   });
   const accountsByPhone = {};
   parentAccounts.forEach(a => { accountsByPhone[a.phone] = a; });
+  // Every phone associated with this team's roster: the parent on file plus
+  // any family contacts added on the player profile. Deduped, so a parent
+  // with siblings on the roster appears once.
+  const rosterPhoneSet = new Set();
+  for (const p of players) {
+    for (const c of getPlayerContacts(p)) {
+      if (c.type === 'sms' && c.value && String(c.value).length === 10) rosterPhoneSet.add(String(c.value));
+    }
+  }
+  const rosterPhones = [...rosterPhoneSet];
+
   res.render('admin', {
     players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents, savedLocations, rsvpCounts, accountsByPhone,
+    rosterPhones,
     adminUser: req.session.admin,
     success: req.query.success || null,
     error: req.query.error || null,
