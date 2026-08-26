@@ -1,0 +1,24 @@
+<%
+  // Prominent team switcher for accounts whose players span more than one
+  // team. Renders nothing for single-team parents so it never adds noise.
+  // Relies on res.locals.myTeams / currentTeamId set by the team-context
+  // middleware; the middleware also honours ?team=<id>, so plain links work.
+  var _teams = (typeof myTeams !== 'undefined' && myTeams) ? myTeams : [];
+  var _current = (typeof currentTeamId !== 'undefined') ? currentTeamId : null;
+%>
+<% if (_teams.length > 1) { %>
+  <div class="team-switcher">
+    <div class="team-switcher-label">
+      You have players on <%= _teams.length %> teams &mdash; you're viewing:
+    </div>
+    <div class="team-switcher-buttons">
+      <% _teams.forEach(function(t) { %>
+        <% if (t.id === _current) { %>
+          <span class="team-chip team-chip-active"><%= t.name %> <span class="team-chip-tick">&#10003;</span></span>
+        <% } else { %>
+          <a class="team-chip team-chip-switch" href="?team=<%= t.id %>">Switch to <%= t.name %></a>
+        <% } %>
+      <% }); %>
+    </div>
+  </div>
+<% } %>

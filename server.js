@@ -205,9 +205,19 @@ app.use(async (req, res, next) => {
         teamId = req.session.currentTeamId;
       }
     } else if (req.parentUser) {
-      // Parents are scoped to whichever team(s) their linked players are on.
-      const myTeamIds = [...new Set((await db.getPlayersByPhone(req.parentUser.phone)).map(p => p.team_id).filter(Boolean))];
+      // Which teams can this account see? Derive it from the player links
+      // (player_parents), NOT from the account's own phone -- a family member
+      // such as a grandparent has their own phone that matches no player's
+      // parent_phone, so a phone lookup would find them nothing.
+      const myPlayers = await db.getLinkedPlayersByAccount(req.parentUser.id);
+      const myTeamIds = [...new Set(myPlayers.map(p => p.team_id).filter(Boolean))];
+      // Name each team so the switcher can label its buttons.
+      const myTeams = myTeamIds
+        .map(id => teams.find(t => t.id === id))
+        .filter(Boolean)
+        .sort((a, b) => a.id - b.id);
       res.locals.myTeamIds = myTeamIds;
+      res.locals.myTeams = myTeams;
       const q = req.query.team ? Number(req.query.team) : null;
       if (q && myTeamIds.includes(q)) {
         teamId = q;
