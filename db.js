@@ -766,7 +766,9 @@ async function init() {
       updateStaff: async (id, s) => pool.query('UPDATE staff SET name=$1, role=$2, phone=$3, email=$4 WHERE id=$5', [s.name, s.role, s.phone, s.email || null, id]),
       removeStaff: async (id) => pool.query('DELETE FROM staff WHERE id = $1', [id]),
       getPlayerEvents: async (playerId) => (await pool.query('SELECT * FROM events WHERE player_id = $1 ORDER BY start_date', [playerId])).rows,
-      getAllEvents: async () => (await pool.query('SELECT * FROM events ORDER BY start_date')).rows,
+      getAllEvents: async (teamId) => teamId
+        ? (await pool.query('SELECT e.* FROM events e JOIN players p ON p.id = e.player_id WHERE p.team_id = $1 ORDER BY e.start_date', [teamId])).rows
+        : (await pool.query('SELECT * FROM events ORDER BY start_date')).rows,
       addEvent: async (e) => pool.query('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES ($1,$2,$3,$4,$5)', [e.player_id, e.event_type, e.start_date, e.end_date, e.notes]),
       removeEvent: async (id) => pool.query('DELETE FROM events WHERE id = $1', [id]),
       getAllTeamEvents: async (teamId) => teamId
@@ -864,12 +866,29 @@ async function init() {
       // they stay manageable (new signups still need to be linked/triaged).
       getAllParentAccounts: async (teamId) => teamId
         ? (await pool.query(`SELECT DISTINCT pa.* FROM parent_accounts pa
-             LEFT JOIN player_parents pp ON pp.account_id = pa.id
-             LEFT JOIN players p ON p.id = pp.player_id
+             JOIN player_parents pp ON pp.account_id = pa.id
+             JOIN players p ON p.id = pp.player_id
              WHERE p.team_id = $1
-                OR NOT EXISTS (SELECT 1 FROM player_parents x WHERE x.account_id = pa.id)
              ORDER BY pa.display_name`, [teamId])).rows
         : (await pool.query('SELECT * FROM parent_accounts ORDER BY display_name')).rows,
+      // Global account admin: every account, with the teams it belongs to.
+      // Optional q filters on name / phone / username.
+      searchParentAccounts: async (q) => {
+        const like = '%' + (q || '').toLowerCase().trim() + '%';
+        const rows = (await pool.query(`SELECT pa.*,
+               COALESCE(json_agg(DISTINCT jsonb_build_object('id', t.id, 'name', t.name))
+                 FILTER (WHERE t.id IS NOT NULL), '[]') AS teams,
+               COUNT(DISTINCT p.id) AS player_count
+             FROM parent_accounts pa
+             LEFT JOIN player_parents pp ON pp.account_id = pa.id
+             LEFT JOIN players p ON p.id = pp.player_id
+             LEFT JOIN teams t ON t.id = p.team_id
+             WHERE ($1 = '%%' OR LOWER(pa.display_name) LIKE $1
+                    OR LOWER(COALESCE(pa.username,'')) LIKE $1
+                    OR pa.phone LIKE $1)
+             GROUP BY pa.id ORDER BY pa.display_name`, [like])).rows;
+        return rows;
+      },
       getParentAccountById: async (id) => (await pool.query('SELECT * FROM parent_accounts WHERE id = $1', [id])).rows[0] || null,
       updateParentAccountPassword: async (id, passwordHash) => pool.query('UPDATE parent_accounts SET password_hash = $1 WHERE id = $2', [passwordHash, id]),
       updateParentAccountName: async (id, displayName) => pool.query('UPDATE parent_accounts SET display_name = $1 WHERE id = $2', [displayName, id]),
@@ -893,7 +912,7 @@ async function init() {
              LEFT JOIN player_parents pp ON pa.id = pp.account_id
              LEFT JOIN players p ON p.id = pp.player_id
              WHERE pa.role = 'fan' AND pa.approved = false
-               AND (p.team_id = $1 OR NOT EXISTS (SELECT 1 FROM player_parents x WHERE x.account_id = pa.id))
+               AND p.team_id = $1
              GROUP BY pa.id ORDER BY pa.created_at DESC`, [teamId])).rows
         : (await pool.query("SELECT pa.*, array_agg(pp.player_id) as player_ids FROM parent_accounts pa LEFT JOIN player_parents pp ON pa.id = pp.account_id WHERE pa.role = 'fan' AND pa.approved = false GROUP BY pa.id ORDER BY pa.created_at DESC")).rows,
       createParentAccountFull: async (phone, displayName, passwordHash, role, approved) => {
@@ -982,7 +1001,15 @@ async function init() {
         vals.push(id);
         await pool.query(`UPDATE live_games SET ${fields.join(', ')} WHERE id = $${idx}`, vals);
       },
-      getAllActiveGames: async () => (await pool.query("SELECT * FROM live_games WHERE status IN ('setup','active') ORDER BY id DESC")).rows,
+      getAllActiveGames: async (teamId) => teamId
+        ? (await pool.query(`SELECT lg.* FROM live_games lg
+             LEFT JOIN team_events te ON te.id = lg.team_event_id
+             LEFT JOIN tournament_sub_events tse ON tse.id = lg.sub_event_id
+             LEFT JOIN team_events te2 ON te2.id = tse.team_event_id
+             WHERE lg.status IN ('setup','active')
+               AND COALESCE(te.team_id, te2.team_id) = $1
+             ORDER BY lg.id DESC`, [teamId])).rows
+        : (await pool.query("SELECT * FROM live_games WHERE status IN ('setup','active') ORDER BY id DESC")).rows,
 
       setGameRoster: async (gameId, entries) => {
         await pool.query('DELETE FROM game_roster WHERE game_id = $1', [gameId]);
@@ -1140,7 +1167,9 @@ async function init() {
       setSetting: async (key, value) => pool.query('INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, value]),
       updateProgramPositions: async (id, positions) => pool.query('UPDATE programs SET assigned_positions = $1 WHERE id = $2', [positions, id]),
       getConfirmedPlayers: async () => (await pool.query("SELECT * FROM players WHERE status = 'confirmed' ORDER BY player_name")).rows,
-      getAllProgramsWithPositions: async () => (await pool.query("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != ''")).rows,
+      getAllProgramsWithPositions: async (teamId) => teamId
+        ? (await pool.query("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != '' AND team_id = $1", [teamId])).rows
+        : (await pool.query("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != ''")).rows,
       markDayComplete: async (programId, playerId, dayId, weekOf) => pool.query(
         'INSERT INTO program_completions (program_id, player_id, program_day_id, week_of) VALUES ($1,$2,$3,$4) ON CONFLICT (program_id, player_id, program_day_id, week_of) DO UPDATE SET completed_at = NOW()',
         [programId, playerId, dayId, weekOf]
@@ -1186,7 +1215,9 @@ async function init() {
         await pool.query('INSERT INTO gc_imported_stats (player_id, gc_player_name, stat_type, stats_json, source) VALUES ($1,$2,$3,$4,$5)', [playerId, gcName, statType, statsJson, source]);
       },
       deleteGcStats: async (statType, source) => pool.query('DELETE FROM gc_imported_stats WHERE stat_type = $1 AND source = $2', [statType, source || 'gamechanger']),
-      getAllGcStats: async () => (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id ORDER BY gs.stat_type, gs.gc_player_name')).rows,
+      getAllGcStats: async (teamId) => teamId
+        ? (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.player_id IS NULL OR p.team_id = $1 ORDER BY gs.stat_type, gs.gc_player_name', [teamId])).rows
+        : (await pool.query('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id ORDER BY gs.stat_type, gs.gc_player_name')).rows,
     };
   } else {
     const Database = require('better-sqlite3');
@@ -1829,7 +1860,9 @@ async function init() {
       updateStaff: async (id, s) => sqliteDb.prepare('UPDATE staff SET name=?, role=?, phone=?, email=? WHERE id=?').run(s.name, s.role, s.phone, s.email || null, id),
       removeStaff: async (id) => sqliteDb.prepare('DELETE FROM staff WHERE id = ?').run(id),
       getPlayerEvents: async (playerId) => sqliteDb.prepare('SELECT * FROM events WHERE player_id = ? ORDER BY start_date').all(playerId),
-      getAllEvents: async () => sqliteDb.prepare('SELECT * FROM events ORDER BY start_date').all(),
+      getAllEvents: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT e.* FROM events e JOIN players p ON p.id = e.player_id WHERE p.team_id = ? ORDER BY e.start_date').all(teamId)
+        : sqliteDb.prepare('SELECT * FROM events ORDER BY start_date').all(),
       addEvent: async (e) => sqliteDb.prepare('INSERT INTO events (player_id, event_type, start_date, end_date, notes) VALUES (?,?,?,?,?)').run(e.player_id, e.event_type, e.start_date, e.end_date, e.notes),
       removeEvent: async (id) => sqliteDb.prepare('DELETE FROM events WHERE id = ?').run(id),
       getAllTeamEvents: async (teamId) => teamId
@@ -1929,12 +1962,25 @@ async function init() {
       createParentAccount: async (phone, displayName, passwordHash) => sqliteDb.prepare('INSERT INTO parent_accounts (phone, display_name, password_hash) VALUES (?, ?, ?)').run(phone, displayName, passwordHash),
       getAllParentAccounts: async (teamId) => teamId
         ? sqliteDb.prepare(`SELECT DISTINCT pa.* FROM parent_accounts pa
-             LEFT JOIN player_parents pp ON pp.account_id = pa.id
-             LEFT JOIN players p ON p.id = pp.player_id
+             JOIN player_parents pp ON pp.account_id = pa.id
+             JOIN players p ON p.id = pp.player_id
              WHERE p.team_id = ?
-                OR NOT EXISTS (SELECT 1 FROM player_parents x WHERE x.account_id = pa.id)
              ORDER BY pa.display_name`).all(teamId)
         : sqliteDb.prepare('SELECT * FROM parent_accounts ORDER BY display_name').all(),
+      searchParentAccounts: async (q) => {
+        const like = '%' + (q || '').toLowerCase().trim() + '%';
+        const rows = sqliteDb.prepare(`SELECT pa.* FROM parent_accounts pa
+             WHERE (? = '%%' OR LOWER(pa.display_name) LIKE ?
+                    OR LOWER(COALESCE(pa.username,'')) LIKE ?
+                    OR pa.phone LIKE ?)
+             ORDER BY pa.display_name`).all(like, like, like, like);
+        const teamsFor = sqliteDb.prepare(`SELECT DISTINCT t.id, t.name FROM player_parents pp
+             JOIN players p ON p.id = pp.player_id JOIN teams t ON t.id = p.team_id
+             WHERE pp.account_id = ?`);
+        const cnt = sqliteDb.prepare('SELECT COUNT(DISTINCT player_id) c FROM player_parents WHERE account_id = ?');
+        for (const r of rows) { r.teams = teamsFor.all(r.id); r.player_count = cnt.get(r.id).c; }
+        return rows;
+      },
       getParentAccountById: async (id) => sqliteDb.prepare('SELECT * FROM parent_accounts WHERE id = ?').get(id) || null,
       updateParentAccountPassword: async (id, passwordHash) => sqliteDb.prepare('UPDATE parent_accounts SET password_hash = ? WHERE id = ?').run(passwordHash, id),
       updateParentAccountName: async (id, displayName) => sqliteDb.prepare('UPDATE parent_accounts SET display_name = ? WHERE id = ?').run(displayName, id),
@@ -1958,7 +2004,7 @@ async function init() {
                LEFT JOIN player_parents pp ON pp.account_id = pa.id
                LEFT JOIN players p ON p.id = pp.player_id
                WHERE pa.role = 'fan' AND pa.approved = 0
-                 AND (p.team_id = ? OR NOT EXISTS (SELECT 1 FROM player_parents x WHERE x.account_id = pa.id))
+                 AND p.team_id = ?
                ORDER BY pa.created_at DESC`).all(teamId)
           : sqliteDb.prepare("SELECT * FROM parent_accounts WHERE role = 'fan' AND approved = 0 ORDER BY created_at DESC").all();
         for (const f of fans) { f.player_ids = sqliteDb.prepare('SELECT player_id FROM player_parents WHERE account_id = ?').all(f.id).map(r => r.player_id); }
@@ -2045,7 +2091,15 @@ async function init() {
         vals.push(id);
         sqliteDb.prepare(`UPDATE live_games SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
       },
-      getAllActiveGames: async () => sqliteDb.prepare("SELECT * FROM live_games WHERE status IN ('setup','active') ORDER BY id DESC").all(),
+      getAllActiveGames: async (teamId) => teamId
+        ? sqliteDb.prepare(`SELECT lg.* FROM live_games lg
+             LEFT JOIN team_events te ON te.id = lg.team_event_id
+             LEFT JOIN tournament_sub_events tse ON tse.id = lg.sub_event_id
+             LEFT JOIN team_events te2 ON te2.id = tse.team_event_id
+             WHERE lg.status IN ('setup','active')
+               AND COALESCE(te.team_id, te2.team_id) = ?
+             ORDER BY lg.id DESC`).all(teamId)
+        : sqliteDb.prepare("SELECT * FROM live_games WHERE status IN ('setup','active') ORDER BY id DESC").all(),
 
       setGameRoster: async (gameId, entries) => {
         sqliteDb.prepare('DELETE FROM game_roster WHERE game_id = ?').run(gameId);
@@ -2205,7 +2259,9 @@ async function init() {
       setSetting: async (key, value) => sqliteDb.prepare('INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)').run(key, value),
       updateProgramPositions: async (id, positions) => sqliteDb.prepare('UPDATE programs SET assigned_positions = ? WHERE id = ?').run(positions, id),
       getConfirmedPlayers: async () => sqliteDb.prepare("SELECT * FROM players WHERE status = 'confirmed' ORDER BY player_name").all(),
-      getAllProgramsWithPositions: async () => sqliteDb.prepare("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != ''").all(),
+      getAllProgramsWithPositions: async (teamId) => teamId
+        ? sqliteDb.prepare("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != '' AND team_id = ?").all(teamId)
+        : sqliteDb.prepare("SELECT * FROM programs WHERE assigned_positions IS NOT NULL AND assigned_positions != ''").all(),
       markDayComplete: async (programId, playerId, dayId, weekOf) => {
         const existing = sqliteDb.prepare('SELECT id FROM program_completions WHERE program_id = ? AND player_id = ? AND program_day_id = ? AND week_of = ?').get(programId, playerId, dayId, weekOf);
         if (existing) {
@@ -2252,7 +2308,9 @@ async function init() {
         sqliteDb.prepare('INSERT INTO gc_imported_stats (player_id, gc_player_name, stat_type, stats_json, source) VALUES (?,?,?,?,?)').run(playerId, gcName, statType, statsJson, source);
       },
       deleteGcStats: async (statType, source) => sqliteDb.prepare('DELETE FROM gc_imported_stats WHERE stat_type = ? AND source = ?').run(statType, source || 'gamechanger'),
-      getAllGcStats: async () => sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id ORDER BY gs.stat_type, gs.gc_player_name').all(),
+      getAllGcStats: async (teamId) => teamId
+        ? sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id WHERE gs.player_id IS NULL OR p.team_id = ? ORDER BY gs.stat_type, gs.gc_player_name').all(teamId)
+        : sqliteDb.prepare('SELECT gs.*, p.player_name as matched_name, p.jersey_number FROM gc_imported_stats gs LEFT JOIN players p ON gs.player_id = p.id ORDER BY gs.stat_type, gs.gc_player_name').all(),
     };
   }
 }
@@ -2327,6 +2385,7 @@ module.exports = {
   getParentAccountByUsername: (...args) => impl.getParentAccountByUsername(...args),
   createParentAccount: (...args) => impl.createParentAccount(...args),
   getAllParentAccounts: (...args) => impl.getAllParentAccounts(...args),
+  searchParentAccounts: (...args) => impl.searchParentAccounts(...args),
   getParentAccountById: (...args) => impl.getParentAccountById(...args),
   updateParentAccountPassword: (...args) => impl.updateParentAccountPassword(...args),
   updateParentAccountName: (...args) => impl.updateParentAccountName(...args),

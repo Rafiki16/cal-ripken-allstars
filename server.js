@@ -1037,7 +1037,7 @@ app.post('/profile/:id', async (req, res, next) => {
   if (updated.status === 'confirmed' && posSource) {
     try {
       const playerPositions = posSource.split(',').map(p => p.trim()).filter(Boolean);
-      const programsWithPositions = await db.getAllProgramsWithPositions();
+      const programsWithPositions = await db.getAllProgramsWithPositions(updated.team_id || req.teamId);
       for (const prog of programsWithPositions) {
         const progPositions = prog.assigned_positions.split(',').map(p => p.trim()).filter(Boolean);
         if (playerPositions.some(pp => progPositions.includes(pp))) {
@@ -1305,7 +1305,7 @@ app.get('/admin', requireAdmin, async (req, res) => {
   const confirmed = players.filter(p => p.status === 'confirmed').length;
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
-  const allEvents = await db.getAllEvents();
+  const allEvents = await db.getAllEvents(req.teamId);
   const teamEvents = await db.getAllTeamEvents(req.teamId);
   const savedLocations = await db.getAllSavedLocations(req.teamId);
   const parentAccounts = await db.getAllParentAccounts(req.teamId);
@@ -2312,6 +2312,53 @@ app.get('/admin/accounts', requireAdmin, async (req, res) => {
   res.json(result);
 });
 
+// --- Global account admin (all teams) ---
+// The per-team accounts list only shows accounts with a player on that team.
+// This section is the place to see/manage every account across all seasons,
+// and to search for an existing parent to attach to the current team.
+app.get('/admin/accounts-global', requireAdmin, async (req, res) => {
+  const teams = await db.getAllTeams();
+  const currentPlayers = await db.getAllPlayers(req.teamId);
+  res.render('admin-accounts-global', {
+    teams,
+    currentTeam: res.locals.currentTeam,
+    currentPlayers,
+    success: req.query.success || null,
+    error: req.query.error || null,
+  });
+});
+
+// JSON search across ALL accounts (used by the global page + the add-to-team picker).
+app.get('/admin/accounts-global/search', requireAdmin, async (req, res) => {
+  const rows = await db.searchParentAccounts(req.query.q || '');
+  res.json(rows.map(r => ({
+    id: r.id,
+    display_name: r.display_name,
+    phone: r.phone,
+    username: r.username || '',
+    role: r.role || 'parent',
+    approved: r.approved !== false && r.approved !== 0,
+    player_count: Number(r.player_count) || 0,
+    teams: (typeof r.teams === 'string' ? JSON.parse(r.teams) : (r.teams || [])),
+  })));
+});
+
+// Attach an existing account to the current team by linking it to one of
+// this team's players (membership is defined by that link).
+app.post('/admin/accounts-global/:id/add-to-team', requireAdmin, async (req, res) => {
+  const accountId = Number(req.params.id);
+  const playerId = Number(req.body.player_id);
+  const account = await db.getParentAccountById(accountId);
+  if (!account) return res.json({ ok: false, error: 'Account not found.' });
+  const player = await db.getPlayer(playerId);
+  if (!player) return res.json({ ok: false, error: 'Player not found.' });
+  if (player.team_id !== req.teamId) {
+    return res.json({ ok: false, error: 'That player is not on the current team.' });
+  }
+  await db.linkPlayerToAccount(playerId, accountId);
+  res.json({ ok: true });
+});
+
 app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
   const { phone, display_name, password, player_ids, username } = req.body;
   const normalized = normalizePhone(phone || '');
@@ -2488,7 +2535,7 @@ app.get('/score/:token', async (req, res) => {
   const keeper = await db.getScoreKeeperByToken(req.params.token);
   if (!keeper) return res.status(403).send('Invalid scorekeeper link.');
   req.session.scoreToken = req.params.token;
-  const games = await db.getAllActiveGames();
+  const games = await db.getAllActiveGames(keeper.team_id || req.teamId);
   if (games.length === 1) return res.redirect('/game/' + games[0].id + '/score?token=' + req.params.token);
   res.render('score-home', { keeper, games, token: req.params.token });
 });
@@ -3206,7 +3253,7 @@ app.get('/api/team-stats', async (req, res) => {
 // ── GameChanger Import ──
 app.get('/admin/import-stats', requireAdmin, async (req, res) => {
   const players = (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed');
-  const existing = await db.getAllGcStats();
+  const existing = await db.getAllGcStats(req.teamId);
   res.render('import-stats', { players, existing, success: req.query.success || null, error: req.query.error || null });
 });
 
@@ -3315,7 +3362,7 @@ app.post('/admin/import-stats/clear', requireAdmin, async (req, res) => {
 });
 
 app.get('/api/gc-stats', requireAdmin, async (req, res) => {
-  const stats = await db.getAllGcStats();
+  const stats = await db.getAllGcStats(req.teamId);
   res.json(stats.map(s => ({ ...s, stats: JSON.parse(s.stats_json || '{}') })));
 });
 
@@ -4331,7 +4378,7 @@ app.get('/staff/dashboard', async (req, res) => {
   const confirmed = players.filter(p => p.status === 'confirmed').length;
   const declined = players.filter(p => p.status === 'declined').length;
   const pending = players.filter(p => p.status === 'pending').length;
-  const allEvents = await db.getAllEvents();
+  const allEvents = await db.getAllEvents(staffTeamId);
   const teamEvents = await db.getAllTeamEvents(staffTeamId);
   res.render('staff-dashboard', { staff, players, confirmed, declined, pending, total: players.length, phone, RATING_FIELDS, allEvents, teamEvents, success: req.query.success || null, error: req.query.error || null });
 });

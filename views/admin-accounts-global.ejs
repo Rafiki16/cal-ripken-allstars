@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>All Accounts &middot; <%= teamName %></title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .ga-search { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+    .ga-search input { flex:1; min-width:240px; }
+    .ga-card { background:#fff; border:1px solid var(--gray-200); border-radius:10px; padding:14px; margin-bottom:10px; }
+    .ga-top { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start; }
+    .ga-name { font-weight:800; color:var(--navy); font-size:16px; }
+    .ga-meta { font-size:12px; color:var(--gray-500); margin-top:3px; }
+    .ga-team-chip { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px;
+                    border-radius:20px; background:var(--gray-100); color:var(--gray-700); margin-right:4px; }
+    .ga-team-chip.here { background:var(--green-bg); color:var(--green); border:1px solid var(--green-border); }
+    .ga-none { font-size:11px; color:var(--amber); font-weight:700; }
+    .ga-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .ga-btn { font-size:12px; padding:6px 12px; border-radius:6px; border:none; cursor:pointer; font-weight:700; }
+    .ga-add { background:var(--green); color:#fff; }
+    .ga-empty { color:var(--gray-500); font-size:14px; padding:20px; text-align:center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="header-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+          <a href="/admin" class="back-link">&larr; Back to Admin</a>
+          <a href="/admin/teams" style="color:#fff;font-size:13px;text-decoration:none;">Teams</a>
+        </div>
+        <div class="header-text">
+          <div class="logo">&#9918;</div>
+          <div>
+            <h1>All Accounts</h1>
+            <p class="subtitle">Global &middot; every team</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" style="padding-bottom:40px;">
+    <% if (success) { %><div class="alert alert-success"><%= success %></div><% } %>
+    <% if (error) { %><div class="alert alert-error"><%= error %></div><% } %>
+
+    <p style="font-size:13px;color:var(--gray-500);margin:20px 0 12px;">
+      Every account across all seasons. The admin page for
+      <strong><%= currentTeam ? currentTeam.name : 'the current team' %></strong>
+      only lists accounts with a player on that team &mdash; use <em>Add to team</em>
+      here to attach an existing parent.
+    </p>
+
+    <div class="ga-search">
+      <input type="text" id="ga-q" class="form-input" placeholder="Search name, phone or username&hellip;" autocomplete="off">
+      <button class="btn btn-secondary" style="font-size:13px;padding:8px 16px;" onclick="loadAccounts()">Search</button>
+    </div>
+
+    <div id="ga-list"><div class="ga-empty">Loading&hellip;</div></div>
+  </main>
+
+<script>
+  var CURRENT_TEAM_ID = <%= currentTeam ? currentTeam.id : 'null' %>;
+  var CURRENT_TEAM_NAME = <%- JSON.stringify(currentTeam ? currentTeam.name : '') %>;
+  var CURRENT_PLAYERS = <%- JSON.stringify(currentPlayers.map(function(p){return {id:p.id,name:p.player_name};})) %>;
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function loadAccounts() {
+    var q = document.getElementById('ga-q').value || '';
+    fetch('/admin/accounts-global/search?q=' + encodeURIComponent(q))
+      .then(function(r){ return r.json(); })
+      .then(function(list){
+        var el = document.getElementById('ga-list');
+        if (!list.length) { el.innerHTML = '<div class="ga-empty">No accounts match.</div>'; return; }
+        el.innerHTML = list.map(function(a){
+          var onTeam = (a.teams||[]).some(function(t){ return t.id === CURRENT_TEAM_ID; });
+          var chips = (a.teams||[]).length
+            ? a.teams.map(function(t){
+                return '<span class="ga-team-chip' + (t.id===CURRENT_TEAM_ID?' here':'') + '">' + esc(t.name) + '</span>';
+              }).join('')
+            : '<span class="ga-none">No team</span>';
+          var addBtn = onTeam
+            ? '<span style="font-size:12px;color:var(--green);font-weight:700;">On this team</span>'
+            : '<button class="ga-btn ga-add" onclick="addToTeam(' + a.id + ')">Add to ' + esc(CURRENT_TEAM_NAME) + '</button>';
+          return '<div class="ga-card"><div class="ga-top">' +
+            '<div><div class="ga-name">' + esc(a.display_name) + '</div>' +
+            '<div class="ga-meta">' + esc(a.phone) +
+              (a.username ? ' &middot; @' + esc(a.username) : '') +
+              ' &middot; ' + esc(a.role) +
+              (a.approved ? '' : ' &middot; <strong style="color:var(--amber);">pending</strong>') +
+              ' &middot; ' + a.player_count + ' player' + (a.player_count===1?'':'s') +
+            '</div><div style="margin-top:6px;">' + chips + '</div></div>' +
+            '<div class="ga-actions">' + addBtn + '</div>' +
+          '</div></div>';
+        }).join('');
+      });
+  }
+
+  function addToTeam(accountId) {
+    if (!CURRENT_PLAYERS.length) {
+      alert('Add a player to ' + CURRENT_TEAM_NAME + ' first — an account joins a team by being linked to one of its players.');
+      return;
+    }
+    var opts = CURRENT_PLAYERS.map(function(p,i){ return (i+1) + '. ' + p.name; }).join('\n');
+    var pick = prompt('Link to which player on ' + CURRENT_TEAM_NAME + '?\n\n' + opts + '\n\nEnter the number:');
+    if (!pick) return;
+    var idx = parseInt(pick, 10) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= CURRENT_PLAYERS.length) { alert('Invalid choice.'); return; }
+    fetch('/admin/accounts-global/' + accountId + '/add-to-team', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player_id: CURRENT_PLAYERS[idx].id })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) loadAccounts(); else alert(d.error || 'Failed.');
+    });
+  }
+
+  document.getElementById('ga-q').addEventListener('keyup', function(e){
+    if (e.key === 'Enter') loadAccounts();
+  });
+  loadAccounts();
+</script>
+</body>
+</html>
