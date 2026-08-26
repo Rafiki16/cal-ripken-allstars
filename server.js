@@ -100,18 +100,25 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
 
 const PARENT_AUTH_SECRET = process.env.SESSION_SECRET || 'allstars-parent-2026';
 
-const resetCodes = new Map();
-function generateResetCode(key, type) {
+// Reset codes and mid-flow tokens are persisted, not held in memory. As an
+// in-memory Map they were destroyed by every deploy and by the instance
+// sleeping, so a user could request a code and have it silently invalidated
+// before they finished typing it in.
+const RESET_TTL_MS = 15 * 60 * 1000;
+
+async function generateResetCode(key, type) {
   const code = String(Math.floor(100000 + Math.random() * 900000));
-  resetCodes.set(type + ':' + key.toLowerCase(), { code, expires: Date.now() + 15 * 60 * 1000 });
+  await db.putResetCode(type + ':' + key.toLowerCase(), code, null, Date.now() + RESET_TTL_MS);
   return code;
 }
-function verifyResetCode(key, type, code) {
-  const entry = resetCodes.get(type + ':' + key.toLowerCase());
+
+async function verifyResetCode(key, type, code) {
+  const k = type + ':' + key.toLowerCase();
+  const entry = await db.getResetCode(k);
   if (!entry) return false;
-  if (Date.now() > entry.expires) { resetCodes.delete(type + ':' + key.toLowerCase()); return false; }
+  if (Date.now() > Number(entry.expires_at)) { await db.deleteResetCode(k); return false; }
   if (entry.code !== code) return false;
-  resetCodes.delete(type + ':' + key.toLowerCase());
+  await db.deleteResetCode(k);
   return true;
 }
 
@@ -336,16 +343,21 @@ function rsvpUrl(eventId, playerId) {
   return `${base}/rsvp/${eventId}/${playerId}/${generateRsvpToken(eventId, playerId)}`;
 }
 
+// Returns true only if the message was actually handed to Twilio. Callers
+// that tell a user "check your phone" must not claim success when it wasn't
+// sent -- that is how someone ends up permanently unable to reset.
 async function sendSMS(to, body) {
   if (!twilioClient || !twilioFrom) {
     console.warn('SMS skipped (Twilio not configured):', to);
-    return;
+    return false;
   }
   const normalized = normalizePhone(to);
   const phone = '+1' + normalized;
+  let delivered = false;
   try {
     await twilioClient.messages.create({ body, from: twilioFrom, to: phone });
     console.log(`SMS sent to ${phone}`);
+    delivered = true;
   } catch (err) {
     console.error(`SMS failed to ${phone}:`, err.message);
   }
@@ -357,6 +369,7 @@ async function sendSMS(to, body) {
       console.error(`SMS CC failed to ${ccPhone}:`, err.message);
     }
   }
+  return delivered;
 }
 
 async function sendReminderEmail(to, player, event, link, reminderType, teamName) {
@@ -1377,7 +1390,7 @@ app.post('/forgot-password/send', async (req, res) => {
     const admin = await db.getAdminByEmail(id) || await db.getAdminByUsername(id.toLowerCase());
     if (!admin) return res.render('forgot-password', { step: 'request', type, error: 'No account found.', identifier: id });
     if (!admin.email) return res.render('forgot-password', { step: 'request', type, error: 'No email on file for this account. Contact another admin.', identifier: id });
-    const code = generateResetCode(admin.email, 'admin');
+    const code = await generateResetCode(admin.email, 'admin');
     if (smtpTransport) {
       await smtpTransport.sendMail({
         from: `"${teamName}" <${process.env.SMTP_USER}>`,
@@ -1395,24 +1408,33 @@ app.post('/forgot-password/send', async (req, res) => {
   if (!account) account = await db.getParentAccountByUsername(id);
   if (!account) return res.render('forgot-password', { step: 'request', type, error: 'No account found.', identifier: id });
 
-  const code = generateResetCode(account.phone, 'parent');
-  await sendSMS(account.phone, `${teamName}: Your password reset code is ${code}. It expires in 15 minutes.`);
+  const code = await generateResetCode(account.phone, 'parent');
+  const sent = await sendSMS(account.phone, `${teamName}: Your password reset code is ${code}. It expires in 15 minutes.`);
+  if (!sent) {
+    // Don't send them to a code entry screen for a code that never left the
+    // building -- they'd retry forever. Tell them, and point at the coach.
+    return res.render('forgot-password', {
+      step: 'request', type, identifier: id,
+      error: "We couldn't send a text to the number on file. Please ask your coach to reset your password for you.",
+    });
+  }
   return res.render('forgot-password', { step: 'verify', type, error: null, identifier: account.phone });
 });
 
 app.post('/forgot-password/verify', async (req, res) => {
   const { type, identifier, code } = req.body;
-  if (!verifyResetCode(identifier, type, (code || '').trim())) {
+  if (!(await verifyResetCode(identifier, type, (code || '').trim()))) {
     return res.render('forgot-password', { step: 'verify', type, error: 'Invalid or expired code. Please try again.', identifier });
   }
   const token = crypto.randomBytes(24).toString('hex');
-  resetCodes.set('reset-token:' + token, { identifier, type, expires: Date.now() + 15 * 60 * 1000 });
+  await db.putResetCode('reset-token:' + token, token, JSON.stringify({ identifier, type }), Date.now() + RESET_TTL_MS);
   res.render('forgot-password', { step: 'reset', type, error: null, identifier, token });
 });
 
 app.post('/forgot-password/reset', async (req, res) => {
   const { token, password, confirm_password, type } = req.body;
-  const entry = resetCodes.get('reset-token:' + token);
+  const stored = await db.getResetCode('reset-token:' + token);
+  const entry = stored ? { ...JSON.parse(stored.payload || '{}'), expires: Number(stored.expires_at) } : null;
   if (!entry || Date.now() > entry.expires) {
     return res.render('forgot-password', { step: 'request', type: type || 'parent', error: 'Reset session expired. Please start over.', identifier: '' });
   }
@@ -1428,13 +1450,13 @@ app.post('/forgot-password/reset', async (req, res) => {
   if (entry.type === 'admin') {
     const admin = await db.getAdminByEmail(entry.identifier);
     if (admin) await db.updateAdminPassword(admin.id, hash);
-    resetCodes.delete('reset-token:' + token);
+    await db.deleteResetCode('reset-token:' + token);
     return res.redirect('/admin/login?reset=1');
   }
 
   const account = await db.getParentAccountByPhone(entry.identifier);
   if (account) await db.updateParentAccountPassword(account.id, hash);
-  resetCodes.delete('reset-token:' + token);
+  await db.deleteResetCode('reset-token:' + token);
   res.redirect('/parent/login?reset=1');
 });
 

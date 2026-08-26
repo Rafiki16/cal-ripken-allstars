@@ -675,6 +675,19 @@ async function init() {
       )
     `);
 
+    // Password-reset codes and mid-flow tokens. These MUST outlive the
+    // process: they were previously an in-memory Map, so every deploy or
+    // instance restart silently invalidated any code a user was holding.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS reset_codes (
+        key TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        payload TEXT,
+        expires_at BIGINT NOT NULL
+      )
+    `);
+    try { await pool.query('DELETE FROM reset_codes WHERE expires_at < $1', [Date.now()]); } catch (e) { /* best-effort */ }
+
     // --- Family access tiers ---
     // access_level: 'guardian' = full (RSVP, edit profile), 'viewer' = read-only.
     // is_primary: the parent who controls the family list and everyone's tier.
@@ -934,6 +947,12 @@ async function init() {
       linkPlayerToAccount: async (playerId, accountId) => pool.query('INSERT INTO player_parents (player_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [playerId, accountId]),
       unlinkPlayerFromAccount: async (playerId, accountId) => pool.query('DELETE FROM player_parents WHERE player_id = $1 AND account_id = $2', [playerId, accountId]),
       // Access tier for one account on one player. Returns null when unlinked.
+      putResetCode: async (key, code, payload, expiresAt) => pool.query(
+        `INSERT INTO reset_codes (key, code, payload, expires_at) VALUES ($1,$2,$3,$4)
+         ON CONFLICT (key) DO UPDATE SET code = $2, payload = $3, expires_at = $4`,
+        [key, code, payload || null, expiresAt]),
+      getResetCode: async (key) => (await pool.query('SELECT * FROM reset_codes WHERE key = $1', [key])).rows[0] || null,
+      deleteResetCode: async (key) => pool.query('DELETE FROM reset_codes WHERE key = $1', [key]),
       markPrimaryIfNone: async (playerId, accountId) => pool.query(
         `UPDATE player_parents SET is_primary = 1
          WHERE player_id = $1 AND account_id = $2
@@ -1856,6 +1875,16 @@ async function init() {
       )
     `);
 
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS reset_codes (
+        key TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        payload TEXT,
+        expires_at INTEGER NOT NULL
+      )
+    `);
+    try { sqliteDb.prepare('DELETE FROM reset_codes WHERE expires_at < ?').run(Date.now()); } catch (e) { /* best-effort */ }
+
     // --- Family access tiers (mirrors the Postgres branch) ---
     try { sqliteDb.exec("ALTER TABLE player_parents ADD COLUMN access_level TEXT NOT NULL DEFAULT 'guardian'"); } catch (e) { /* exists */ }
     try { sqliteDb.exec('ALTER TABLE player_parents ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* exists */ }
@@ -2097,6 +2126,12 @@ async function init() {
       updatePlayerParentPhone: async (playerId, phone) => sqliteDb.prepare('UPDATE players SET parent_phone = ? WHERE id = ?').run(phone, playerId),
       linkPlayerToAccount: async (playerId, accountId) => sqliteDb.prepare('INSERT OR IGNORE INTO player_parents (player_id, account_id) VALUES (?, ?)').run(playerId, accountId),
       unlinkPlayerFromAccount: async (playerId, accountId) => sqliteDb.prepare('DELETE FROM player_parents WHERE player_id = ? AND account_id = ?').run(playerId, accountId),
+      putResetCode: async (key, code, payload, expiresAt) => sqliteDb.prepare(
+        `INSERT INTO reset_codes (key, code, payload, expires_at) VALUES (?,?,?,?)
+         ON CONFLICT (key) DO UPDATE SET code = excluded.code, payload = excluded.payload, expires_at = excluded.expires_at`
+      ).run(key, code, payload || null, expiresAt),
+      getResetCode: async (key) => sqliteDb.prepare('SELECT * FROM reset_codes WHERE key = ?').get(key) || null,
+      deleteResetCode: async (key) => sqliteDb.prepare('DELETE FROM reset_codes WHERE key = ?').run(key),
       markPrimaryIfNone: async (playerId, accountId) => sqliteDb.prepare(
         `UPDATE player_parents SET is_primary = 1
          WHERE player_id = ? AND account_id = ?
@@ -2543,6 +2578,9 @@ module.exports = {
   updatePlayerParentPhone: (...args) => impl.updatePlayerParentPhone(...args),
   linkPlayerToAccount: (...args) => impl.linkPlayerToAccount(...args),
   unlinkPlayerFromAccount: (...args) => impl.unlinkPlayerFromAccount(...args),
+  putResetCode: (...args) => impl.putResetCode(...args),
+  getResetCode: (...args) => impl.getResetCode(...args),
+  deleteResetCode: (...args) => impl.deleteResetCode(...args),
   markPrimaryIfNone: (...args) => impl.markPrimaryIfNone(...args),
   getPlayerAccess: (...args) => impl.getPlayerAccess(...args),
   getGuardianPlayers: (...args) => impl.getGuardianPlayers(...args),
