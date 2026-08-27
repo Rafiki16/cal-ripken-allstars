@@ -736,23 +736,40 @@ app.post('/event/:id/rsvp', async (req, res) => {
   const teamScope = event.team_id || req.teamId;
   let players;
   if (req.parentUser) {
-    // Signed-in: go through the family link so a guardian (e.g. a grandparent
-    // granted full access) can RSVP. Viewers are excluded by the query.
-    players = await db.getGuardianPlayers(req.parentUser.id, teamScope);
+    // Guardians (including a grandparent granted full access) RSVP through the
+    // family link. Fall back to a phone match: a link can be missing entirely
+    // -- an account created without selecting a player, or links cascaded away
+    // when a roster entry was deleted and re-added -- and the roster parent
+    // should never be locked out of RSVP because of that.
+    const linked = await db.getGuardianPlayers(req.parentUser.id, teamScope);
+    const byPhone = req.parentUser.phone
+      ? await db.getPlayersByPhone(req.parentUser.phone, teamScope)
+      : [];
+    const seen = new Set();
+    players = [...linked, ...byPhone].filter(p => !seen.has(p.id) && seen.add(p.id));
     if (players.length === 0) {
-      // Linked but view-only, or not linked at all.
+      // View-only on this player, or no player on this team at all.
       return res.redirect('/event/' + event.id + '?rsvp=forbidden');
     }
   } else {
     const phone = normalizePhone(req.body.phone || '');
-    if (phone.length !== 10) return res.redirect('/event/' + event.id);
+    if (phone.length !== 10) return res.redirect('/event/' + event.id + '?rsvp=badphone');
     players = await db.getPlayersByPhone(phone, teamScope);
+    if (players.length === 0) return res.redirect('/event/' + event.id + '?rsvp=nomatch');
   }
-  const confirmed = players.filter(p => p.status === 'confirmed');
-  if (confirmed.length === 0) return res.redirect('/event/' + event.id);
+
   const status = req.body.status;
   if (!['yes', 'no', 'maybe'].includes(status)) return res.redirect('/event/' + event.id);
-  for (const p of confirmed) {
+
+  // RSVP is "are you coming to this event", which is a different question from
+  // whether the player has accepted their roster spot. Previously only
+  // 'confirmed' players could respond, so on a brand-new season -- where every
+  // player starts 'pending' -- nobody could RSVP at all, and the page blamed
+  // the phone number. Only players who have declined the roster are excluded.
+  const eligible = players.filter(p => p.status !== 'declined');
+  if (eligible.length === 0) return res.redirect('/event/' + event.id + '?rsvp=declined');
+
+  for (const p of eligible) {
     await db.upsertRsvp(event.id, p.id, status);
   }
   res.redirect('/event/' + event.id + '?rsvp=success');

@@ -303,7 +303,17 @@
             msgEl.textContent = label + ' — RSVP saved!';
             msgEl.className = 'te-rsvp-msg te-rsvp-msg-ok';
           } else {
-            msgEl.textContent = 'Phone not found. Use number on file.';
+            // The server says WHY via ?rsvp=<reason>. Showing "phone not found"
+            // for every failure sent people chasing the wrong thing -- the
+            // usual cause had nothing to do with the phone number.
+            var reason = (r.url.match(/[?&]rsvp=([a-z]+)/) || [])[1];
+            var text;
+            if (reason === 'forbidden') text = "You have view-only access, so you can't RSVP. Ask the primary parent.";
+            else if (reason === 'declined') text = 'That player is marked as not playing this season.';
+            else if (reason === 'nomatch') text = 'No player found for that number on this team.';
+            else if (reason === 'badphone') text = 'Enter your 10-digit phone number.';
+            else text = "Couldn't save your RSVP - please try again.";
+            msgEl.textContent = text;
             msgEl.className = 'te-rsvp-msg te-rsvp-msg-err';
           }
         }).catch(() => {
