@@ -2194,11 +2194,26 @@ app.post('/event/:id/drill/import', requireAdmin, upload.single('file'), async (
   const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
   const ws = wb.Sheets[sheet || wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+  // Importing used to append unconditionally, so importing the same sheet
+  // twice -- a double-click on Import, or re-importing after tweaking the
+  // spreadsheet -- silently doubled every drill.
+  const replace = req.body.replace_existing === '1';
+  if (replace) await db.clearDrills(event.id);
+
   const existing = await db.getDrills(event.id);
+  // Names already on the practice BEFORE this import. Rows matching one are
+  // skipped, so a repeat import is a no-op instead of a duplication. This set
+  // is not added to as we insert, so a sheet that legitimately lists the same
+  // drill twice (e.g. two water breaks) still imports both.
+  const alreadyThere = new Set(existing.map(d => String(d.drill_name || '').trim().toLowerCase()).filter(Boolean));
+
   let order = existing.length;
+  let added = 0, skipped = 0;
   for (const row of rows) {
     const name = String(row[col_name] || '').trim();
     if (!name) continue;
+    if (alreadyThere.has(name.toLowerCase())) { skipped++; continue; }
     await db.addDrill({
       team_event_id: event.id,
       drill_name: name,
@@ -2208,8 +2223,12 @@ app.post('/event/:id/drill/import', requireAdmin, upload.single('file'), async (
       block_name: col_block ? String(row[col_block] || '').trim() || null : null,
       coach_notes: col_notes ? String(row[col_notes] || '').trim() || null : null,
     });
+    added++;
   }
-  res.redirect('/event/' + event.id);
+
+  let msg = replace ? `Replaced practice with ${added} drills` : `Imported ${added} drills`;
+  if (skipped > 0) msg += ` — skipped ${skipped} already on this practice`;
+  res.redirect('/event/' + event.id + '?success=' + encodeURIComponent(msg));
 });
 
 // --- Tournament Sub-Events ---
