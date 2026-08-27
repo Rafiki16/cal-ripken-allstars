@@ -1075,7 +1075,41 @@
           sel.selectedIndex = -1;
           loadAccounts();
           alert('Account created!' + (d.smsSent ? ' Login credentials sent via text.' : ' SMS not configured — share the credentials manually.'));
+        } else if (d.existing_account && !d.existing_account.on_this_team) {
+          // The account exists but lives on another team (or no team), so it
+          // isn't in this team's list. Offer to attach it here instead of
+          // leaving the coach stuck: "she isn't listed, but I can't add her".
+          offerAddExistingToTeam(d.existing_account, d.error);
         } else { alert(d.error); }
+      });
+    }
+
+    function offerAddExistingToTeam(acct, why) {
+      var players = <%- JSON.stringify((typeof players !== 'undefined' ? players : []).map(function(p){ return { id: p.id, name: p.player_name }; })) %>;
+      if (!players.length) {
+        alert(why + '\n\nThis team has no players yet - add a player first, then link the account to them.');
+        return;
+      }
+      var list = players.map(function(p, i) { return (i + 1) + '. ' + p.name; }).join('\n');
+      var pick = prompt(why + '\n\nLink ' + acct.display_name + ' to which player on this team?\n\n' + list + '\n\nEnter the number, or Cancel.');
+      if (!pick) return;
+      var idx = parseInt(pick, 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= players.length) { alert('Invalid choice.'); return; }
+      fetch('/admin/accounts-global/' + acct.id + '/add-to-team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: players[idx].id })
+      }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.ok) {
+          document.getElementById('ua-name').value = '';
+          document.getElementById('ua-username').value = '';
+          document.getElementById('ua-phone').value = '';
+          document.getElementById('ua-password').value = '';
+          loadAccounts();
+          alert(acct.display_name + ' now has access to this team. Their existing password is unchanged.');
+        } else {
+          alert(d.error || 'Could not add them to this team.');
+        }
       });
     }
 

@@ -2710,8 +2710,39 @@ app.post('/admin/accounts/create', requireAdmin, async (req, res) => {
   if (!display_name || !display_name.trim()) return res.json({ ok: false, error: 'Name is required.' });
   if (!password || password.length < 6) return res.json({ ok: false, error: 'Password must be at least 6 characters.' });
 
+  // Phone is globally unique across parent_accounts, but the accounts LIST is
+  // scoped to the current team. So an account linked only to another team's
+  // player is invisible here yet still blocks creation -- a dead end. Report
+  // where it actually lives and let the caller attach it to this team.
   const existing = await db.getParentAccountByPhone(normalized);
-  if (existing) return res.json({ ok: false, error: 'An account already exists for this phone number.' });
+  if (existing) {
+    const linked = await db.getLinkedPlayersByAccount(existing.id);
+    const linkedTeamIds = [...new Set(linked.map(p => p.team_id).filter(Boolean))];
+    const allTeams = await db.getAllTeams();
+    const onTeams = allTeams.filter(t => linkedTeamIds.includes(t.id));
+    const onThisTeam = linkedTeamIds.includes(req.teamId);
+    let msg;
+    if (onThisTeam) {
+      msg = `${existing.display_name} already has an account on this team.`;
+    } else if (onTeams.length) {
+      msg = `${existing.display_name} already has an account on ${onTeams.map(t => t.name).join(', ')}. `
+          + `Add them to this team instead of creating a second account.`;
+    } else {
+      msg = `An account already exists for this number (${existing.display_name}) but isn't linked to any player yet. `
+          + `Add them to this team to give them access.`;
+    }
+    return res.json({
+      ok: false,
+      error: msg,
+      existing_account: {
+        id: existing.id,
+        display_name: existing.display_name,
+        username: existing.username || '',
+        on_this_team: onThisTeam,
+        teams: onTeams.map(t => ({ id: t.id, name: t.name })),
+      },
+    });
+  }
 
   if (username && username.trim()) {
     const usernameClash = await db.getParentAccountByUsername(username.trim());
