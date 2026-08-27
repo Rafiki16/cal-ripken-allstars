@@ -191,6 +191,14 @@ app.use(async (req, res, next) => {
   }
 });
 
+// Is this request being rendered WITH admin powers? False while impersonating:
+// the whole point of "View As" is to see the page as that parent sees it, so
+// admin-only controls must not render. req.session.admin stays set so the
+// admin can still exit impersonation.
+function isAdminView(req) {
+  return !!req.session.admin && !req.impersonating;
+}
+
 // Resolves the active team for this request and exposes it as req.teamId /
 // res.locals.currentTeam. Precedence:
 //   1. ?team=<id> in the query (admins only — lets you deep-link a team)
@@ -203,7 +211,10 @@ app.use(async (req, res, next) => {
     const activeTeams = teams.filter(t => t.is_active);
     let teamId = null;
 
-    if (req.session.admin) {
+    // While impersonating, req.session.admin is still set, but the whole point
+    // is to see what the parent sees -- so fall through to the parent branch
+    // and resolve teams from THEIR players, not the admin's current team.
+    if (req.session.admin && !req.impersonating) {
       const q = req.query.team ? Number(req.query.team) : null;
       if (q && teams.some(t => t.id === q)) {
         teamId = q;
@@ -630,7 +641,7 @@ app.get('/event/:id', requireLogin, async (req, res) => {
   // and staff -- nonsense counts, and isStaff recomputed against the wrong
   // team. Bind the page to the event's own team instead.
   if (event.team_id) {
-    const isAdmin = !!req.session.admin;
+    const isAdmin = isAdminView(req);
     const mine = res.locals.myTeamIds || [];
     if (isAdmin || mine.includes(event.team_id)) {
       // Viewing an event implies viewing its team, so adopt it for this
@@ -651,7 +662,7 @@ app.get('/event/:id', requireLogin, async (req, res) => {
   const rsvps = await db.getRsvpsForEvent(event.id);
   const players = await db.getAllPlayers(req.teamId);
   const confirmed = players.filter(p => p.status === 'confirmed');
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   const staffPhone = req.parentUser ? req.parentUser.phone : null;
   const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone, req.teamId)) : false);
   let drills = [], subEvents = [], lineup = [], subLineups = {}, lineupGrid = [], subGrids = {};
@@ -709,7 +720,7 @@ app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
 });
 
 app.get('/event/:id/practice-timer', requireParentOrAdmin, async (req, res) => {
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   const staffPhone = req.parentUser ? req.parentUser.phone : null;
   const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone, req.teamId)) : false);
   if (!isStaff) return res.redirect('/event/' + req.params.id);
@@ -1060,7 +1071,7 @@ const RATING_FIELDS = [
 
 app.get('/profile/:id', requireParentOrAdmin, async (req, res) => {
   const phone = normalizePhone(req.query.phone || '');
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
 
   if (!isAdmin && !req.parentUser) return res.redirect('/verify');
 
@@ -1103,7 +1114,7 @@ app.get('/profile/:id', requireParentOrAdmin, async (req, res) => {
 app.post('/profile/:id', async (req, res, next) => {
   try {
   const phone = normalizePhone(req.body.phone || '');
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
 
   const player = await db.getPlayer(Number(req.params.id));
   // Acting on a player (edit profile / availability) requires guardian level.
@@ -1221,7 +1232,7 @@ app.post('/profile/:id', async (req, res, next) => {
 
 app.post('/profile/:id/event', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
 
   const player = await db.getPlayer(Number(req.params.id));
   // Acting on a player (edit profile / availability) requires guardian level.
@@ -1276,7 +1287,7 @@ app.post('/profile/:id/event', async (req, res) => {
 
 app.post('/profile/:id/event/delete', async (req, res) => {
   const phone = normalizePhone(req.body.phone || '');
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
 
   const player = await db.getPlayer(Number(req.params.id));
   // Acting on a player (edit profile / availability) requires guardian level.
@@ -2506,7 +2517,7 @@ app.get('/messages', requireParentOrAdmin, async (req, res, next) => {
       for (const r of replies) allMsgIds.push(r.id);
     }
     const reactions = await db.getReactionsForMessages(allMsgIds);
-    const isAdmin = !!req.session.admin;
+    const isAdmin = isAdminView(req);
     let currentUserName = null;
     if (isAdmin) currentUserName = req.session.admin.displayName || 'Coach';
     else if (req.parentUser) currentUserName = req.parentUser.display_name;
@@ -2518,7 +2529,7 @@ app.get('/messages', requireParentOrAdmin, async (req, res, next) => {
 });
 
 app.post('/messages', async (req, res) => {
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   const message = (req.body.message || '').trim();
   if (!message) return res.redirect('/messages?error=' + encodeURIComponent('Message cannot be empty.'));
 
@@ -2545,7 +2556,7 @@ app.post('/messages', async (req, res) => {
 
 app.post('/messages/:id/reply', async (req, res) => {
   const topicId = Number(req.params.id);
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   const message = (req.body.message || '').trim();
   if (!message) return res.redirect('/messages');
 
@@ -2569,7 +2580,7 @@ app.post('/messages/pin', requireAdmin, async (req, res) => {
 });
 
 app.post('/messages/react', async (req, res) => {
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   const messageId = Number(req.body.message_id);
   const reactionType = req.body.reaction_type;
   if (!['up', 'down'].includes(reactionType)) return res.redirect('/messages');
@@ -2905,6 +2916,9 @@ app.get('/admin/impersonate/:id', requireAdmin, async (req, res) => {
 
 app.get('/admin/stop-impersonate', (req, res) => {
   delete req.session.impersonatePhone;
+  // The impersonated parent's team was pinned into the session; drop it so the
+  // admin doesn't come back scoped to a team they didn't choose.
+  delete req.session.currentTeamId;
   res.redirect('/admin');
 });
 
@@ -3770,7 +3784,7 @@ app.get('/programs/:id', requireParentOrAdmin, async (req, res) => {
   for (const day of days) {
     day.activities = await db.getProgramActivities(day.id);
   }
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   const assignments = isAdmin ? await db.getProgramAssignments(program.id) : [];
   const players = isAdmin ? (await db.getAllPlayers(req.teamId)).filter(p => p.status === 'confirmed') : [];
   const subscribedPlayerIds = [];
@@ -3996,7 +4010,7 @@ app.post('/programs/:id/complete-day', async (req, res) => {
   const programId = Number(req.params.id);
   const playerId = Number(req.body.player_id);
   const dayId = Number(req.body.day_id);
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   if (!isAdmin && (!req.parentUser || !req.parentUser.player_ids.includes(playerId))) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
@@ -4009,7 +4023,7 @@ app.post('/programs/:id/uncomplete-day', async (req, res) => {
   const programId = Number(req.params.id);
   const playerId = Number(req.body.player_id);
   const dayId = Number(req.body.day_id);
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   if (!isAdmin && (!req.parentUser || !req.parentUser.player_ids.includes(playerId))) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
@@ -4672,7 +4686,7 @@ app.get('/quiz/attempt/:id', async (req, res) => {
   const questions = await db.getQuizQuestions(attempt.quiz_id);
   let answers = {};
   try { answers = JSON.parse(attempt.answers_json || '{}'); } catch(e) {}
-  const isAdmin = !!req.session.admin;
+  const isAdmin = isAdminView(req);
   res.render('quiz-result', { attempt, questions, answers, isAdmin });
 });
 
