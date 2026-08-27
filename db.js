@@ -947,6 +947,24 @@ async function init() {
       linkPlayerToAccount: async (playerId, accountId) => pool.query('INSERT INTO player_parents (player_id, account_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [playerId, accountId]),
       unlinkPlayerFromAccount: async (playerId, accountId) => pool.query('DELETE FROM player_parents WHERE player_id = $1 AND account_id = $2', [playerId, accountId]),
       // Access tier for one account on one player. Returns null when unlinked.
+      // Practice plans are deliberately shareable ACROSS teams: a drill list
+      // is coaching content, not team data. Both helpers carry the owning
+      // team's name so the picker can label where a plan came from.
+      getPracticeTemplatesAllTeams: async () => (await pool.query(
+        `SELECT pr.id, pr.title, pr.team_id, t.name AS team_name
+         FROM programs pr LEFT JOIN teams t ON t.id = pr.team_id
+         WHERE pr.program_type = 'practice_template'
+         ORDER BY pr.team_id, pr.title`)).rows,
+      getPracticesWithDrills: async (excludeEventId) => (await pool.query(
+        `SELECT e.id, e.title, e.start_date, e.team_id, t.name AS team_name,
+                COUNT(d.id)::int AS drill_count
+         FROM team_events e
+         JOIN practice_drills d ON d.team_event_id = e.id
+         LEFT JOIN teams t ON t.id = e.team_id
+         WHERE e.event_type = 'practice' AND e.id <> $1
+         GROUP BY e.id, t.name
+         ORDER BY e.start_date DESC
+         LIMIT 100`, [excludeEventId || 0])).rows,
       putResetCode: async (key, code, payload, expiresAt) => pool.query(
         `INSERT INTO reset_codes (key, code, payload, expires_at) VALUES ($1,$2,$3,$4)
          ON CONFLICT (key) DO UPDATE SET code = $2, payload = $3, expires_at = $4`,
@@ -2126,6 +2144,21 @@ async function init() {
       updatePlayerParentPhone: async (playerId, phone) => sqliteDb.prepare('UPDATE players SET parent_phone = ? WHERE id = ?').run(phone, playerId),
       linkPlayerToAccount: async (playerId, accountId) => sqliteDb.prepare('INSERT OR IGNORE INTO player_parents (player_id, account_id) VALUES (?, ?)').run(playerId, accountId),
       unlinkPlayerFromAccount: async (playerId, accountId) => sqliteDb.prepare('DELETE FROM player_parents WHERE player_id = ? AND account_id = ?').run(playerId, accountId),
+      getPracticeTemplatesAllTeams: async () => sqliteDb.prepare(
+        `SELECT pr.id, pr.title, pr.team_id, t.name AS team_name
+         FROM programs pr LEFT JOIN teams t ON t.id = pr.team_id
+         WHERE pr.program_type = 'practice_template'
+         ORDER BY pr.team_id, pr.title`).all(),
+      getPracticesWithDrills: async (excludeEventId) => sqliteDb.prepare(
+        `SELECT e.id, e.title, e.start_date, e.team_id, t.name AS team_name,
+                COUNT(d.id) AS drill_count
+         FROM team_events e
+         JOIN practice_drills d ON d.team_event_id = e.id
+         LEFT JOIN teams t ON t.id = e.team_id
+         WHERE e.event_type = 'practice' AND e.id <> ?
+         GROUP BY e.id, t.name
+         ORDER BY e.start_date DESC
+         LIMIT 100`).all(excludeEventId || 0),
       putResetCode: async (key, code, payload, expiresAt) => sqliteDb.prepare(
         `INSERT INTO reset_codes (key, code, payload, expires_at) VALUES (?,?,?,?)
          ON CONFLICT (key) DO UPDATE SET code = excluded.code, payload = excluded.payload, expires_at = excluded.expires_at`
@@ -2578,6 +2611,8 @@ module.exports = {
   updatePlayerParentPhone: (...args) => impl.updatePlayerParentPhone(...args),
   linkPlayerToAccount: (...args) => impl.linkPlayerToAccount(...args),
   unlinkPlayerFromAccount: (...args) => impl.unlinkPlayerFromAccount(...args),
+  getPracticeTemplatesAllTeams: (...args) => impl.getPracticeTemplatesAllTeams(...args),
+  getPracticesWithDrills: (...args) => impl.getPracticesWithDrills(...args),
   putResetCode: (...args) => impl.putResetCode(...args),
   getResetCode: (...args) => impl.getResetCode(...args),
   deleteResetCode: (...args) => impl.deleteResetCode(...args),

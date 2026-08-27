@@ -441,19 +441,61 @@
 
         <% if (isAdmin) { %>
         <div class="ed-admin-section">
-          <% if (practiceTemplates.length > 0) { %>
+          <%
+            var _tpl = (typeof practiceTemplates !== 'undefined' ? practiceTemplates : []);
+            var _src = (typeof practiceSources !== 'undefined' ? practiceSources : []);
+            var _tid = (typeof currentTeamId !== 'undefined') ? currentTeamId : null;
+            var tplMine = _tpl.filter(function(t){ return t.team_id === _tid; });
+            var tplOther = _tpl.filter(function(t){ return t.team_id !== _tid; });
+            var srcMine = _src.filter(function(e){ return e.team_id === _tid; });
+            var srcOther = _src.filter(function(e){ return e.team_id !== _tid; });
+            function _d(x){ try { return new Date(x + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); } catch(e){ return x; } }
+          %>
+          <% if (tplMine.length + tplOther.length > 0) { %>
           <div style="margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--gray-200);">
             <h4 class="ed-admin-title">Load from Template</h4>
             <form method="POST" action="/event/<%= event.id %>/load-program" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
               <div style="flex:1; min-width:200px;">
                 <select name="program_id" class="form-input" style="width:100%;" required>
                   <option value="">Select a template...</option>
-                  <% practiceTemplates.forEach(t => { %>
-                  <option value="<%= t.id %>"><%= t.title %></option>
-                  <% }); %>
+                  <% if (tplMine.length) { %>
+                  <optgroup label="This team">
+                    <% tplMine.forEach(function(t){ %><option value="<%= t.id %>"><%= t.title %></option><% }); %>
+                  </optgroup>
+                  <% } %>
+                  <% if (tplOther.length) { %>
+                  <optgroup label="Other teams">
+                    <% tplOther.forEach(function(t){ %><option value="<%= t.id %>"><%= t.title %> &mdash; <%= t.team_name || 'other team' %></option><% }); %>
+                  </optgroup>
+                  <% } %>
                 </select>
               </div>
               <button type="submit" class="btn btn-secondary" style="white-space:nowrap;">Load Template</button>
+            </form>
+          </div>
+          <% } %>
+
+          <% if (srcMine.length + srcOther.length > 0) { %>
+          <div style="margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--gray-200);">
+            <h4 class="ed-admin-title">Copy from Another Practice</h4>
+            <p class="section-hint" style="margin-bottom:8px;">Pulls every drill from a past practice into this one, including plans from your other teams.</p>
+            <form method="POST" action="/event/<%= event.id %>/copy-practice" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+              <div style="flex:1; min-width:200px;">
+                <select name="source_event_id" class="form-input" style="width:100%;" required>
+                  <option value="">Select a practice...</option>
+                  <% if (srcMine.length) { %>
+                  <optgroup label="This team">
+                    <% srcMine.forEach(function(e){ %><option value="<%= e.id %>"><%= e.title %> &mdash; <%= _d(e.start_date) %> (<%= e.drill_count %> drills)</option><% }); %>
+                  </optgroup>
+                  <% } %>
+                  <% if (srcOther.length) { %>
+                  <optgroup label="Other teams">
+                    <% srcOther.forEach(function(e){ %><option value="<%= e.id %>"><%= e.title %> &mdash; <%= e.team_name || 'other team' %>, <%= _d(e.start_date) %> (<%= e.drill_count %> drills)</option><% }); %>
+                  </optgroup>
+                  <% } %>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-secondary" style="white-space:nowrap;">Copy Drills</button>
             </form>
           </div>
           <% } %>

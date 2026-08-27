@@ -670,8 +670,15 @@ app.get('/event/:id', requireLogin, async (req, res) => {
     lineup = await db.getLineupForEvent(event.id);
     lineupGrid = await db.getLineupGrid(event.id, null);
   }
-  const practiceTemplates = (event.event_type === 'practice' && isAdmin) ? (await db.getAllPrograms(req.teamId)).filter(p => p.program_type === 'practice_template') : [];
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null, practiceTemplates });
+  // Practice plans are shareable across teams -- a drill list is coaching
+  // content, not team data -- so admins can pull from any team's saved
+  // templates or from any past practice that has drills on it.
+  let practiceTemplates = [], practiceSources = [];
+  if (event.event_type === 'practice' && isAdmin) {
+    practiceTemplates = await db.getPracticeTemplatesAllTeams();
+    practiceSources = await db.getPracticesWithDrills(event.id);
+  }
+  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null, practiceTemplates, practiceSources });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -4381,6 +4388,41 @@ app.post('/event/:id/save-as-program', requireAdmin, async (req, res) => {
     await db.addProgramActivity({ program_day_id: day.id, activity_name: drill.drill_name, description: drill.description, instructions: drill.coach_notes, reps: drill.duration_minutes + ' min', sort_order: drill.sort_order });
   }
   res.redirect('/admin/programs/' + result.id + '/edit?success=Practice+plan+saved+as+template');
+});
+
+// Copy every drill from another practice into this one. Works across teams.
+app.post('/event/:id/copy-practice', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event || event.event_type !== 'practice') return res.redirect('/admin');
+  const sourceId = Number(req.body.source_event_id);
+  const source = await db.getTeamEvent(sourceId);
+  if (!source || source.id === event.id) {
+    return res.redirect('/event/' + event.id + '?error=' + encodeURIComponent('Pick a practice to copy from.'));
+  }
+  const sourceDrills = await db.getDrills(source.id);
+  if (sourceDrills.length === 0) {
+    return res.redirect('/event/' + event.id + '?error=' + encodeURIComponent('That practice has no drills.'));
+  }
+  const existing = await db.getDrills(event.id);
+  let order = existing.length;
+  const crossTeam = (source.team_id || null) !== (event.team_id || null);
+  for (const d of sourceDrills) {
+    await db.addDrill({
+      team_event_id: event.id,
+      drill_name: d.drill_name,
+      description: d.description,
+      duration_minutes: d.duration_minutes,
+      sort_order: order++,
+      coach_notes: d.coach_notes,
+      // A coach assigned on another team isn't on this one, so drop the
+      // assignment rather than carry over a name that means nothing here.
+      assigned_staff: crossTeam ? null : d.assigned_staff,
+      block_name: d.block_name,
+      parallel_group: d.parallel_group,
+    });
+  }
+  const from = crossTeam ? ` from ${source.title}` : '';
+  res.redirect('/event/' + event.id + '?success=' + encodeURIComponent(`Copied ${sourceDrills.length} drills${from}`));
 });
 
 app.post('/event/:id/load-program', requireAdmin, async (req, res) => {
