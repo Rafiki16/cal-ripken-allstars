@@ -2048,5 +2048,76 @@
       <p>Summer 2026 <%= teamName %> &middot; Major Division</p>
     </div>
   </footer>
+
+<script>
+// Keep the coach's place when a form posts and the page reloads.
+//
+// Every drill action (add, edit, delete, copy, reorder, block edits) is a
+// plain form POST that redirects back to this event, so the browser lands at
+// the top and a coach editing drill 9 of 12 loses their place. Record the
+// scroll offset on submit and put it back after the reload.
+(function () {
+  var KEY = 'eventScroll';
+
+  // Don't fight the browser's own restoration on back/forward.
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+  function remember() {
+    try {
+      sessionStorage.setItem(KEY, JSON.stringify({
+        path: location.pathname,
+        y: window.scrollY || document.documentElement.scrollTop || 0,
+        at: Date.now()
+      }));
+    } catch (e) { /* private mode / storage disabled - just lose the position */ }
+  }
+
+  // Only remember the position when the page is leaving because a form was
+  // submitted. beforeunload alone is not enough: it also fires when the user
+  // clicks a link away, and pages other than this one never run this script
+  // to clear the entry -- so a later visit would silently jump down the page.
+  var submitting = false;
+  function armSubmit() { submitting = true; }
+
+  document.addEventListener('submit', armSubmit, true);
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest && e.target.closest('button[type="submit"], input[type="submit"], button:not([type])');
+    if (el && el.form) armSubmit();
+  }, true);
+
+  window.addEventListener('beforeunload', function () {
+    if (submitting) remember();
+  });
+
+  function restore() {
+    var raw;
+    try { raw = sessionStorage.getItem(KEY); } catch (e) { return; }
+    if (!raw) return;
+    try { sessionStorage.removeItem(KEY); } catch (e) {}
+
+    var saved;
+    try { saved = JSON.parse(raw); } catch (e) { return; }
+    if (!saved || saved.path !== location.pathname) return;   // different page
+    if (Date.now() - saved.at > 30000) return;                // stale, not this round-trip
+    if (location.hash) return;                                // an anchor wins
+    if (!saved.y) return;
+
+    // The page keeps growing after load -- the lineup grid and drill blocks
+    // are built by script -- so a single scrollTo lands short and then gets
+    // lost. Re-apply over a short window until the position sticks.
+    var target = saved.y;
+    var tries = 0;
+    (function apply() {
+      var max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      var want = Math.min(target, max);
+      if (Math.abs((window.scrollY || 0) - want) > 2) window.scrollTo(0, want);
+      if (++tries < 12) setTimeout(apply, tries < 4 ? 50 : 150);
+    })();
+  }
+
+  if (document.readyState === 'complete') restore();
+  else window.addEventListener('load', restore);
+})();
+</script>
 </body>
 </html>
