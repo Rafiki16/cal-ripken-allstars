@@ -276,6 +276,10 @@ app.use(async (req, res, next) => {
     res.locals.currentTeamId = teamId;
     res.locals.allTeams = teams;
     res.locals.activeTeams = activeTeams;
+    // Lets the shared team switcher decide which list to offer: every active
+    // team for an admin, or just this account's teams for a parent. False
+    // while impersonating, so "View As" keeps showing the parent's options.
+    res.locals.isAdminNav = isAdminView(req);
     // teamName still drives every existing header/email template. Prefer the
     // team row; fall back to the legacy site setting for safety.
     res.locals.teamName = (current && current.name)
@@ -288,6 +292,7 @@ app.use(async (req, res, next) => {
     res.locals.allTeams = [];
     res.locals.activeTeams = [];
     res.locals.currentTeam = null;
+    res.locals.isAdminNav = false;
     res.locals.teamName = 'Cal Ripken All-Stars';
   }
   next();

@@ -1,23 +1,32 @@
 <%
-  // Prominent team switcher for accounts whose players span more than one
-  // team. Renders nothing for single-team accounts so it never adds noise.
-  // myTeams / currentTeamId come from the team-context middleware, which also
-  // validates ?team=<id> against THIS account's own teams.
+  // Shared team switcher, for admins and for parents whose players span more
+  // than one team. Renders nothing when there is only one team to choose from,
+  // so a single-team setup never sees it.
   //
-  // The link targets "/?team=N" rather than a bare "?team=N" on purpose:
-  //  - a bare relative query would clobber other params on the page
-  //  - staying on e.g. a Team A event while selecting Team B is incoherent,
-  //    so switching lands on the chosen team's home page instead
-  var _teams = (typeof myTeams !== 'undefined' && myTeams) ? myTeams : [];
+  //   admin  -> every active team (matches the dropdown in the admin header)
+  //   parent -> only the teams their own players are on
+  //
+  // Links target "/?team=N" rather than a bare "?team=N": a bare relative query
+  // would clobber other params, and staying on e.g. a Team A event while
+  // selecting Team B is incoherent, so switching lands on that team's home.
+  var _isAdmin = (typeof isAdminNav !== 'undefined') && isAdminNav;
+  var _teams = _isAdmin
+    ? ((typeof activeTeams !== 'undefined' && activeTeams) ? activeTeams : [])
+    : ((typeof myTeams !== 'undefined' && myTeams) ? myTeams : []);
   var _current = (typeof currentTeamId !== 'undefined') ? currentTeamId : null;
+  var _sorted = _teams.slice().sort(function (a, b) { return a.id - b.id; });
 %>
-<% if (_teams.length > 1) { %>
+<% if (_sorted.length > 1) { %>
   <div class="team-switcher">
     <div class="team-switcher-label">
-      You have players on <%= _teams.length %> teams &mdash; you're viewing:
+      <% if (_isAdmin) { %>
+        Viewing team:
+      <% } else { %>
+        You have players on <%= _sorted.length %> teams &mdash; you're viewing:
+      <% } %>
     </div>
     <div class="team-switcher-buttons">
-      <% _teams.forEach(function(t) { %>
+      <% _sorted.forEach(function(t) { %>
         <% if (t.id === _current) { %>
           <span class="team-chip team-chip-active">
             <%= t.name %><% if (!t.is_active) { %> <span class="team-chip-archived">(past season)</span><% } %>
