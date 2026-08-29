@@ -116,6 +116,8 @@
     var totalSeconds = drills.reduce(function(s, d) { return s + d.mins * 60; }, 0);
 
     var idx = 0, remaining = 0, elapsed = 0, interval = null, paused = false, started = false;
+    var practiceStartWall = 0, totalPausedMs = 0, pauseWall = 0;
+    var audioCtx = null, alarmTimer = null, wakeLock = null;
 
     var label = document.getElementById('drill-label');
     var desc = document.getElementById('drill-desc');
@@ -141,9 +143,15 @@
       return '';
     }
 
+    function ensureAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    }
+
     function beep(freq, count) {
       try {
-        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        var ctx = ensureAudio();
         for (var i = 0; i < (count || 1); i++) {
           (function(delay) {
             setTimeout(function() {
@@ -161,6 +169,57 @@
       } catch(e) {}
     }
 
+    function playAlarm() {
+      try {
+        var ctx = ensureAudio();
+        var repeats = 0;
+        function ring() {
+          if (repeats >= 6) { alarmTimer = null; return; }
+          repeats++;
+          var t = ctx.currentTime;
+          for (var i = 0; i < 3; i++) {
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = i % 2 === 0 ? 1000 : 800;
+            gain.gain.value = 0.5;
+            osc.start(t + i * 0.3);
+            osc.stop(t + i * 0.3 + 0.25);
+          }
+          alarmTimer = setTimeout(ring, 1500);
+        }
+        ring();
+        if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300, 200, 300, 100, 300, 100, 300]);
+      } catch(e) {}
+    }
+
+    function stopAlarm() {
+      if (alarmTimer) { clearTimeout(alarmTimer); alarmTimer = null; }
+    }
+
+    function computeState() {
+      if (!started) return null;
+      var now = paused ? pauseWall : Date.now();
+      var totalElapsedMs = now - practiceStartWall - totalPausedMs;
+      var totalElapsedSec = totalElapsedMs / 1000;
+
+      var accumulated = 0;
+      for (var i = 0; i < totalDrills; i++) {
+        var drillSec = drills[i].mins * 60;
+        if (totalElapsedSec < accumulated + drillSec) {
+          return {
+            drillIndex: i,
+            drillRemaining: Math.ceil(accumulated + drillSec - totalElapsedSec),
+            totalElapsed: Math.floor(totalElapsedSec),
+            finished: false
+          };
+        }
+        accumulated += drillSec;
+      }
+      return { finished: true, totalElapsed: Math.floor(totalElapsedSec) };
+    }
+
     function setDrillStates() {
       for (var i = 0; i < totalDrills; i++) {
         var el = document.getElementById('drill-' + i);
@@ -175,30 +234,25 @@
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    function updateOverall() {
-      drillCounter.textContent = (idx + 1) + ' / ' + totalDrills;
-      elapsedEl.textContent = fmt(elapsed);
-      var left = 0;
-      for (var i = idx; i < totalDrills; i++) {
-        left += drills[i].mins * 60;
-      }
-      left = left - (drills[idx].mins * 60 - remaining);
-      remainingEl.textContent = fmt(Math.max(0, left));
-    }
-
-    function startDrill(i) {
-      if (i >= totalDrills) { finish(); return; }
-      idx = i;
-      remaining = drills[i].mins * 60;
-      label.textContent = drills[i].name;
-      desc.textContent = drills[i].desc;
-      nextLabel.textContent = i + 1 < totalDrills ? 'Next: ' + drills[i + 1].name + ' (' + drills[i + 1].mins + ' min)' : 'Final drill';
-      setDrillStates();
-      scrollToActive();
-      tick();
-    }
-
     function tick() {
+      var state = computeState();
+      if (!state || paused) return;
+
+      if (state.finished) {
+        elapsed = state.totalElapsed;
+        finish();
+        return;
+      }
+
+      var drillChanged = state.drillIndex !== idx;
+      idx = state.drillIndex;
+      remaining = state.drillRemaining;
+      elapsed = state.totalElapsed;
+
+      label.textContent = drills[idx].name;
+      desc.textContent = drills[idx].desc;
+      nextLabel.textContent = idx + 1 < totalDrills ? 'Next: ' + drills[idx + 1].name + ' (' + drills[idx + 1].mins + ' min)' : 'Final drill';
+
       var total = drills[idx].mins * 60;
       clock.textContent = fmt(remaining);
       var pct = (total - remaining) / total * 100;
@@ -208,17 +262,17 @@
       clock.className = 'pt-clock' + (cls ? ' ' + cls : '');
       progress.className = 'pt-progress-fill' + (cls ? ' ' + cls : '');
 
-      updateOverall();
+      drillCounter.textContent = (idx + 1) + ' / ' + totalDrills;
+      elapsedEl.textContent = fmt(elapsed);
+      remainingEl.textContent = fmt(Math.max(0, totalSeconds - elapsed));
+
+      if (drillChanged) {
+        setDrillStates();
+        scrollToActive();
+        beep(1100, 2);
+      }
 
       if (remaining <= 3 && remaining > 0) beep(660, 1);
-
-      if (remaining <= 0) {
-        beep(1100, 2);
-        startDrill(idx + 1);
-        return;
-      }
-      remaining--;
-      elapsed++;
     }
 
     function finish() {
@@ -233,7 +287,10 @@
       progress.style.width = '100%';
       progress.className = 'pt-progress-fill';
       nextLabel.textContent = 'Total practice time: ' + fmt(elapsed);
-      beep(880, 3);
+      drillCounter.textContent = totalDrills + ' / ' + totalDrills;
+      elapsedEl.textContent = fmt(elapsed);
+      remainingEl.textContent = '00:00';
+      playAlarm();
 
       controls.innerHTML = '<button class="pt-btn pt-btn-restart" onclick="location.reload()">Restart</button>' +
         '<a href="/event/<%= event.id %>" class="pt-btn pt-btn-end" style="text-decoration:none;text-align:center;">Done</a>';
@@ -245,39 +302,90 @@
       pauseBtn.className = 'pt-btn pt-btn-pause';
       pauseBtn.textContent = 'Pause';
       pauseBtn.onclick = function() {
-        paused = !paused;
-        this.textContent = paused ? 'Resume' : 'Pause';
-        this.className = 'pt-btn ' + (paused ? 'pt-btn-start' : 'pt-btn-pause');
+        if (!paused) {
+          paused = true;
+          pauseWall = Date.now();
+          this.textContent = 'Resume';
+          this.className = 'pt-btn pt-btn-start';
+        } else {
+          totalPausedMs += Date.now() - pauseWall;
+          paused = false;
+          pauseWall = 0;
+          this.textContent = 'Pause';
+          this.className = 'pt-btn pt-btn-pause';
+          tick();
+        }
       };
 
       var skipBtn = document.createElement('button');
       skipBtn.className = 'pt-btn pt-btn-skip';
       skipBtn.textContent = 'Skip';
-      skipBtn.onclick = function() { startDrill(idx + 1); };
+      skipBtn.onclick = function() {
+        var state = computeState();
+        if (!state || state.finished) return;
+        practiceStartWall -= state.drillRemaining * 1000;
+        tick();
+      };
 
       var endBtn = document.createElement('button');
       endBtn.className = 'pt-btn pt-btn-end';
       endBtn.textContent = 'End';
-      endBtn.onclick = function() { finish(); };
+      endBtn.onclick = function() {
+        var state = computeState();
+        if (state) elapsed = state.totalElapsed;
+        finish();
+      };
 
       controls.appendChild(pauseBtn);
       controls.appendChild(skipBtn);
       controls.appendChild(endBtn);
     }
 
+    function requestWakeLock() {
+      if (!navigator.wakeLock) return;
+      navigator.wakeLock.request('screen').then(function(wl) {
+        wakeLock = wl;
+        wl.addEventListener('release', function() { wakeLock = null; });
+      }).catch(function() {});
+    }
+
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible' && started && !paused) {
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        tick();
+        requestWakeLock();
+      }
+    });
+
     document.getElementById('btn-start').onclick = function() {
       started = true;
       paused = false;
+      practiceStartWall = Date.now();
+      totalPausedMs = 0;
+      pauseWall = 0;
       elapsed = 0;
+      idx = 0;
       overallBar.style.display = '';
       renderRunningControls();
-      startDrill(0);
+      ensureAudio();
+
+      label.textContent = drills[0].name;
+      desc.textContent = drills[0].desc;
+      nextLabel.textContent = totalDrills > 1 ? 'Next: ' + drills[1].name + ' (' + drills[1].mins + ' min)' : 'Final drill';
+      remaining = drills[0].mins * 60;
+      clock.textContent = fmt(remaining);
+      progress.style.width = '0%';
+      clock.className = 'pt-clock';
+      progress.className = 'pt-progress-fill';
+      setDrillStates();
+      scrollToActive();
+      drillCounter.textContent = '1 / ' + totalDrills;
+      elapsedEl.textContent = '00:00';
+      remainingEl.textContent = fmt(totalSeconds);
+
       if (interval) clearInterval(interval);
       interval = setInterval(function() { if (!paused) tick(); }, 1000);
-
-      if (navigator.wakeLock) {
-        navigator.wakeLock.request('screen').catch(function() {});
-      }
+      requestWakeLock();
     };
   })();
   </script>
