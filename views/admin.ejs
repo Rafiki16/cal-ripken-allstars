@@ -493,6 +493,35 @@
       <% } else { %>
         <p style="color:#6b7280; margin-top:16px; font-size:14px;">No events scheduled yet.</p>
       <% } %>
+
+      <% if (typeof recentReschedules !== 'undefined' && recentReschedules.length > 0) { %>
+      <details style="margin-top:20px;">
+        <summary style="cursor:pointer;padding:10px 14px;background:#fff7ed;border-radius:8px;font-weight:700;font-size:14px;color:#c2410c;user-select:none;">Reschedule Activity (<%= recentReschedules.length %>)</summary>
+        <table class="admin-table" style="margin-top:8px; min-width:auto;">
+          <thead>
+            <tr><th>Event</th><th>Moved from</th><th>Moved to</th><th>Reason</th><th>By</th><th>When</th><th>Notified</th></tr>
+          </thead>
+          <tbody>
+            <%
+              const _rsD = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-';
+              const _rsT = (t) => { if (!t) return ''; const p = t.split(':'); const hh = parseInt(p[0]); return isNaN(hh) ? '' : ' ' + (hh % 12 || 12) + ':' + p[1].slice(0,2) + (hh >= 12 ? 'pm' : 'am'); };
+            %>
+            <% recentReschedules.forEach(r => { %>
+            <tr>
+              <td class="td-bold"><a href="/event/<%= r.team_event_id %>" style="color:inherit;"><%= r.title || 'Event #' + r.team_event_id %></a></td>
+              <td style="font-size:13px;white-space:nowrap;color:var(--gray-500);"><%= _rsD(r.old_start_date) + _rsT(r.old_start_time) %></td>
+              <td style="font-size:13px;white-space:nowrap;"><%= _rsD(r.new_start_date) + _rsT(r.new_start_time) %></td>
+              <td style="font-size:13px;"><%= r.reason || '-' %></td>
+              <td style="font-size:13px;white-space:nowrap;"><%= r.rescheduled_by %></td>
+              <td style="font-size:12px;white-space:nowrap;color:var(--gray-500);"><%= new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %></td>
+              <td style="font-size:12px;"><%= r.notified ? 'Yes' : 'No' %></td>
+            </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </details>
+      <% } %>
+
       <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
         <a href="/admin/programs" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:8px 16px;">Programs</a>
         <a href="/admin/quizzes" class="btn btn-secondary" style="text-decoration:none; font-size:13px; padding:8px 16px;">Quizzes</a>

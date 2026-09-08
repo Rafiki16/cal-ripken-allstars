@@ -27,12 +27,90 @@
   <main class="container">
     <%- include('partials/team-switcher') %>
     <div class="ed-body">
+      <% if (typeof rescheduleSuccess !== 'undefined' && rescheduleSuccess) { %>
+      <div style="margin-bottom:16px;padding:12px 16px;background:#dcfce7;border:1px solid #86efac;border-radius:10px;color:#166534;font-size:14px;font-weight:600;"><%= rescheduleSuccess %></div>
+      <% } %>
+      <% if (typeof rescheduleError !== 'undefined' && rescheduleError) { %>
+      <div style="margin-bottom:16px;padding:12px 16px;background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;color:#991b1b;font-size:14px;font-weight:600;"><%= rescheduleError %></div>
+      <% } %>
       <!-- Event Info -->
       <div class="ed-info">
-        <% if (isAdmin) { %>
-        <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+        <%
+          // A practice can be moved until it ends; after that a coach adds a new
+          // event instead. Mirrors the server-side guard in POST /event/:id/reschedule.
+          const _today = typeof todayStr !== 'undefined' ? todayStr : new Date().toISOString().slice(0, 10);
+          const _canReschedule = event.event_type === 'practice' && isStaff && (event.end_date || event.start_date) >= _today;
+        %>
+        <% if (isAdmin || _canReschedule) { %>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px;">
+          <% if (_canReschedule) { %>
+          <button type="button" class="btn btn-secondary" style="font-size:13px;padding:6px 16px;" onclick="toggleReschedulePanel()">&#128197; Reschedule</button>
+          <% } %>
+          <% if (isAdmin) { %>
           <button type="button" class="btn btn-secondary" style="font-size:13px;padding:6px 16px;" onclick="document.getElementById('edit-event-panel').style.display = document.getElementById('edit-event-panel').style.display === 'none' ? 'block' : 'none'">&#9998; Edit Event</button>
+          <% } %>
         </div>
+        <% } %>
+
+        <% if (_canReschedule) { %>
+        <div id="reschedule-panel" style="display:none;margin-bottom:20px;padding:16px;background:#fff7ed;border-radius:12px;border:1px solid #fed7aa;">
+          <h4 style="margin:0 0 4px;font-size:15px;color:var(--navy);">Move this practice</h4>
+          <p style="margin:0 0 12px;font-size:12px;color:var(--gray-500);">
+            Currently <strong><%= new Date(event.start_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) %></strong><% if (event.start_time) { const [_rh,_rm] = event.start_time.split(':'); const _rhr = parseInt(_rh); %> at <strong><%= (_rhr % 12 || 12) + ':' + _rm + ' ' + (_rhr >= 12 ? 'PM' : 'AM') %></strong><% } %>.
+            The practice plan, RSVPs and coach notes stay attached.
+          </p>
+          <form method="POST" action="/event/<%= event.id %>/reschedule">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+              <div>
+                <label style="font-size:12px;font-weight:600;color:var(--gray-500);display:block;margin-bottom:3px;">New date</label>
+                <input type="date" name="new_start_date" value="<%= event.start_date %>" min="<%= _today %>" required class="form-input" style="width:100%;">
+              </div>
+              <div>
+                <label style="font-size:12px;font-weight:600;color:var(--gray-500);display:block;margin-bottom:3px;">Start time</label>
+                <input type="time" name="new_start_time" value="<%= event.start_time || '' %>" class="form-input" style="width:100%;">
+              </div>
+              <div>
+                <label style="font-size:12px;font-weight:600;color:var(--gray-500);display:block;margin-bottom:3px;">End time</label>
+                <input type="time" name="new_end_time" value="<%= event.end_time || '' %>" class="form-input" style="width:100%;">
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <label style="font-size:12px;font-weight:600;color:var(--gray-500);display:block;margin-bottom:3px;">Reason (optional &mdash; included in the notification)</label>
+              <input type="text" name="reason" maxlength="200" list="reschedule-reasons" placeholder="Rained out" class="form-input" style="width:100%;">
+              <datalist id="reschedule-reasons">
+                <option value="Rained out"></option>
+                <option value="Field unavailable"></option>
+                <option value="Coach conflict"></option>
+                <option value="Tournament conflict"></option>
+                <option value="Heat / lightning"></option>
+              </datalist>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--gray-700);cursor:pointer;">
+              <input type="checkbox" name="notify" value="1" checked>
+              Notify the team (Team Board post + text/email to parents)
+            </label>
+            <div style="display:flex;gap:8px;margin-top:14px;">
+              <button type="submit" class="btn btn-confirm" style="font-size:14px;padding:8px 20px;">Reschedule Practice</button>
+              <button type="button" class="btn btn-secondary" style="font-size:14px;padding:8px 20px;" onclick="toggleReschedulePanel(false)">Cancel</button>
+            </div>
+          </form>
+        </div>
+        <script>
+          function toggleReschedulePanel(force) {
+            var el = document.getElementById('reschedule-panel');
+            if (!el) return;
+            var open = force === undefined ? el.style.display === 'none' : !!force;
+            el.style.display = open ? 'block' : 'none';
+            if (open) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          // Reopen the panel when the coach arrives from the admin schedule's
+          // Reschedule button, or bounces back off a validation error.
+          if (location.hash === '#reschedule-panel' || /[?&]reschedule_error=/.test(location.search)) {
+            toggleReschedulePanel(true);
+          }
+        </script>
+        <% } %>
+        <% if (isAdmin) { %>
         <div id="edit-event-panel" style="display:none;margin-bottom:20px;padding:16px;background:#f3f4f6;border-radius:12px;border:1px solid var(--gray-200);">
           <h4 style="margin:0 0 12px;font-size:15px;color:var(--navy);">Edit Event</h4>
           <form method="POST" action="/admin/edit-team-event">
@@ -105,6 +183,29 @@
           </div>
           <% } %>
         </div>
+
+        <% if (typeof reschedules !== 'undefined' && reschedules.length > 0) { %>
+        <div style="margin-bottom:20px;padding:12px 14px;background:#fff7ed;border-left:3px solid #f97316;border-radius:8px;">
+          <div class="ed-label" style="color:#c2410c;">Rescheduled</div>
+          <% reschedules.forEach(r => { %>
+          <%
+            const _fmtD = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+            const _fmtT = (t) => { if (!t) return ''; const p = t.split(':'); const hh = parseInt(p[0]); return isNaN(hh) ? '' : ' ' + (hh % 12 || 12) + ':' + p[1].slice(0,2) + (hh >= 12 ? 'pm' : 'am'); };
+            const _when = (d, t) => _fmtD(d) + _fmtT(t);
+          %>
+          <div style="font-size:13px;color:var(--gray-700);margin-top:6px;">
+            <span style="text-decoration:line-through;color:var(--gray-500);"><%= _when(r.old_start_date, r.old_start_time) %></span>
+            &rarr; <strong><%= _when(r.new_start_date, r.new_start_time) %></strong>
+            <% if (r.reason) { %><span style="color:var(--gray-500);"> &mdash; <%= r.reason %></span><% } %>
+            <% if (isStaff) { %>
+            <div style="font-size:11px;color:var(--gray-500);margin-top:1px;">
+              by <%= r.rescheduled_by %> on <%= new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) %><%= r.notified ? ' · team notified' : ' · no notification sent' %>
+            </div>
+            <% } %>
+          </div>
+          <% }); %>
+        </div>
+        <% } %>
 
         <% if (event.location_name || event.address) { %>
         <div style="margin-bottom:20px;">
@@ -338,103 +439,104 @@
 
         <div class="drill-total">Total: <%= smartTotal %> minutes<% if (smartTotal !== drills.reduce((s, d) => s + d.duration_minutes, 0)) { %> <span style="font-weight:400;color:#6366f1;font-size:12px;">(parallel blocks run concurrently)</span><% } %></div>
 
-        <% if (isStaff) { %>
-        <!-- Timer UI -->
+        <!-- Timer UI: server-authoritative clock, shared by every device -->
         <div id="timer-panel" class="timer-panel" style="display:none;">
-          <div class="timer-current-label" id="timer-label">—</div>
+          <div class="timer-current-label" id="timer-label">&mdash;</div>
           <div class="timer-countdown" id="timer-countdown">00:00</div>
           <div class="timer-progress-bar"><div class="timer-progress-fill" id="timer-fill"></div></div>
           <div class="timer-next" id="timer-next"></div>
-          <div class="timer-controls">
+          <div class="timer-controls" id="timer-controls"<% if (!isStaff) { %> style="display:none;"<% } %>>
             <button type="button" class="btn timer-btn" id="timer-pause">Pause</button>
             <button type="button" class="btn timer-btn" id="timer-skip">Skip &rarr;</button>
             <button type="button" class="btn timer-btn timer-btn-stop" id="timer-stop">End</button>
           </div>
+          <button type="button" class="btn timer-btn" id="timer-audio" style="margin-top:10px;">&#128276; Enable alarm on this phone</button>
         </div>
+        <% if (isStaff) { %>
         <button type="button" class="btn btn-primary btn-large" id="timer-start" style="margin-top:16px; width:100%;">Start Practice Timer</button>
+        <% } %>
+        <a href="/event/<%= event.id %>/practice-timer" class="btn btn-secondary" style="margin-top:10px; width:100%; display:block; text-align:center; text-decoration:none;">Open Full-Screen Timer</a>
 
+        <script src="/practice-timer.js"></script>
         <script>
         (function(){
-          const drills = <%- JSON.stringify(drills.map(d => ({ id: d.id, name: d.drill_name, desc: d.description, mins: d.duration_minutes }))) %>;
-          let idx = 0, remaining = 0, interval = null, paused = false;
+          const EVENT_ID = <%= event.id %>;
           const panel = document.getElementById('timer-panel');
           const label = document.getElementById('timer-label');
           const countdown = document.getElementById('timer-countdown');
           const fill = document.getElementById('timer-fill');
           const next = document.getElementById('timer-next');
-          const cards = document.querySelectorAll('.drill-card');
+          const startBtn = document.getElementById('timer-start');
+          const pauseBtn = document.getElementById('timer-pause');
+          const audioBtn = document.getElementById('timer-audio');
+          const fmt = window.practiceFmt;
 
-          function fmt(s) { return Math.floor(s/60).toString().padStart(2,'0') + ':' + (s%60).toString().padStart(2,'0'); }
+          const clock = new PracticeClock(EVENT_ID, { onUpdate: render });
 
-          function beep() {
-            try {
-              const ctx = new (window.AudioContext || window.webkitAudioContext)();
-              const osc = ctx.createOscillator(); const gain = ctx.createGain();
-              osc.connect(gain); gain.connect(ctx.destination);
-              osc.frequency.value = 880; gain.gain.value = 0.3;
-              osc.start(); osc.stop(ctx.currentTime + 0.3);
-              setTimeout(() => { const o2 = ctx.createOscillator(); o2.connect(gain); o2.frequency.value = 1100; o2.start(); o2.stop(ctx.currentTime + 0.3); }, 400);
-            } catch(e) {}
+          // Highlight by drill id rather than position: the cards on this page
+          // are grouped into blocks, so their DOM order isn't the plan order.
+          function highlight(id) {
+            document.querySelectorAll('.drill-card').forEach(c => {
+              c.classList.toggle('drill-active', String(c.dataset.id) === String(id));
+            });
+            const el = id != null ? document.getElementById('drill-' + id) : null;
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
 
-          function highlight(i) {
-            cards.forEach((c, j) => { c.classList.toggle('drill-active', j === i); });
-            if (cards[i]) cards[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          let lastIdx = null;
+          function render(s, c) {
+            const live = s.status === 'running' || s.status === 'paused';
+            panel.style.display = live || s.status === 'ended' ? '' : 'none';
+            if (startBtn) {
+              startBtn.style.display = live ? 'none' : '';
+              startBtn.textContent = s.status === 'ended' ? 'Restart Practice Timer' : 'Start Practice Timer';
+            }
+            audioBtn.style.display = c.alarm.isUnlocked() ? 'none' : '';
+
+            if (!live) {
+              if (s.status === 'ended') {
+                label.textContent = 'Practice Complete!';
+                countdown.textContent = fmt(c.elapsedTotal());
+                fill.style.width = '100%';
+                next.textContent = 'Total practice time: ' + fmt(c.elapsedTotal());
+              }
+              highlight(null);
+              lastIdx = null;
+              return;
+            }
+
+            const cur = s.schedule[s.index] || { name: '', mins: 0, id: null };
+            const totalMs = cur.mins * 60000;
+            const remMs = c.remaining();
+            label.textContent = cur.name + (s.status === 'paused' ? ' (paused)' : '');
+            countdown.textContent = fmt(remMs);
+            fill.style.width = (totalMs > 0 ? (totalMs - remMs) / totalMs * 100 : 100) + '%';
+            const nxt = s.schedule[s.index + 1];
+            next.textContent = nxt ? 'Next: ' + nxt.name + ' (' + nxt.mins + ' min)' : 'Last drill';
+            if (pauseBtn) pauseBtn.textContent = s.status === 'paused' ? 'Resume' : 'Pause';
+            if (s.index !== lastIdx) { highlight(cur.id); lastIdx = s.index; }
           }
 
-          function startDrill(i) {
-            if (i >= drills.length) { finish(); return; }
-            idx = i;
-            remaining = drills[i].mins * 60;
-            label.textContent = drills[i].name;
-            next.textContent = i + 1 < drills.length ? 'Next: ' + drills[i+1].name + ' (' + drills[i+1].mins + ' min)' : 'Last drill';
-            highlight(i);
-            tick();
-          }
-
-          function tick() {
-            const total = drills[idx].mins * 60;
-            countdown.textContent = fmt(remaining);
-            fill.style.width = ((total - remaining) / total * 100) + '%';
-            if (remaining <= 0) { beep(); startDrill(idx + 1); return; }
-            remaining--;
-          }
-
-          function finish() {
-            clearInterval(interval); interval = null;
-            panel.style.display = 'none';
-            document.getElementById('timer-start').style.display = '';
-            document.getElementById('timer-start').textContent = 'Restart Practice Timer';
-            cards.forEach(c => c.classList.remove('drill-active'));
-            beep(); setTimeout(beep, 600);
-            label.textContent = 'Practice Complete!';
-          }
-
-          document.getElementById('timer-start').onclick = function() {
-            this.style.display = 'none';
-            panel.style.display = '';
-            paused = false;
-            document.getElementById('timer-pause').textContent = 'Pause';
-            startDrill(0);
-            if (interval) clearInterval(interval);
-            interval = setInterval(() => { if (!paused) tick(); }, 1000);
+          if (startBtn) startBtn.onclick = () => clock.send('start');
+          if (pauseBtn) pauseBtn.onclick = () => {
+            clock.send(clock.state && clock.state.status === 'paused' ? 'resume' : 'pause');
           };
+          const skipBtn = document.getElementById('timer-skip');
+          if (skipBtn) skipBtn.onclick = () => clock.send('skip', { expected_index: clock.state ? clock.state.index : null });
+          const stopBtn = document.getElementById('timer-stop');
+          if (stopBtn) stopBtn.onclick = () => clock.send('end');
 
-          document.getElementById('timer-pause').onclick = function() {
-            paused = !paused;
-            this.textContent = paused ? 'Resume' : 'Pause';
+          audioBtn.onclick = () => {
+            clock.alarm.unlock();
+            clock.alarm.blip(880);
+            audioBtn.style.display = clock.alarm.isUnlocked() ? 'none' : '';
           };
+          document.addEventListener('touchend', () => clock.alarm.unlock(), { passive: true });
+          document.addEventListener('click', () => clock.alarm.unlock());
 
-          document.getElementById('timer-skip').onclick = function() {
-            startDrill(idx + 1);
-          };
-
-          document.getElementById('timer-stop').onclick = function() {
-            finish();
-          };
+          clock.start();
         })();
         </script>
-        <% } /* end isStaff timer */ %>
         <% } else if (!isAdmin) { %>
           <p style="color:var(--gray-500); font-size:14px;">No practice plan posted yet.</p>
         <% } %>

@@ -348,6 +348,48 @@ function calcEndTime(startTime, durationMinutes) {
   return String(eh).padStart(2, '0') + ':' + String(em).padStart(2, '0');
 }
 
+// The app runs on Render in UTC but the team lives in Eastern time. Comparing a
+// stored 'YYYY-MM-DD HH:MM' against a UTC clock would flag tonight's rained-out
+// practice as already past any time after 8pm ET, so "is this in the past?"
+// checks go through the team's local wall clock instead.
+const TEAM_TZ = process.env.TEAM_TZ || 'America/New_York';
+
+function teamNow() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TEAM_TZ,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date()).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${hour}:${parts.minute}` };
+}
+
+// Dates and times are stored as 'YYYY-MM-DD' / 'HH:MM' strings, so joining them
+// gives a sortable stamp that compares correctly with a plain string compare —
+// no Date parsing or UTC round-tripping involved.
+function stamp(date, time, fallback) {
+  return (date || '') + ' ' + (time || fallback || '');
+}
+
+function formatEventDate(dateStr) {
+  if (!dateStr) return '';
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function formatEventTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':');
+  const hr = parseInt(h, 10);
+  if (isNaN(hr) || !m) return '';
+  return (hr % 12 || 12) + ':' + m.slice(0, 2) + ' ' + (hr >= 12 ? 'PM' : 'AM');
+}
+
+function formatWhen(date, time) {
+  const d = formatEventDate(date);
+  const t = formatEventTime(time);
+  return t ? `${d} at ${t}` : d;
+}
+
 const RSVP_SECRET = process.env.RSVP_SECRET || process.env.SESSION_SECRET || 'allstars-rsvp-2026';
 
 function generateRsvpToken(eventId, playerId) {
@@ -439,6 +481,76 @@ function getPlayerContacts(player) {
     }
   } catch (e) {}
   return contacts;
+}
+
+// Reschedule announcement. Goes out three ways: a pinned-style Team Board post
+// (in-app, always), plus SMS and email to every confirmed player's contacts.
+// Contacts are deduped by value so a parent with two kids on the roster gets one
+// message, not two — this is a team-wide announcement, not a per-player nudge.
+async function notifyReschedule(event, teamId, oldWhen, newWhen, reason, authorName, teamName) {
+  const baseUrl = process.env.BASE_URL || 'https://cal-ripken-allstars.onrender.com';
+  const link = `${baseUrl}/event/${event.id}`;
+  const reasonLine = reason ? `\nReason: ${reason}` : '';
+
+  const boardMessage =
+    `📅 SCHEDULE CHANGE — "${event.title}" has been rescheduled.\n\n` +
+    `Was: ${oldWhen}\nNow: ${newWhen}${reasonLine}\n\n` +
+    `The practice plan and RSVPs carry over — no need to re-enter anything.`;
+  try {
+    await db.addMessage({ author_name: authorName, author_type: 'admin', message: boardMessage, team_id: teamId });
+  } catch (err) {
+    console.error('Reschedule board post failed:', err.message);
+  }
+
+  const smsBody = `${teamName}: ${event.title} has been RESCHEDULED.\n\nWas: ${oldWhen}\nNow: ${newWhen}${reasonLine}\n\nDetails: ${link}`;
+  // Scoped to the event's own team: an unscoped getAllPlayers would text every
+  // family across every team on the site.
+  const players = await db.getAllPlayers(teamId);
+  const confirmed = players.filter(p => p.status === 'confirmed');
+  const seen = new Set();
+  let sent = 0;
+
+  for (const player of confirmed) {
+    for (const contact of getPlayerContacts(player)) {
+      const key = contact.type + ':' + contact.value;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (contact.type === 'sms') {
+        try { await sendSMS(contact.value, smsBody); sent++; } catch (err) { console.error('Reschedule SMS failed:', err.message); }
+      } else if (contact.type === 'email' && smtpTransport) {
+        try {
+          await smtpTransport.sendMail({
+            from: `"${teamName}" <${process.env.SMTP_USER}>`,
+            to: contact.value,
+            subject: `Schedule Change: ${event.title} moved to ${formatEventDate(event.start_date)}`,
+            html: `
+              <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+                <div style="background:#1a2744;color:#fff;padding:24px;text-align:center;">
+                  <h1 style="margin:0;font-size:22px;">&#9918; ${teamName}</h1>
+                  <p style="margin:4px 0 0;color:#d4a843;">Schedule Change</p>
+                </div>
+                <div style="padding:24px;background:#f9fafb;border:1px solid #e5e7eb;">
+                  <p><strong>${event.title}</strong> has been rescheduled.</p>
+                  <div style="background:white;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0;">
+                    <p style="margin:4px 0;color:#6b7280;text-decoration:line-through;">Was: ${oldWhen}</p>
+                    <p style="margin:8px 0 4px;color:#111827;font-size:17px;font-weight:bold;">Now: ${newWhen}</p>
+                    ${event.location_name ? '<p style="margin:8px 0 0;color:#6b7280;">' + event.location_name + '</p>' : ''}
+                  </div>
+                  ${reason ? '<p style="color:#374151;"><strong>Reason:</strong> ' + reason + '</p>' : ''}
+                  <p style="text-align:center;margin:24px 0;">
+                    <a href="${link}" style="background:#1a2744;color:#fff;padding:14px 36px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px;">View Details</a>
+                  </p>
+                </div>
+              </div>`,
+          });
+          sent++;
+        } catch (err) {
+          console.error(`Reschedule email failed to ${contact.value}:`, err.message);
+        }
+      }
+    }
+  }
+  return sent;
 }
 
 async function checkAndSendReminders() {
@@ -694,7 +806,15 @@ app.get('/event/:id', requireLogin, async (req, res) => {
     practiceTemplates = await db.getPracticeTemplatesAllTeams();
     practiceSources = await db.getPracticesWithDrills(event.id);
   }
-  res.render('event-detail', { event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList, POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null, practiceTemplates, practiceSources });
+  const reschedules = event.event_type === 'practice' ? await db.getReschedules(event.id) : [];
+  res.render('event-detail', {
+    event, rsvps, confirmedPlayers: confirmed, isAdmin, isStaff, drills, subEvents, lineup, subLineups, lineupGrid, subGrids, staffList,
+    POSITIONS: ['P','C','1B','2B','3B','SS','LF','CF','RF'], parentUser: req.parentUser || null, practiceTemplates, practiceSources,
+    reschedules,
+    todayStr: teamNow().date,
+    rescheduleSuccess: req.query.reschedule_success || null,
+    rescheduleError: req.query.reschedule_error || null,
+  });
 });
 
 app.get('/rsvp/:eventId/:playerId/:token', async (req, res) => {
@@ -724,15 +844,196 @@ app.post('/rsvp/:eventId/:playerId/:token', async (req, res) => {
   res.render('rsvp', { event, player, rsvp, token, success: `${player.player_name} is marked as ${status === 'yes' ? 'attending' : status === 'no' ? 'not attending' : 'maybe'}.` });
 });
 
+// Staff check for a request. Scoped to req.teamId: an unscoped
+// getStaffByPhone falls back to a cross-team lookup, which would let a coach on
+// one team control another team's practice. Uses isAdminView so an admin who is
+// viewing as a parent loses coach powers along with the rest of the admin view.
+async function isStaffReq(req) {
+  if (isAdminView(req)) return true;
+  const phone = req.parentUser ? req.parentUser.phone : null;
+  return phone ? !!(await db.getStaffByPhone(phone, req.teamId)) : false;
+}
+
+// ---------------------------------------------------------------------------
+// Practice timer: server-authoritative clock.
+//
+// The server stores only "which section, and when did its clock start" — never
+// a countdown. Clients derive remaining time from those timestamps, so a locked
+// phone, a browser reload, or a device that joins halfway through all land on
+// the same number. Staff control the clock; everyone else follows along.
+// ---------------------------------------------------------------------------
+
+// Snapshot the drill list when practice starts, so editing the plan mid-practice
+// can't shift the clock out from under the coaches already running it.
+function practiceSchedule(drills) {
+  return drills.map((d) => ({
+    id: d.id,
+    name: d.drill_name,
+    desc: d.description || '',
+    mins: Math.max(0, Number(d.duration_minutes) || 0),
+  }));
+}
+
+function emptyPracticeState(now) {
+  return {
+    status: 'idle',
+    drill_index: 0,
+    schedule_json: '[]',
+    section_started_at: null,
+    paused_at: null,
+    practice_started_at: null,
+    ended_at: null,
+    version: 0,
+    updated_at: now,
+  };
+}
+
+// Fast-forward a running session past any sections that expired while every
+// client was asleep. Called on every read, so no cron or client cooperation is
+// needed for a section to end on time.
+function advanceExpiredSections(sess, schedule, now) {
+  if (sess.status !== 'running' || sess.section_started_at === null) return false;
+  let changed = false;
+  while (sess.drill_index < schedule.length) {
+    const durMs = schedule[sess.drill_index].mins * 60000;
+    if (now - sess.section_started_at < durMs) break;
+    // Chain from the previous section's scheduled end, not from `now`, so drift
+    // never accumulates across a long practice.
+    sess.section_started_at += durMs;
+    sess.drill_index += 1;
+    changed = true;
+  }
+  if (sess.drill_index >= schedule.length) {
+    sess.status = 'ended';
+    sess.ended_at = sess.section_started_at;
+    sess.drill_index = schedule.length;
+  }
+  return changed;
+}
+
+async function readPracticeState(eventId) {
+  const now = Date.now();
+  let sess = await db.getPracticeSession(eventId);
+  if (!sess) sess = { team_event_id: eventId, ...emptyPracticeState(now) };
+
+  const schedule = JSON.parse(sess.schedule_json || '[]');
+  if (advanceExpiredSections(sess, schedule, now)) {
+    sess.version += 1;
+    sess.updated_at = now;
+    await db.savePracticeSession(sess);
+  }
+  return { sess, schedule, now };
+}
+
+function practiceStatePayload(sess, schedule, now, canControl) {
+  const cur = schedule[sess.drill_index] || null;
+  const durMs = cur ? cur.mins * 60000 : 0;
+  const endsAt = sess.section_started_at !== null ? sess.section_started_at + durMs : null;
+  // While paused the clock is frozen at paused_at, so remaining time must be
+  // measured from there rather than from now.
+  const ref = sess.status === 'paused' ? (sess.paused_at || now) : now;
+  return {
+    server_now: now,
+    remaining_ms: endsAt !== null && (sess.status === 'running' || sess.status === 'paused')
+      ? Math.max(0, endsAt - ref) : 0,
+    version: sess.version,
+    status: sess.status,
+    index: sess.drill_index,
+    schedule,
+    section_started_at: sess.section_started_at,
+    section_ends_at: sess.section_started_at !== null ? sess.section_started_at + durMs : null,
+    paused_at: sess.paused_at,
+    practice_started_at: sess.practice_started_at,
+    ended_at: sess.ended_at,
+    can_control: !!canControl,
+  };
+}
+
+app.get('/api/event/:id/practice-state', requireParentOrAdmin, async (req, res) => {
+  const eventId = Number(req.params.id);
+  const event = await db.getTeamEvent(eventId);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const { sess, schedule, now } = await readPracticeState(eventId);
+  res.json(practiceStatePayload(sess, schedule, now, await isStaffReq(req)));
+});
+
+app.post('/api/event/:id/practice/:action', requireParentOrAdmin, async (req, res) => {
+  const eventId = Number(req.params.id);
+  const action = req.params.action;
+  const event = await db.getTeamEvent(eventId);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (!(await isStaffReq(req))) return res.status(403).json({ error: 'Only coaches can control the practice timer.' });
+
+  let { sess, schedule, now } = await readPracticeState(eventId);
+  sess.team_event_id = eventId;
+
+  // Guard against two coaches tapping Skip at the same moment: the client sends
+  // the section it believes is running, and a stale tap is ignored.
+  const expected = req.body && req.body.expected_index;
+  const guarded = action === 'skip' || action === 'back';
+  if (guarded && expected !== undefined && expected !== null && Number(expected) !== sess.drill_index) {
+    return res.json(practiceStatePayload(sess, schedule, now, true));
+  }
+
+  if (action === 'start' || action === 'restart') {
+    const drills = await db.getDrills(eventId);
+    schedule = practiceSchedule(drills);
+    if (schedule.length === 0) return res.status(400).json({ error: 'No drills in this practice plan.' });
+    sess.schedule_json = JSON.stringify(schedule);
+    sess.status = 'running';
+    sess.drill_index = 0;
+    sess.section_started_at = now;
+    sess.paused_at = null;
+    sess.practice_started_at = now;
+    sess.ended_at = null;
+  } else if (action === 'pause') {
+    if (sess.status !== 'running') return res.json(practiceStatePayload(sess, schedule, now, true));
+    sess.status = 'paused';
+    sess.paused_at = now;
+  } else if (action === 'resume') {
+    if (sess.status !== 'paused') return res.json(practiceStatePayload(sess, schedule, now, true));
+    // Push the section start forward by the pause duration so the remaining
+    // time is exactly what it was when paused.
+    sess.section_started_at += now - (sess.paused_at || now);
+    sess.status = 'running';
+    sess.paused_at = null;
+  } else if (action === 'skip' || action === 'back') {
+    if (sess.status === 'idle' || sess.status === 'ended') return res.json(practiceStatePayload(sess, schedule, now, true));
+    const nextIdx = sess.drill_index + (action === 'skip' ? 1 : -1);
+    if (nextIdx < 0) return res.json(practiceStatePayload(sess, schedule, now, true));
+    if (nextIdx >= schedule.length) {
+      sess.status = 'ended';
+      sess.drill_index = schedule.length;
+      sess.ended_at = now;
+    } else {
+      sess.drill_index = nextIdx;
+      // Manual moves restart the section clock from now, in both directions.
+      sess.section_started_at = sess.status === 'paused' ? (sess.paused_at || now) : now;
+    }
+  } else if (action === 'end') {
+    sess.status = 'ended';
+    sess.ended_at = now;
+    sess.paused_at = null;
+  } else if (action === 'reset') {
+    await db.clearPracticeSession(eventId);
+    const fresh = { team_event_id: eventId, ...emptyPracticeState(now) };
+    return res.json(practiceStatePayload(fresh, [], now, true));
+  } else {
+    return res.status(400).json({ error: 'Unknown action' });
+  }
+
+  sess.version += 1;
+  sess.updated_at = now;
+  await db.savePracticeSession(sess);
+  res.json(practiceStatePayload(sess, schedule, now, true));
+});
+
 app.get('/event/:id/practice-timer', requireParentOrAdmin, async (req, res) => {
-  const isAdmin = isAdminView(req);
-  const staffPhone = req.parentUser ? req.parentUser.phone : null;
-  const isStaff = isAdmin || (staffPhone ? !!(await db.getStaffByPhone(staffPhone, req.teamId)) : false);
-  if (!isStaff) return res.redirect('/event/' + req.params.id);
   const event = await db.getTeamEvent(Number(req.params.id));
   if (!event) return res.redirect('/');
   const drills = await db.getDrills(event.id);
-  res.render('practice-timer', { event, drills });
+  // Non-staff can watch the clock; only staff get the control buttons.
+  res.render('practice-timer', { event, drills, isStaff: await isStaffReq(req) });
 });
 
 app.post('/event/:id/rsvp', async (req, res) => {
@@ -1533,9 +1834,12 @@ app.get('/admin', requireAdmin, async (req, res) => {
   }
   const rosterPhones = [...rosterPhoneSet];
 
+  const recentReschedules = await db.getRecentReschedules(req.teamId, 25);
+
   res.render('admin', {
     players, staff, confirmed, declined, pending, total: players.length, allEvents, teamEvents, savedLocations, rsvpCounts, accountsByPhone,
     rosterPhones,
+    recentReschedules,
     adminUser: req.session.admin,
     success: req.query.success || null,
     error: req.query.error || null,
@@ -1993,6 +2297,104 @@ app.post('/admin/clear-score', requireAdmin, async (req, res) => {
   const { event_id } = req.body;
   await db.clearGameScore(Number(event_id));
   res.redirect('/event/' + event_id);
+});
+
+// --- Reschedule a practice (rain-out, field conflict, etc.) ---
+// This updates the date/time on the existing row rather than creating a new
+// event, so the drills/plan, RSVPs, coach notes and any live practice session
+// all stay attached to the same event id. Coaches and admins only.
+app.post('/event/:id/reschedule', async (req, res) => {
+  const id = Number(req.params.id);
+  const fail = (msg) => res.redirect(`/event/${id}?reschedule_error=${encodeURIComponent(msg)}#reschedule-panel`);
+
+  const event = await db.getTeamEvent(id);
+  if (!event) return res.redirect('/');
+
+  // Authorize against the event's own team, not whichever team the coach happens
+  // to be browsing. Same idiom as the RSVP post: the event decides the scope.
+  const teamScope = event.team_id || req.teamId;
+  req.teamId = teamScope;
+  if (!(await isStaffReq(req))) return res.status(403).send('Coaches only.');
+
+  if (event.event_type !== 'practice') return fail('Only practices can be rescheduled here.');
+
+  const newDate = pickFormString(req.body.new_start_date);
+  const newStart = pickFormString(req.body.new_start_time);
+  const cleanDuration = pickFormString(req.body.duration);
+  const newEnd = cleanDuration ? calcEndTime(newStart, cleanDuration) : pickFormString(req.body.new_end_time);
+  const reason = (req.body.reason || '').trim().slice(0, 200) || null;
+
+  if (!newDate) return fail('Pick a new date.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) return fail('That date is not valid.');
+
+  const now = teamNow();
+
+  // Can't move a practice into the past. A same-day move is allowed as long as
+  // the new start time hasn't gone by yet — that's the common rain-delay case.
+  if (stamp(newDate, newStart, '23:59') < stamp(now.date, now.time)) {
+    return fail("You can't reschedule a practice to a date or time that has already passed.");
+  }
+
+  // Can't move a practice that already happened. Its end time bounds it; with no
+  // end time recorded, the practice owns the rest of its day.
+  if (stamp(event.end_date || event.start_date, event.end_time, '23:59') < stamp(now.date, now.time)) {
+    return fail('This practice has already ended. Add a new event instead of moving this one.');
+  }
+  const session = await db.getPracticeSession(id);
+  if (session && session.status === 'ended') {
+    return fail('This practice has already been run and closed out. Add a new event instead of moving this one.');
+  }
+
+  if (newDate === event.start_date && (newStart || null) === (event.start_time || null)) {
+    return fail("That's already when this practice is scheduled.");
+  }
+
+  const actor = isAdminView(req)
+    ? (req.session.admin.displayName || req.session.admin.username)
+    : ((req.parentUser && req.parentUser.display_name) || 'Coach');
+  const oldWhen = formatWhen(event.start_date, event.start_time);
+  const newWhen = formatWhen(newDate, newStart);
+  const notify = !!req.body.notify;
+
+  // Single update, date/time columns only — every child record keeps pointing at
+  // this same event id.
+  await db.rescheduleTeamEvent(id, {
+    start_date: newDate,
+    start_time: newStart,
+    end_date: event.end_date ? newDate : null,
+    end_time: newEnd,
+  });
+
+  await db.logReschedule({
+    team_event_id: id,
+    old_start_date: event.start_date,
+    old_start_time: event.start_time,
+    old_end_date: event.end_date,
+    old_end_time: event.end_time,
+    new_start_date: newDate,
+    new_start_time: newStart,
+    new_end_date: event.end_date ? newDate : null,
+    new_end_time: newEnd,
+    reason,
+    rescheduled_by: actor,
+    notified: notify,
+  });
+
+  let notice = `Practice moved to ${newWhen}. The practice plan carried over.`;
+  if (notify) {
+    try {
+      const sent = await notifyReschedule(
+        { ...event, start_date: newDate, start_time: newStart }, teamScope,
+        oldWhen, newWhen, reason, actor, res.locals.teamName
+      );
+      notice += ` Team notified (${sent} message${sent === 1 ? '' : 's'} sent, plus a Team Board post).`;
+    } catch (err) {
+      console.error('Reschedule notification error:', err.message);
+      notice += ' The team notification failed to send — post to the Team Board manually.';
+    }
+  }
+
+  res.redirect(`/event/${id}?reschedule_success=${encodeURIComponent(notice)}`);
 });
 
 app.post('/event/:id/clear-lineup', requireAdmin, async (req, res) => {

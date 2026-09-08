@@ -38,6 +38,26 @@ const PROFILE_COLS = [
 
 let impl;
 
+// Practice-session timestamps are epoch millis. Postgres returns BIGINT as a
+// string and SQLite may hand back nulls, so both impls run rows through this to
+// give the server a single numeric shape to reason about.
+function normalizePracticeRow(r) {
+  if (!r) return null;
+  const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+  return {
+    team_event_id: num(r.team_event_id),
+    status: r.status || 'idle',
+    drill_index: num(r.drill_index) || 0,
+    schedule_json: r.schedule_json || '[]',
+    section_started_at: num(r.section_started_at),
+    paused_at: num(r.paused_at),
+    practice_started_at: num(r.practice_started_at),
+    ended_at: num(r.ended_at),
+    version: num(r.version) || 0,
+    updated_at: num(r.updated_at) || 0,
+  };
+}
+
 async function init() {
   if (process.env.DATABASE_URL) {
     const { Pool } = require('pg');
@@ -240,6 +260,46 @@ async function init() {
     try { await pool.query('ALTER TABLE practice_drills ADD COLUMN assigned_staff TEXT'); } catch (e) { /* exists */ }
     try { await pool.query('ALTER TABLE practice_drills ADD COLUMN block_name TEXT'); } catch (e) { /* exists */ }
     try { await pool.query('ALTER TABLE practice_drills ADD COLUMN parallel_group TEXT'); } catch (e) { /* exists */ }
+
+    // Server-authoritative practice clock: one live session per event. Clients
+    // never store elapsed time, they derive it from section_started_at.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS practice_sessions (
+        team_event_id INTEGER PRIMARY KEY REFERENCES team_events(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'idle',
+        drill_index INTEGER NOT NULL DEFAULT 0,
+        schedule_json TEXT NOT NULL DEFAULT '[]',
+        section_started_at BIGINT,
+        paused_at BIGINT,
+        practice_started_at BIGINT,
+        ended_at BIGINT,
+        version INTEGER NOT NULL DEFAULT 0,
+        updated_at BIGINT NOT NULL DEFAULT 0
+      )
+    `);
+
+    // Audit trail for rescheduled events (rain-outs, field conflicts). The
+    // event itself is updated in place so drills, RSVPs and the practice
+    // session stay attached; this table is the only record of where it moved
+    // from and who moved it.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS event_reschedules (
+        id SERIAL PRIMARY KEY,
+        team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
+        old_start_date TEXT,
+        old_start_time TEXT,
+        old_end_date TEXT,
+        old_end_time TEXT,
+        new_start_date TEXT,
+        new_start_time TEXT,
+        new_end_date TEXT,
+        new_end_time TEXT,
+        reason TEXT,
+        rescheduled_by TEXT NOT NULL,
+        notified INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS site_settings (
@@ -831,6 +891,34 @@ async function init() {
         [e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null, id]
       ),
       removeTeamEvent: async (id) => pool.query('DELETE FROM team_events WHERE id = $1', [id]),
+      // Touches only the date/time columns so the row keeps its id and every
+      // child record (drills, RSVPs, lineups, practice session) stays attached.
+      rescheduleTeamEvent: async (id, e) => pool.query(
+        'UPDATE team_events SET start_date=$1, start_time=$2, end_date=$3, end_time=$4 WHERE id=$5',
+        [e.start_date, e.start_time, e.end_date, e.end_time, id]
+      ),
+      logReschedule: async (r) => pool.query(
+        `INSERT INTO event_reschedules (team_event_id, old_start_date, old_start_time, old_end_date, old_end_time,
+           new_start_date, new_start_time, new_end_date, new_end_time, reason, rescheduled_by, notified)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [r.team_event_id, r.old_start_date, r.old_start_time, r.old_end_date, r.old_end_time,
+         r.new_start_date, r.new_start_time, r.new_end_date, r.new_end_time, r.reason || null, r.rescheduled_by, r.notified ? 1 : 0]
+      ),
+      getReschedules: async (eventId) => (await pool.query('SELECT * FROM event_reschedules WHERE team_event_id = $1 ORDER BY created_at DESC, id DESC', [eventId])).rows,
+      // event_reschedules hangs off team_events and so carries no team_id of its
+      // own (same rule as rsvps and the other child tables). Scope comes from
+      // the parent event; without a teamId this returns every team's activity,
+      // which only the global admin view should ever ask for.
+      getRecentReschedules: async (teamId, limit) => teamId
+        ? (await pool.query(
+            `SELECT r.*, te.title, te.event_type FROM event_reschedules r
+             JOIN team_events te ON te.id = r.team_event_id
+             WHERE te.team_id = $1
+             ORDER BY r.created_at DESC, r.id DESC LIMIT $2`, [teamId, limit || 25])).rows
+        : (await pool.query(
+            `SELECT r.*, te.title, te.event_type FROM event_reschedules r
+             LEFT JOIN team_events te ON te.id = r.team_event_id
+             ORDER BY r.created_at DESC, r.id DESC LIMIT $1`, [limit || 25])).rows,
       updateBattingAll: async (id, val) => pool.query('UPDATE team_events SET batting_all = $1 WHERE id = $2', [val ? 1 : 0, id]),
       updateLineupSize: async (id, size) => pool.query('UPDATE team_events SET lineup_size = $1 WHERE id = $2', [Math.max(1, Math.min(20, Number(size) || 9)), id]),
       getDrills: async (eventId) => (await pool.query('SELECT * FROM practice_drills WHERE team_event_id = $1 ORDER BY sort_order', [eventId])).rows,
@@ -838,6 +926,18 @@ async function init() {
       updateDrill: async (id, d) => pool.query('UPDATE practice_drills SET drill_name=$1, description=$2, duration_minutes=$3, sort_order=$4, coach_notes=$5, assigned_staff=$6, block_name=$7, parallel_group=$8 WHERE id=$9', [d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, d.block_name || null, d.parallel_group || null, id]),
       removeDrill: async (id) => pool.query('DELETE FROM practice_drills WHERE id = $1', [id]),
       clearDrills: async (eventId) => pool.query('DELETE FROM practice_drills WHERE team_event_id = $1', [eventId]),
+      getPracticeSession: async (eventId) => normalizePracticeRow(
+        (await pool.query('SELECT * FROM practice_sessions WHERE team_event_id = $1', [eventId])).rows[0]
+      ),
+      savePracticeSession: async (s) => pool.query(
+        `INSERT INTO practice_sessions (team_event_id, status, drill_index, schedule_json, section_started_at, paused_at, practice_started_at, ended_at, version, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (team_event_id) DO UPDATE SET
+           status=$2, drill_index=$3, schedule_json=$4, section_started_at=$5,
+           paused_at=$6, practice_started_at=$7, ended_at=$8, version=$9, updated_at=$10`,
+        [s.team_event_id, s.status, s.drill_index, s.schedule_json, s.section_started_at, s.paused_at, s.practice_started_at, s.ended_at, s.version, s.updated_at]
+      ),
+      clearPracticeSession: async (eventId) => pool.query('DELETE FROM practice_sessions WHERE team_event_id = $1', [eventId]),
       getSubEvents: async (eventId) => (await pool.query('SELECT * FROM tournament_sub_events WHERE team_event_id = $1 ORDER BY start_date, start_time, sort_order', [eventId])).rows,
       getSubEvent: async (id) => (await pool.query('SELECT * FROM tournament_sub_events WHERE id = $1', [id])).rows[0] || null,
       addSubEvent: async (s) => (await pool.query('INSERT INTO tournament_sub_events (team_event_id, sub_type, title, start_date, start_time, end_time, location_name, opponent, notes, batting_all, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id', [s.team_event_id, s.sub_type, s.title, s.start_date, s.start_time, s.end_time, s.location_name, s.opponent, s.notes, s.batting_all || 0, s.sort_order || 0])).rows[0],
@@ -1461,6 +1561,40 @@ async function init() {
     try { sqliteDb.exec('ALTER TABLE practice_drills ADD COLUMN parallel_group TEXT'); } catch (e) { /* exists */ }
 
     sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS practice_sessions (
+        team_event_id INTEGER PRIMARY KEY REFERENCES team_events(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'idle',
+        drill_index INTEGER NOT NULL DEFAULT 0,
+        schedule_json TEXT NOT NULL DEFAULT '[]',
+        section_started_at INTEGER,
+        paused_at INTEGER,
+        practice_started_at INTEGER,
+        ended_at INTEGER,
+        version INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS event_reschedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_event_id INTEGER NOT NULL REFERENCES team_events(id) ON DELETE CASCADE,
+        old_start_date TEXT,
+        old_start_time TEXT,
+        old_end_date TEXT,
+        old_end_time TEXT,
+        new_start_date TEXT,
+        new_start_time TEXT,
+        new_end_date TEXT,
+        new_end_time TEXT,
+        reason TEXT,
+        rescheduled_by TEXT NOT NULL,
+        notified INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS site_settings (
         key TEXT PRIMARY KEY,
         value TEXT
@@ -2029,6 +2163,35 @@ async function init() {
         'UPDATE team_events SET event_type=?, title=?, start_date=?, start_time=?, end_date=?, end_time=?, location_name=?, address=?, notes=?, hotel_info=?, carpool_info=?, opponent_name=? WHERE id=?'
       ).run(e.event_type, e.title, e.start_date, e.start_time, e.end_date, e.end_time, e.location_name, e.address, e.notes, e.hotel_info, e.carpool_info, e.opponent_name || null, id),
       removeTeamEvent: async (id) => sqliteDb.prepare('DELETE FROM team_events WHERE id = ?').run(id),
+      // Touches only the date/time columns so the row keeps its id and every
+      // child record (drills, RSVPs, lineups, practice session) stays attached.
+      rescheduleTeamEvent: async (id, e) => sqliteDb.prepare(
+        'UPDATE team_events SET start_date=?, start_time=?, end_date=?, end_time=? WHERE id=?'
+      ).run(e.start_date, e.start_time, e.end_date, e.end_time, id),
+      // created_at is written explicitly as ISO rather than left to SQLite's
+      // CURRENT_TIMESTAMP, whose 'YYYY-MM-DD HH:MM:SS' form JS parses as local
+      // time. Postgres hands back a real timestamp, so this keeps both drivers
+      // rendering the same instant in the views.
+      logReschedule: async (r) => sqliteDb.prepare(
+        `INSERT INTO event_reschedules (team_event_id, old_start_date, old_start_time, old_end_date, old_end_time,
+           new_start_date, new_start_time, new_end_date, new_end_time, reason, rescheduled_by, notified, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      ).run(r.team_event_id, r.old_start_date, r.old_start_time, r.old_end_date, r.old_end_time,
+            r.new_start_date, r.new_start_time, r.new_end_date, r.new_end_time, r.reason || null, r.rescheduled_by, r.notified ? 1 : 0,
+            new Date().toISOString()),
+      getReschedules: async (eventId) => sqliteDb.prepare('SELECT * FROM event_reschedules WHERE team_event_id = ? ORDER BY created_at DESC, id DESC').all(eventId),
+      getRecentReschedules: async (teamId, limit) => teamId
+        ? sqliteDb.prepare(
+            `SELECT r.*, te.title, te.event_type FROM event_reschedules r
+             JOIN team_events te ON te.id = r.team_event_id
+             WHERE te.team_id = ?
+             ORDER BY r.created_at DESC, r.id DESC LIMIT ?`
+          ).all(teamId, limit || 25)
+        : sqliteDb.prepare(
+            `SELECT r.*, te.title, te.event_type FROM event_reschedules r
+             LEFT JOIN team_events te ON te.id = r.team_event_id
+             ORDER BY r.created_at DESC, r.id DESC LIMIT ?`
+          ).all(limit || 25),
       updateBattingAll: async (id, val) => sqliteDb.prepare('UPDATE team_events SET batting_all = ? WHERE id = ?').run(val ? 1 : 0, id),
       updateLineupSize: async (id, size) => sqliteDb.prepare('UPDATE team_events SET lineup_size = ? WHERE id = ?').run(Math.max(1, Math.min(20, Number(size) || 9)), id),
       getDrills: async (eventId) => sqliteDb.prepare('SELECT * FROM practice_drills WHERE team_event_id = ? ORDER BY sort_order').all(eventId),
@@ -2039,6 +2202,19 @@ async function init() {
       updateDrill: async (id, d) => sqliteDb.prepare('UPDATE practice_drills SET drill_name=?, description=?, duration_minutes=?, sort_order=?, coach_notes=?, assigned_staff=?, block_name=?, parallel_group=? WHERE id=?').run(d.drill_name, d.description, d.duration_minutes, d.sort_order, d.coach_notes || null, d.assigned_staff || null, d.block_name || null, d.parallel_group || null, id),
       removeDrill: async (id) => sqliteDb.prepare('DELETE FROM practice_drills WHERE id = ?').run(id),
       clearDrills: async (eventId) => sqliteDb.prepare('DELETE FROM practice_drills WHERE team_event_id = ?').run(eventId),
+      getPracticeSession: async (eventId) => normalizePracticeRow(
+        sqliteDb.prepare('SELECT * FROM practice_sessions WHERE team_event_id = ?').get(eventId)
+      ),
+      savePracticeSession: async (s) => sqliteDb.prepare(
+        `INSERT INTO practice_sessions (team_event_id, status, drill_index, schedule_json, section_started_at, paused_at, practice_started_at, ended_at, version, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(team_event_id) DO UPDATE SET
+           status=excluded.status, drill_index=excluded.drill_index, schedule_json=excluded.schedule_json,
+           section_started_at=excluded.section_started_at, paused_at=excluded.paused_at,
+           practice_started_at=excluded.practice_started_at, ended_at=excluded.ended_at,
+           version=excluded.version, updated_at=excluded.updated_at`
+      ).run(s.team_event_id, s.status, s.drill_index, s.schedule_json, s.section_started_at, s.paused_at, s.practice_started_at, s.ended_at, s.version, s.updated_at),
+      clearPracticeSession: async (eventId) => sqliteDb.prepare('DELETE FROM practice_sessions WHERE team_event_id = ?').run(eventId),
       getSubEvents: async (eventId) => sqliteDb.prepare('SELECT * FROM tournament_sub_events WHERE team_event_id = ? ORDER BY start_date, start_time, sort_order').all(eventId),
       getSubEvent: async (id) => sqliteDb.prepare('SELECT * FROM tournament_sub_events WHERE id = ?').get(id) || null,
       addSubEvent: async (s) => {
@@ -2561,6 +2737,10 @@ module.exports = {
   addTeamEvent: (...args) => impl.addTeamEvent(...args),
   updateTeamEvent: (...args) => impl.updateTeamEvent(...args),
   removeTeamEvent: (...args) => impl.removeTeamEvent(...args),
+  rescheduleTeamEvent: (...args) => impl.rescheduleTeamEvent(...args),
+  logReschedule: (...args) => impl.logReschedule(...args),
+  getReschedules: (...args) => impl.getReschedules(...args),
+  getRecentReschedules: (...args) => impl.getRecentReschedules(...args),
   updateBattingAll: (...args) => impl.updateBattingAll(...args),
   updateLineupSize: (...args) => impl.updateLineupSize(...args),
   getDrills: (...args) => impl.getDrills(...args),
@@ -2568,6 +2748,9 @@ module.exports = {
   updateDrill: (...args) => impl.updateDrill(...args),
   removeDrill: (...args) => impl.removeDrill(...args),
   clearDrills: (...args) => impl.clearDrills(...args),
+  getPracticeSession: (...args) => impl.getPracticeSession(...args),
+  savePracticeSession: (...args) => impl.savePracticeSession(...args),
+  clearPracticeSession: (...args) => impl.clearPracticeSession(...args),
   getSubEvents: (...args) => impl.getSubEvents(...args),
   getSubEvent: (...args) => impl.getSubEvent(...args),
   addSubEvent: (...args) => impl.addSubEvent(...args),
