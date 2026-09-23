@@ -65,6 +65,43 @@
     .pt-conn { font-size: 11px; color: #ef4444; margin-top: 8px; min-height: 14px; }
     .pt-viewer-note { font-size: 12px; color: #64748b; margin-top: 12px; }
 
+    /* Tappable current/next cards + the drill detail sheet */
+    .pt-tappable { cursor: pointer; }
+    .pt-tappable:active { transform: scale(0.98); }
+    .pt-drill-more { font-size: 11px; color: #d4a843; font-weight: 700; margin-top: 3px; letter-spacing: 0.4px; }
+    .pt-head-tap { cursor: pointer; border-radius: 10px; padding: 6px 8px; margin: -6px -8px 0; }
+    .pt-head-tap:active { background: rgba(212,168,67,0.12); }
+    .pt-tap-hint { font-size: 11px; color: #d4a843; font-weight: 700; letter-spacing: 0.4px; margin-top: 2px; }
+
+    .pt-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 9000; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+    .pt-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    .pt-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9001; background: #1e293b;
+      border-top-left-radius: 18px; border-top-right-radius: 18px; box-shadow: 0 -8px 30px rgba(0,0,0,0.5);
+      max-height: 88vh; max-height: 88dvh; display: flex; flex-direction: column;
+      transform: translateY(100%); transition: transform 0.25s ease-out; }
+    .pt-sheet.open { transform: translateY(0); }
+    .pt-sheet-grab { width: 40px; height: 4px; background: #475569; border-radius: 2px; margin: 10px auto 4px; flex-shrink: 0; }
+    .pt-sheet-head { display: flex; align-items: flex-start; gap: 12px; padding: 6px 18px 12px; border-bottom: 1px solid #334155; flex-shrink: 0; }
+    .pt-sheet-title { flex: 1; min-width: 0; }
+    .pt-sheet-name { font-size: 20px; font-weight: 800; color: #fff; line-height: 1.25; }
+    .pt-sheet-meta { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+    .pt-sheet-badge { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.6px;
+      padding: 3px 8px; border-radius: 999px; background: #334155; color: #cbd5e1; margin-bottom: 6px; }
+    .pt-sheet-badge.now { background: #d4a843; color: #1a2744; }
+    .pt-sheet-badge.next { background: #3b82f6; color: #fff; }
+    .pt-sheet-close { width: 44px; height: 44px; flex-shrink: 0; border: none; border-radius: 50%;
+      background: #334155; color: #e2e8f0; font-size: 24px; line-height: 1; cursor: pointer; }
+    .pt-sheet-close:active { background: #475569; }
+    .pt-sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 18px 28px;
+      padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
+    .pt-field { margin-bottom: 18px; }
+    .pt-field-label { font-size: 11px; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase; color: #64748b; margin-bottom: 5px; }
+    .pt-field-text { font-size: 15px; line-height: 1.55; color: #e2e8f0; white-space: pre-wrap; word-wrap: break-word; }
+    .pt-field.notes { background: #2a2118; border-left: 3px solid #d97706; border-radius: 8px; padding: 12px 14px; }
+    .pt-field.notes .pt-field-label { color: #d97706; }
+    .pt-sheet-empty { font-size: 14px; color: #64748b; font-style: italic; }
+
     .pt-complete { text-align: center; padding: 32px 16px; }
     .pt-complete-icon { font-size: 48px; margin-bottom: 12px; }
     .pt-complete-text { font-size: 22px; font-weight: 800; color: #22c55e; margin-bottom: 8px; }
@@ -85,8 +122,11 @@
   </div>
 
   <div class="pt-timer">
-    <div class="pt-drill-label" id="drill-label">Ready to start</div>
-    <div class="pt-drill-desc" id="drill-desc"></div>
+    <div id="head-tap">
+      <div class="pt-drill-label" id="drill-label">Ready to start</div>
+      <div class="pt-drill-desc" id="drill-desc"></div>
+      <div class="pt-tap-hint" id="cur-hint" style="display:none;">TAP FOR DETAILS &amp; NOTES</div>
+    </div>
     <div class="pt-clock" id="clock">00:00</div>
     <div class="pt-progress"><div class="pt-progress-fill" id="progress"></div></div>
     <div class="pt-next-label" id="next-label"></div>
@@ -124,12 +164,29 @@
     var EVENT_ID = <%= event.id %>;
     var IS_STAFF = <%= isStaff ? 'true' : 'false' %>;
     var PLAN = <%- JSON.stringify(drills.map(function(d) { return { name: d.drill_name, desc: d.description || '', mins: d.duration_minutes }; })) %>;
+    // Full drill records keyed by id, for the detail sheet. Coach notes are
+    // staff-only elsewhere in the app, so non-staff never receive the field at
+    // all rather than having it hidden client-side.
+    var DETAILS = <%- JSON.stringify(drills.reduce(function(acc, d) {
+      acc[d.id] = {
+        name: d.drill_name,
+        mins: d.duration_minutes,
+        desc: d.description || '',
+        block: d.block_name || '',
+        parallel: d.parallel_group || '',
+        staff: d.assigned_staff || '',
+        notes: isStaff ? (d.coach_notes || '') : ''
+      };
+      return acc;
+    }, {})) %>;
 
     var label = document.getElementById('drill-label');
     var desc = document.getElementById('drill-desc');
     var clock = document.getElementById('clock');
     var progress = document.getElementById('progress');
     var nextLabel = document.getElementById('next-label');
+    var headTap = document.getElementById('head-tap');
+    var curHint = document.getElementById('cur-hint');
     var controls = document.getElementById('controls');
     var overallBar = document.getElementById('overall-bar');
     var drillCounter = document.getElementById('drill-counter');
@@ -156,11 +213,16 @@
       var html = '';
       for (var i = 0; i < schedule.length; i++) {
         var d = schedule[i];
-        var cls = 'pt-drill' + (i < idx ? ' done' : (i === idx && live ? ' active' : ''));
-        html += '<div class="' + cls + '" id="drill-' + i + '">' +
+        // Only the drill on now and the one up next open details, so the last
+        // section leaves nothing extra to tap.
+        var tappable = live && (i === idx || i === idx + 1) && !!DETAILS[d.id];
+        var cls = 'pt-drill' + (i < idx ? ' done' : (i === idx && live ? ' active' : '')) + (tappable ? ' pt-tappable' : '');
+        html += '<div class="' + cls + '" id="drill-' + i + '"' +
+          (tappable ? ' data-drill-id="' + d.id + '" role="button" tabindex="0"' : '') + '>' +
           '<div class="pt-drill-num">' + (i + 1) + '</div>' +
           '<div class="pt-drill-info"><div class="pt-drill-name"></div>' +
-          (d.desc ? '<div class="pt-drill-subdesc"></div>' : '') + '</div>' +
+          (d.desc ? '<div class="pt-drill-subdesc"></div>' : '') +
+          (tappable ? '<div class="pt-drill-more">TAP FOR DETAILS &amp; NOTES</div>' : '') + '</div>' +
           '<div class="pt-drill-time">' + d.mins + ' min</div>' +
           '<div class="pt-drill-check">&#10003;</div></div>';
       }
@@ -171,10 +233,106 @@
         card.querySelector('.pt-drill-name').textContent = schedule[j].name;
         var sub = card.querySelector('.pt-drill-subdesc');
         if (sub) sub.textContent = schedule[j].desc;
+        if (card.dataset.drillId) {
+          (function(cardEl, id) {
+            cardEl.onclick = function() { openSheet(id); };
+            cardEl.onkeydown = function(e) {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet(id); }
+            };
+          })(card, card.dataset.drillId);
+        }
       }
       var act = document.getElementById('drill-' + idx);
       if (act && live) act.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+
+    // ---------------------------------------------------------------------
+    // Drill detail sheet. Purely presentational: it never touches the clock,
+    // so the timer keeps polling, ticking and alarming while it is open.
+    // ---------------------------------------------------------------------
+    var sheet = document.getElementById('sheet');
+    var backdrop = document.getElementById('sheet-backdrop');
+    var sheetBody = document.getElementById('sheet-body');
+    var openDrillId = null;   // pinned by id, so a rotation won't swap the content underneath
+
+    function field(labelText, value, extraCls) {
+      var wrap = document.createElement('div');
+      wrap.className = 'pt-field' + (extraCls ? ' ' + extraCls : '');
+      var lab = document.createElement('div');
+      lab.className = 'pt-field-label';
+      lab.textContent = labelText;
+      var txt = document.createElement('div');
+      txt.className = 'pt-field-text';
+      txt.textContent = value;
+      wrap.appendChild(lab);
+      wrap.appendChild(txt);
+      return wrap;
+    }
+
+    function sheetIsOpen() { return sheet.classList.contains('open'); }
+
+    function closeSheet() {
+      openDrillId = null;
+      sheet.classList.remove('open');
+      backdrop.classList.remove('open');
+    }
+
+    function openSheet(drillId) {
+      var d = DETAILS[drillId];
+      if (!d) return;
+      // Tapping the same card again collapses it back to the timer.
+      if (sheetIsOpen() && openDrillId === drillId) { closeSheet(); return; }
+      openDrillId = drillId;
+
+      document.getElementById('sheet-name').textContent = d.name;
+      var meta = [d.mins + ' min'];
+      if (d.block) meta.push('Block: ' + d.block);
+      if (d.parallel) meta.push('Runs parallel: ' + d.parallel);
+      if (d.staff) meta.push('Led by ' + d.staff);
+      document.getElementById('sheet-meta').textContent = meta.join('  \u00b7  ');
+
+      sheetBody.innerHTML = '';
+      var any = false;
+      if (d.desc) { sheetBody.appendChild(field('Description', d.desc)); any = true; }
+      if (d.notes) { sheetBody.appendChild(field('Coach Notes', d.notes, 'notes')); any = true; }
+      if (!any) {
+        var empty = document.createElement('div');
+        empty.className = 'pt-sheet-empty';
+        empty.textContent = 'No description or notes saved for this drill.';
+        sheetBody.appendChild(empty);
+      }
+      sheetBody.scrollTop = 0;
+
+      updateSheetBadge();
+      sheet.classList.add('open');
+      backdrop.classList.add('open');
+    }
+
+    // Recomputed on every tick so the badge stays truthful if the section
+    // rotates while the coach is reading.
+    function updateSheetBadge() {
+      if (!sheetIsOpen()) return;
+      var badge = document.getElementById('sheet-badge');
+      var s = clockObj.state;
+      var live = s && (s.status === 'running' || s.status === 'paused');
+      var sched = s && s.schedule && s.schedule.length ? s.schedule : [];
+      var pos = -1;
+      for (var i = 0; i < sched.length; i++) {
+        if (String(sched[i].id) === String(openDrillId)) { pos = i; break; }
+      }
+      badge.className = 'pt-sheet-badge';
+      if (!live || pos < 0) { badge.textContent = 'DRILL'; return; }
+      if (pos === s.index) { badge.textContent = 'ON NOW'; badge.classList.add('now'); }
+      else if (pos === s.index + 1) { badge.textContent = 'UP NEXT'; badge.classList.add('next'); }
+      else if (pos < s.index) { badge.textContent = 'COMPLETED'; }
+      else { badge.textContent = 'LATER'; }
+    }
+
+    document.getElementById('sheet-close').onclick = closeSheet;
+    backdrop.onclick = closeSheet;
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && sheetIsOpen()) closeSheet();
+    });
 
     function btn(cls, text, fn) {
       var b = document.createElement('button');
@@ -239,6 +397,14 @@
       overallBar.style.display = live || s.status === 'ended' ? '' : 'none';
 
       if (!live) {
+        // Nothing is "on now" or "up next" outside a running practice.
+        if (sheetIsOpen()) closeSheet();
+        headTap.onclick = null;
+        headTap.style.cursor = '';
+        curHint.style.display = 'none';
+        nextLabel.onclick = null;
+        nextLabel.className = 'pt-next-label';
+        nextLabel.style.cursor = '';
         label.textContent = s.status === 'ended' ? 'Practice Complete!' : 'Ready to start';
         desc.textContent = '';
         clock.textContent = s.status === 'ended' ? fmt(c.elapsedTotal()) : '00:00';
@@ -271,8 +437,24 @@
       clock.className = 'pt-clock' + (cls ? ' ' + cls : '');
       progress.className = 'pt-progress-fill' + (cls ? ' ' + cls : '');
 
+      // Header tap targets: the current drill block, and the "Next:" line.
+      // The next line is only tappable when a next drill actually exists.
+      var curHasDetail = !!DETAILS[cur.id];
+      headTap.className = 'pt-head-tap' + (curHasDetail ? '' : ' pt-head-plain');
+      headTap.onclick = curHasDetail ? function() { openSheet(cur.id); } : null;
+      headTap.style.cursor = curHasDetail ? 'pointer' : '';
+      curHint.style.display = curHasDetail ? '' : 'none';
+
       var nxt = schedule[s.index + 1];
       nextLabel.textContent = nxt ? 'Next: ' + nxt.name + ' (' + nxt.mins + ' min)' : 'Final drill';
+      var nxtHasDetail = !!(nxt && DETAILS[nxt.id]);
+      nextLabel.className = 'pt-next-label' + (nxtHasDetail ? ' pt-head-tap' : '');
+      nextLabel.onclick = nxtHasDetail ? function() { openSheet(nxt.id); } : null;
+      nextLabel.style.cursor = nxtHasDetail ? 'pointer' : '';
+      nextLabel.setAttribute('role', nxtHasDetail ? 'button' : 'presentation');
+      if (nxtHasDetail) { nextLabel.setAttribute('tabindex', '0'); } else { nextLabel.removeAttribute('tabindex'); }
+
+      updateSheetBadge();
 
       drillCounter.textContent = (s.index + 1) + ' / ' + schedule.length;
       elapsedEl.textContent = fmt(c.elapsedTotal());
@@ -295,5 +477,19 @@
     clockObj.start();
   })();
   </script>
+  <div class="pt-backdrop" id="sheet-backdrop"></div>
+  <div class="pt-sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-name">
+    <div class="pt-sheet-grab"></div>
+    <div class="pt-sheet-head">
+      <div class="pt-sheet-title">
+        <div class="pt-sheet-badge" id="sheet-badge"></div>
+        <div class="pt-sheet-name" id="sheet-name"></div>
+        <div class="pt-sheet-meta" id="sheet-meta"></div>
+      </div>
+      <button class="pt-sheet-close" id="sheet-close" aria-label="Close drill details">&times;</button>
+    </div>
+    <div class="pt-sheet-body" id="sheet-body"></div>
+  </div>
+
 </body>
 </html>
