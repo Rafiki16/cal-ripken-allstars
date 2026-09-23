@@ -4878,39 +4878,75 @@ app.post('/event/:id/save-as-program', requireAdmin, async (req, res) => {
   res.redirect('/admin/programs/' + result.id + '/edit?success=Practice+plan+saved+as+template');
 });
 
-// Copy every drill from another practice into this one. Works across teams.
-app.post('/event/:id/copy-practice', requireAdmin, async (req, res) => {
-  const event = await db.getTeamEvent(Number(req.params.id));
-  if (!event || event.event_type !== 'practice') return res.redirect('/admin');
-  const sourceId = Number(req.body.source_event_id);
-  const source = await db.getTeamEvent(sourceId);
-  if (!source || source.id === event.id) {
-    return res.redirect('/event/' + event.id + '?error=' + encodeURIComponent('Pick a practice to copy from.'));
-  }
-  const sourceDrills = await db.getDrills(source.id);
-  if (sourceDrills.length === 0) {
-    return res.redirect('/event/' + event.id + '?error=' + encodeURIComponent('That practice has no drills.'));
-  }
-  const existing = await db.getDrills(event.id);
-  let order = existing.length;
-  const crossTeam = (source.team_id || null) !== (event.team_id || null);
-  for (const d of sourceDrills) {
+// Write a set of drills onto a practice, starting at sort_order `order`.
+// A coach assigned on another team isn't on this one, so a cross-team copy
+// drops the assignment rather than carrying over a name that means nothing here.
+async function copyDrillsOnto(targetEvent, drills, crossTeam, order = 0) {
+  for (const d of drills) {
     await db.addDrill({
-      team_event_id: event.id,
+      team_event_id: targetEvent.id,
       drill_name: d.drill_name,
       description: d.description,
       duration_minutes: d.duration_minutes,
       sort_order: order++,
       coach_notes: d.coach_notes,
-      // A coach assigned on another team isn't on this one, so drop the
-      // assignment rather than carry over a name that means nothing here.
       assigned_staff: crossTeam ? null : d.assigned_staff,
       block_name: d.block_name,
       parallel_group: d.parallel_group,
     });
   }
-  const from = crossTeam ? ` from ${source.title}` : '';
-  res.redirect('/event/' + event.id + '?success=' + encodeURIComponent(`Copied ${sourceDrills.length} drills${from}`));
+}
+
+// Move practice plans between practices, in either direction, past or future.
+//   replace - overwrite this practice's plan with the other one's
+//   append  - add the other plan's drills after this one's
+//   swap    - exchange the two plans, so the running order can be reshuffled
+//             without a copy destroying the plan it lands on
+app.post('/event/:id/copy-practice', requireAdmin, async (req, res) => {
+  const event = await db.getTeamEvent(Number(req.params.id));
+  if (!event || event.event_type !== 'practice') return res.redirect('/admin');
+  const back = (q) => res.redirect('/event/' + event.id + '?' + q);
+
+  const mode = ['replace', 'append', 'swap'].includes(req.body.mode) ? req.body.mode : 'replace';
+  const source = await db.getTeamEvent(Number(req.body.source_event_id));
+  if (!source || source.id === event.id || source.event_type !== 'practice') {
+    return back('error=' + encodeURIComponent('Pick a practice to copy from.'));
+  }
+
+  const sourceDrills = await db.getDrills(source.id);
+  const targetDrills = await db.getDrills(event.id);
+  const crossTeam = (source.team_id || null) !== (event.team_id || null);
+
+  if (mode === 'swap') {
+    if (sourceDrills.length === 0 && targetDrills.length === 0) {
+      return back('error=' + encodeURIComponent('Neither practice has any drills to swap.'));
+    }
+    await db.clearDrills(event.id);
+    await db.clearDrills(source.id);
+    await copyDrillsOnto(event, sourceDrills, crossTeam);
+    await copyDrillsOnto(source, targetDrills, crossTeam);
+    return back('success=' + encodeURIComponent(
+      `Swapped plans with ${source.title} — this practice now has ${sourceDrills.length} drills, that one has ${targetDrills.length}`
+    ));
+  }
+
+  if (sourceDrills.length === 0) {
+    return back('error=' + encodeURIComponent('That practice has no drills.'));
+  }
+
+  let order = 0;
+  if (mode === 'replace') {
+    await db.clearDrills(event.id);
+  } else {
+    order = targetDrills.length;
+  }
+  await copyDrillsOnto(event, sourceDrills, crossTeam, order);
+
+  const from = ` from ${source.title}`;
+  const verb = mode === 'replace'
+    ? `Replaced this plan with ${sourceDrills.length} drills`
+    : `Added ${sourceDrills.length} drills`;
+  return back('success=' + encodeURIComponent(verb + from));
 });
 
 app.post('/event/:id/load-program', requireAdmin, async (req, res) => {

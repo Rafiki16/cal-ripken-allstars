@@ -580,8 +580,9 @@
           <% if (srcMine.length + srcOther.length > 0) { %>
           <div style="margin-bottom:16px; padding-bottom:16px; border-bottom:1px solid var(--gray-200);">
             <h4 class="ed-admin-title">Copy from Another Practice</h4>
-            <p class="section-hint" style="margin-bottom:8px;">Pulls every drill from a past practice into this one, including plans from your other teams.</p>
-            <form method="POST" action="/event/<%= event.id %>/copy-practice" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+            <p class="section-hint" style="margin-bottom:8px;">Move a plan in from any other practice &mdash; past or upcoming, including your other teams. <strong>Swap</strong> trades the two plans, so you can reorder plans across practices without overwriting one.</p>
+            <form method="POST" action="/event/<%= event.id %>/copy-practice" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;"
+                  onsubmit="return ptConfirmCopy(this);">
               <div style="flex:1; min-width:200px;">
                 <select name="source_event_id" class="form-input" style="width:100%;" required>
                   <option value="">Select a practice...</option>
@@ -597,9 +598,32 @@
                   <% } %>
                 </select>
               </div>
-              <button type="submit" class="btn btn-secondary" style="white-space:nowrap;">Copy Drills</button>
+              <div style="min-width:150px;">
+                <select name="mode" class="form-input" style="width:100%;">
+                  <option value="replace">Replace this plan</option>
+                  <option value="append">Add to this plan</option>
+                  <option value="swap">Swap the two plans</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-secondary" style="white-space:nowrap;">Apply</button>
             </form>
           </div>
+          <script>
+            // Replace and swap both discard drills, so confirm before they run.
+            function ptConfirmCopy(form) {
+              var mode = form.mode.value;
+              var picked = form.source_event_id.options[form.source_event_id.selectedIndex];
+              var name = picked ? picked.textContent.split(' — ')[0] : 'that practice';
+              var have = <%= drills.length %>;
+              if (mode === 'replace' && have > 0) {
+                return confirm('Replace this practice\'s ' + have + ' drill(s) with the plan from ' + name + '?\n\nThe current plan will be discarded.');
+              }
+              if (mode === 'swap') {
+                return confirm('Swap plans with ' + name + '?\n\nEach practice will end up with the other\'s drills.');
+              }
+              return true;
+            }
+          </script>
           <% } %>
           <h4 class="ed-admin-title">Add Drill</h4>
           <form method="POST" action="/event/<%= event.id %>/drill" class="drill-form">
